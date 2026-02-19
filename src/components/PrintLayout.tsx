@@ -1,4 +1,4 @@
-import { ClipWithThumbnails, BrandProfile } from "../App";
+import { BrandProfile, ClipWithThumbnails } from "../types";
 
 interface PrintLayoutProps {
   projectName: string;
@@ -126,6 +126,8 @@ function PrintClipRow({
         <span className="print-meta-item">{clip.video_codec.toUpperCase()}</span>
         <span className="print-meta-item">{formatFileSize(clip.size_bytes)}</span>
         <span className="print-meta-item">{clip.audio_summary}</span>
+        {clip.rating > 0 && <span className="print-meta-item">★{clip.rating}</span>}
+        {clip.flag !== "none" && <span className="print-meta-item">{clip.flag.toUpperCase()}</span>}
         {clip.timecode && <span className="print-meta-item">TC: {clip.timecode}</span>}
       </div>
     </div>

@@ -25,7 +25,12 @@ interface VerificationItem {
     error_message?: string;
 }
 
-export function SafeCopy() {
+interface SafeCopyProps {
+    onJobCreated?: (jobId: string) => void;
+    onError?: (error: { title: string; hint: string } | null) => void;
+}
+
+export function SafeCopy({ onJobCreated, onError }: SafeCopyProps) {
     const [sourcePath, setSourcePath] = useState("");
     const [destPath, setDestPath] = useState("");
     const [mode, setMode] = useState<"SOLID" | "FAST">("SOLID");
@@ -70,16 +75,20 @@ export function SafeCopy() {
 
     const handleStart = async () => {
         if (!sourcePath || !destPath) {
-            alert("Please select both source and destination folders.");
+            onError?.({ title: "Missing source or destination", hint: "Select both folders before starting verification." });
             return;
         }
+        const confirm = window.confirm("Start verification job now?");
+        if (!confirm) return;
         setIsVerifying(true);
         setResults([]);
         setProgress(null);
         try {
-            await invoke("start_verification", { sourceRoot: sourcePath, destRoot: destPath, mode });
+            const jobId = await invoke<string>("start_verification", { sourceRoot: sourcePath, destRoot: destPath, mode });
+            onJobCreated?.(jobId);
+            onError?.(null);
         } catch (e) {
-            alert("Verification failed to start: " + e);
+            onError?.({ title: "Verification failed to start", hint: "Retry. If this keeps happening, export diagnostics and share with the team." });
             setIsVerifying(false);
         }
     };
@@ -95,7 +104,7 @@ export function SafeCopy() {
                 await invoke("export_verification_report_json", { jobId: progress.job_id, savePath: path });
             }
         } catch (e) {
-            alert("Failed to export JSON: " + e);
+            onError?.({ title: "Failed to export verification JSON", hint: "Check output folder permissions and retry." });
         }
     };
 

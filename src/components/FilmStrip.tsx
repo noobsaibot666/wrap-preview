@@ -1,4 +1,4 @@
-import { Thumbnail } from "../App";
+import { Thumbnail } from "../types";
 
 interface FilmStripProps {
     clipId: string;
@@ -6,9 +6,10 @@ interface FilmStripProps {
     thumbnailCache: Record<string, string>;
     status: string;
     count: number;
+    isExtracting?: boolean;
 }
 
-export function FilmStrip({ clipId, thumbnails, thumbnailCache, status, count }: FilmStripProps) {
+export function FilmStrip({ clipId, thumbnails, thumbnailCache, status, count, isExtracting = false }: FilmStripProps) {
     const indices = Array.from({ length: count }, (_, i) => i);
 
     if (status === "fail") {
@@ -28,7 +29,11 @@ export function FilmStrip({ clipId, thumbnails, thumbnailCache, status, count }:
             <div className="film-strip">
                 {indices.map((i) => (
                     <div key={i} className="film-strip-placeholder">
-                        {i === Math.floor(count / 2) && <span className="spinner" style={{ width: 16, height: 16 }} />}
+                        {i === Math.floor(count / 2) && (
+                            isExtracting
+                                ? <span className="spinner" style={{ width: 16, height: 16 }} />
+                                : <span className="thumb-warning">No thumbnails</span>
+                        )}
                     </div>
                 ))}
             </div>
@@ -55,7 +60,9 @@ export function FilmStrip({ clipId, thumbnails, thumbnailCache, status, count }:
 
                 return (
                     <div key={idx} className="film-strip-placeholder">
-                        <span className="spinner" style={{ width: 12, height: 12 }} />
+                        {isExtracting
+                            ? <span className="spinner" style={{ width: 12, height: 12 }} />
+                            : <span className="thumb-warning">—</span>}
                     </div>
                 );
             })}

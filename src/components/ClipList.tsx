@@ -1,16 +1,29 @@
-import { ClipWithThumbnails } from "../App";
+import { Clip, ClipWithThumbnails } from "../types";
 import { FilmStrip } from "./FilmStrip";
-import { Film, CheckCircle2, AlertCircle, XCircle } from "lucide-react";
+import { Film, CheckCircle2, XCircle, Star } from "lucide-react";
+import { Waveform } from "./Waveform";
 
 interface ClipListProps {
     clips: ClipWithThumbnails[];
     thumbnailCache: Record<string, string>;
+    isExtracting: boolean;
     selectedIds: Set<string>;
     onToggleSelection: (id: string) => void;
     thumbCount: number;
+    onUpdateMetadata: (clipId: string, updates: Partial<Pick<Clip, 'rating' | 'flag' | 'notes'>>) => Promise<void>;
+    onHoverClip: (id: string | null) => void;
 }
 
-export function ClipList({ clips, thumbnailCache, selectedIds, onToggleSelection, thumbCount }: ClipListProps) {
+export function ClipList({
+    clips,
+    thumbnailCache,
+    isExtracting,
+    selectedIds,
+    onToggleSelection,
+    thumbCount,
+    onUpdateMetadata,
+    onHoverClip
+}: ClipListProps) {
     if (clips.length === 0) return null;
 
     return (
@@ -25,9 +38,13 @@ export function ClipList({ clips, thumbnailCache, selectedIds, onToggleSelection
                         key={item.clip.id}
                         item={item}
                         thumbnailCache={thumbnailCache}
+                        isExtracting={isExtracting}
                         isSelected={selectedIds.has(item.clip.id)}
                         onToggle={() => onToggleSelection(item.clip.id)}
                         thumbCount={thumbCount}
+                        onUpdateMetadata={onUpdateMetadata}
+                        onMouseEnter={() => onHoverClip(item.clip.id)}
+                        onMouseLeave={() => onHoverClip(null)}
                     />
                 ))}
             </div>
@@ -38,20 +55,33 @@ export function ClipList({ clips, thumbnailCache, selectedIds, onToggleSelection
 function ClipCard({
     item,
     thumbnailCache,
+    isExtracting,
     isSelected,
     onToggle,
     thumbCount,
+    onUpdateMetadata,
+    onMouseEnter,
+    onMouseLeave,
 }: {
     item: ClipWithThumbnails;
     thumbnailCache: Record<string, string>;
+    isExtracting: boolean;
     isSelected: boolean;
     onToggle: () => void;
     thumbCount: number;
+    onUpdateMetadata: (clipId: string, updates: Partial<Pick<Clip, 'rating' | 'flag' | 'notes'>>) => Promise<void>;
+    onMouseEnter: () => void;
+    onMouseLeave: () => void;
 }) {
     const { clip, thumbnails } = item;
+    const audioHealth = getAudioHealth(clip.audio_summary, clip.audio_envelope);
 
     return (
-        <div className={`clip-card ${isSelected ? 'selected' : ''}`}>
+        <div
+            className={`clip-card ${isSelected ? 'selected' : ''} flag-${clip.flag}`}
+            onMouseEnter={onMouseEnter}
+            onMouseLeave={onMouseLeave}
+        >
             {/* Header */}
             <div className="clip-card-header">
                 <div className="clip-card-title-group">
@@ -60,8 +90,28 @@ function ClipCard({
                     </span>
                 </div>
                 <div className="clip-card-header-right">
+                    <div className="clip-flags">
+                        <button
+                            className={`btn-flag btn-pick ${clip.flag === 'pick' ? 'active' : ''}`}
+                            onClick={(e) => { e.stopPropagation(); onUpdateMetadata(clip.id, { flag: clip.flag === 'pick' ? 'none' : 'pick' }); }}
+                            title="Pick (P)"
+                            aria-label="Pick"
+                        >
+                            <CheckCircle2 size={14} />
+                            <span>Pick</span>
+                        </button>
+                        <button
+                            className={`btn-flag btn-reject ${clip.flag === 'reject' ? 'active' : ''}`}
+                            onClick={(e) => { e.stopPropagation(); onUpdateMetadata(clip.id, { flag: clip.flag === 'reject' ? 'none' : 'reject' }); }}
+                            title="Reject (X)"
+                            aria-label="Reject"
+                        >
+                            <XCircle size={14} />
+                            <span>Reject</span>
+                        </button>
+                    </div>
+
                     <label className="clip-selection-label">
-                        <span>Select</span>
                         <input
                             type="checkbox"
                             checked={isSelected}
@@ -69,12 +119,6 @@ function ClipCard({
                             className="clip-checkbox"
                         />
                     </label>
-                    <span className={`clip-status ${clip.status}`}>
-                        {clip.status === "ok" && <CheckCircle2 size={12} />}
-                        {clip.status === "warn" && <AlertCircle size={12} />}
-                        {clip.status === "fail" && <XCircle size={12} />}
-                        {clip.status.toUpperCase()}
-                    </span>
                 </div>
             </div>
 
@@ -85,18 +129,41 @@ function ClipCard({
                     thumbnailCache={thumbnailCache}
                     status={clip.status}
                     count={thumbCount}
+                    isExtracting={isExtracting}
                 />
             </div>
 
-            {/* Metadata grid */}
+            {/* Actions / Metadata */}
+            <div className="clip-card-footer">
+                <div className="clip-rating">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                            key={star}
+                            size={14}
+                            className={`star ${star <= clip.rating ? 'filled' : ''}`}
+                            onClick={() => onUpdateMetadata(clip.id, { rating: star === clip.rating ? 0 : star })}
+                        />
+                    ))}
+                </div>
+
+            <div className="clip-metadata-compact">
+                <span className="metadata-tag">{formatDuration(clip.duration_ms)}</span>
+                <span className="metadata-tag">{clip.video_codec.toUpperCase()}</span>
+                {audioHealth && <span className="metadata-tag">{audioHealth}</span>}
+                <span className={`clip-status-dot ${clip.status}`} />
+            </div>
+            </div>
+
+            {/* Waveform Sparkline */}
+            {clip.audio_envelope && (
+                <Waveform envelope={clip.audio_envelope} />
+            )}
+
             <div className="clip-metadata">
-                <MetaItem label="DUR" value={formatDuration(clip.duration_ms)} tooltip="Duration" />
-                <MetaItem label="RES" value={clip.width > 0 ? `${clip.width}×${clip.height}` : "—"} tooltip="Resolution" />
-                <MetaItem label="FPS" value={clip.fps > 0 ? `${clip.fps}` : "—"} tooltip="Frames per second" />
-                <MetaItem label="CODEC" value={clip.video_codec.toUpperCase()} tooltip="Video Codec" />
-                <MetaItem label="SIZE" value={formatFileSize(clip.size_bytes)} tooltip="File size" />
-                <MetaItem label="AUDIO" value={clip.audio_summary} tooltip="Audio description" />
-                {clip.timecode && <MetaItem label="TC" value={clip.timecode} tooltip="Embedded Timecode" />}
+                <MetaItem label="RES" value={clip.width > 0 ? `${clip.width}×${clip.height}` : "—"} />
+                <MetaItem label="FPS" value={clip.fps > 0 ? `${clip.fps}` : "—"} />
+                <MetaItem label="SIZE" value={formatFileSize(clip.size_bytes)} />
+                <MetaItem label="AUDIO" value={clip.audio_summary} />
             </div>
         </div>
     );
@@ -128,3 +195,12 @@ function formatDuration(ms: number): string {
     return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+function getAudioHealth(summary: string, envelope?: number[]): string | null {
+    if (!summary || summary.toLowerCase().includes("no audio")) return "NO AUDIO";
+    if (!envelope || envelope.length === 0) return "AUDIO";
+    const peak = Math.max(...envelope);
+    const silentRatio = envelope.filter((v) => v < 20).length / envelope.length;
+    if (peak >= 245) return "POSSIBLE CLIP";
+    if (silentRatio > 0.85) return "VERY LOW";
+    return "AUDIO OK";
+}

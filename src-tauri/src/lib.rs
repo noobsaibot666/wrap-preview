@@ -1,9 +1,13 @@
+mod audio;
 mod commands;
+mod clustering;
 mod db;
 mod ffprobe;
+mod jobs;
 mod scanner;
 mod thumbnail;
 mod verification;
+mod export;
 
 use commands::AppState;
 use std::sync::Arc;
@@ -24,6 +28,7 @@ pub fn run() {
     let app_state = Arc::new(AppState {
         db: database,
         cache_dir,
+        job_manager: crate::jobs::JobManager::new(),
     });
 
     tauri::Builder::default()
@@ -37,14 +42,29 @@ pub fn run() {
             commands::extract_thumbnails,
             commands::get_project,
             commands::read_thumbnail,
+            commands::save_image_data_url,
             commands::load_brand_profile,
             commands::read_brand_logo,
             commands::save_brand_profile,
             commands::save_brand_logo,
             commands::start_verification,
+            commands::get_job,
+            commands::list_jobs,
+            commands::cancel_job,
+            commands::get_app_info,
+            commands::export_feedback_bundle,
             commands::get_verification_job,
             commands::get_verification_items,
             commands::export_verification_report_json,
+            commands::extract_audio_waveform,
+            commands::update_clip_metadata,
+            commands::export_to_fcpxml,
+            commands::export_director_pack,
+            commands::build_scene_blocks,
+            commands::get_scene_blocks,
+            commands::rename_scene_block,
+            commands::merge_scene_blocks,
+            commands::split_scene_block,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
