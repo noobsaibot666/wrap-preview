@@ -92,7 +92,9 @@ pub async fn run_verification(
     db: Arc<Database>,
     job_id: String,
     source_root: String,
+    source_label: String,
     dest_root: String,
+    dest_label: String,
     mode: String,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -101,7 +103,9 @@ pub async fn run_verification(
         id: job_id.clone(),
         created_at: now,
         source_root: source_root.clone(),
+        source_label: source_label.clone(),
         dest_root: dest_root.clone(),
+        dest_label: dest_label.clone(),
         mode: mode.clone(),
         status: "RUNNING".to_string(),
         total_files: 0,
@@ -350,4 +354,3 @@ fn emit_progress(app: &AppHandle, payload: VerificationProgress) {
         eprintln!("verification: failed emitting progress: {}", e);
     }
 }
-

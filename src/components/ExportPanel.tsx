@@ -32,6 +32,7 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
   const [minRating, setMinRating] = useState<number>(3);
   const [isExporting, setIsExporting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [lastOutputPath, setLastOutputPath] = useState<string | null>(null);
 
   const picksCount = clips.filter((c) => c.flag === "pick").length;
   const ratedCount = clips.filter((c) => c.rating > 0).length;
@@ -90,6 +91,7 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
       });
 
       setResult({ success: true, message: "Successfully exported FCPXML timeline." });
+      setLastOutputPath(filePath);
       onError?.(null);
       try {
         await openPath(filePath);
@@ -136,6 +138,7 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
         }
       });
       setResult({ success: true, message: `Director Pack exported to ${result.root}` });
+      setLastOutputPath(result.root);
       onError?.(null);
       try {
         await openPath(result.root);
@@ -232,6 +235,24 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
           <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 ${result.success ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"}`}>
             {result.success ? <CheckCircle size={20} /> : <X size={20} />}
             <span className="text-sm">{result.message}</span>
+          </div>
+        )}
+        {lastOutputPath && (
+          <div className="mb-4 text-xs text-white/70 flex items-center justify-between gap-3">
+            <span>Saved to: {lastOutputPath}</span>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(lastOutputPath);
+                  onError?.({ title: "Path copied", hint: lastOutputPath });
+                } catch (_e) {
+                  onError?.({ title: "Copy failed", hint: "Copy path manually from the saved location message." });
+                }
+              }}
+            >
+              Copy Path
+            </button>
           </div>
         )}
 

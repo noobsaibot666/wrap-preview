@@ -1284,7 +1284,7 @@ body {
 
 .workspace-root-item {
   display: grid;
-  grid-template-columns: 180px 1fr auto;
+  grid-template-columns: 56px 1fr auto auto;
   gap: 8px;
   align-items: center;
 }
@@ -1295,6 +1295,31 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.status-pill {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-secondary);
+}
+
+.status-pill.running {
+  color: #8fe9ff;
+  border-color: rgba(143, 233, 255, 0.5);
+}
+
+.status-pill.done {
+  color: #8cff9f;
+  border-color: rgba(140, 255, 159, 0.45);
+}
+
+.status-pill.failed {
+  color: #ff8b8b;
+  border-color: rgba(255, 139, 139, 0.45);
 }
 
 .module-card::before {

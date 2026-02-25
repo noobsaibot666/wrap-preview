@@ -99,7 +99,9 @@ pub struct VerificationJob {
     pub id: String,
     pub created_at: String,
     pub source_root: String,
+    pub source_label: String,
     pub dest_root: String,
+    pub dest_label: String,
     pub mode: String, // "FAST", "SOLID"
     pub status: String, // "RUNNING", "DONE", "FAILED", "CANCELLED"
     pub total_files: u32,
@@ -124,6 +126,15 @@ pub struct VerificationItem {
     pub dest_hash: Option<String>,
     pub status: String, // "OK", "MISSING", "SIZE_MISMATCH", "HASH_MISMATCH", "UNREADABLE_SOURCE", "UNREADABLE_DEST", "SKIPPED", "EXTRA_IN_DEST"
     pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SceneDetectionCache {
+    pub clip_id: String,
+    pub threshold: f64,
+    pub analyzer_version: String,
+    pub cut_points_json: String,
+    pub updated_at: String,
 }
 
 impl Database {
@@ -252,6 +263,18 @@ impl Database {
             if !block_clip_columns.contains(&"sort_index".to_string()) {
                 conn.execute("ALTER TABLE block_clips ADD COLUMN sort_index INTEGER NOT NULL DEFAULT 0", [])?;
             }
+
+            let mut verification_stmt = conn.prepare("PRAGMA table_info(verification_jobs)")?;
+            let verification_columns: Vec<String> = verification_stmt
+                .query_map([], |row| row.get(1))?
+                .filter_map(|r| r.ok())
+                .collect();
+            if !verification_columns.contains(&"source_label".to_string()) {
+                conn.execute("ALTER TABLE verification_jobs ADD COLUMN source_label TEXT NOT NULL DEFAULT 'Source'", [])?;
+            }
+            if !verification_columns.contains(&"dest_label".to_string()) {
+                conn.execute("ALTER TABLE verification_jobs ADD COLUMN dest_label TEXT NOT NULL DEFAULT 'Destination'", [])?;
+            }
         }
 
         Ok(db)
@@ -354,7 +377,9 @@ impl Database {
                 id TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
                 source_root TEXT NOT NULL,
+                source_label TEXT NOT NULL DEFAULT 'Source',
                 dest_root TEXT NOT NULL,
+                dest_label TEXT NOT NULL DEFAULT 'Destination',
                 mode TEXT NOT NULL,
                 status TEXT NOT NULL,
                 total_files INTEGER NOT NULL,
@@ -389,6 +414,16 @@ impl Database {
                 algo TEXT NOT NULL,
                 hash TEXT NOT NULL,
                 computed_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS scene_detection_cache (
+                clip_id TEXT NOT NULL,
+                threshold REAL NOT NULL,
+                analyzer_version TEXT NOT NULL,
+                cut_points_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (clip_id, threshold, analyzer_version),
+                FOREIGN KEY (clip_id) REFERENCES clips(id)
             );
             ",
         )?;
@@ -1083,10 +1118,10 @@ impl Database {
     pub fn insert_verification_job(&self, job: &VerificationJob) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO verification_jobs (id, created_at, source_root, dest_root, mode, status, total_files, total_bytes, verified_ok_count, missing_count, size_mismatch_count, hash_mismatch_count, unreadable_count, extra_in_dest_count)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            "INSERT INTO verification_jobs (id, created_at, source_root, source_label, dest_root, dest_label, mode, status, total_files, total_bytes, verified_ok_count, missing_count, size_mismatch_count, hash_mismatch_count, unreadable_count, extra_in_dest_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
-                job.id, job.created_at, job.source_root, job.dest_root, job.mode, job.status,
+                job.id, job.created_at, job.source_root, job.source_label, job.dest_root, job.dest_label, job.mode, job.status,
                 job.total_files, job.total_bytes as i64, job.verified_ok_count, job.missing_count,
                 job.size_mismatch_count, job.hash_mismatch_count, job.unreadable_count, job.extra_in_dest_count
             ],
@@ -1140,7 +1175,7 @@ impl Database {
     pub fn get_verification_job(&self, id: &str) -> SqlResult<Option<VerificationJob>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, created_at, source_root, dest_root, mode, status, total_files, total_bytes, verified_ok_count, missing_count, size_mismatch_count, hash_mismatch_count, unreadable_count, extra_in_dest_count 
+            "SELECT id, created_at, source_root, source_label, dest_root, dest_label, mode, status, total_files, total_bytes, verified_ok_count, missing_count, size_mismatch_count, hash_mismatch_count, unreadable_count, extra_in_dest_count 
              FROM verification_jobs WHERE id = ?1"
         )?;
         let mut rows = stmt.query_map(params![id], |row| {
@@ -1148,17 +1183,19 @@ impl Database {
                 id: row.get(0)?,
                 created_at: row.get(1)?,
                 source_root: row.get(2)?,
-                dest_root: row.get(3)?,
-                mode: row.get(4)?,
-                status: row.get(5)?,
-                total_files: row.get(6)?,
-                total_bytes: row.get::<_, i64>(7)? as u64,
-                verified_ok_count: row.get(8)?,
-                missing_count: row.get(9)?,
-                size_mismatch_count: row.get(10)?,
-                hash_mismatch_count: row.get(11)?,
-                unreadable_count: row.get(12)?,
-                extra_in_dest_count: row.get(13)?,
+                source_label: row.get(3)?,
+                dest_root: row.get(4)?,
+                dest_label: row.get(5)?,
+                mode: row.get(6)?,
+                status: row.get(7)?,
+                total_files: row.get(8)?,
+                total_bytes: row.get::<_, i64>(9)? as u64,
+                verified_ok_count: row.get(10)?,
+                missing_count: row.get(11)?,
+                size_mismatch_count: row.get(12)?,
+                hash_mismatch_count: row.get(13)?,
+                unreadable_count: row.get(14)?,
+                extra_in_dest_count: row.get(15)?,
             })
         })?;
         match rows.next() {
@@ -1188,5 +1225,59 @@ impl Database {
             })
         })?.filter_map(|r| r.ok()).collect();
         Ok(items)
+    }
+
+    pub fn get_scene_detection_cache(
+        &self,
+        clip_id: &str,
+        threshold: f64,
+        analyzer_version: &str,
+    ) -> SqlResult<Option<SceneDetectionCache>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT clip_id, threshold, analyzer_version, cut_points_json, updated_at
+             FROM scene_detection_cache
+             WHERE clip_id = ?1 AND threshold = ?2 AND analyzer_version = ?3",
+        )?;
+        let mut rows = stmt.query_map(params![clip_id, threshold, analyzer_version], |row| {
+            Ok(SceneDetectionCache {
+                clip_id: row.get(0)?,
+                threshold: row.get(1)?,
+                analyzer_version: row.get(2)?,
+                cut_points_json: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(item)) => Ok(Some(item)),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn upsert_scene_detection_cache(&self, item: &SceneDetectionCache) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO scene_detection_cache (clip_id, threshold, analyzer_version, cut_points_json, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(clip_id, threshold, analyzer_version) DO UPDATE SET
+                cut_points_json = excluded.cut_points_json,
+                updated_at = excluded.updated_at",
+            params![
+                item.clip_id,
+                item.threshold,
+                item.analyzer_version,
+                item.cut_points_json,
+                item.updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_scene_detection_cache_for_project(&self, project_id: &str) -> SqlResult<usize> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM scene_detection_cache WHERE clip_id IN (SELECT id FROM clips WHERE project_id = ?1)",
+            params![project_id],
+        )
     }
 }

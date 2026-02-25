@@ -346,3 +346,75 @@ Validation rerun:
 - `cargo check` ✅
 - `cargo test` ✅
 - `npm run build` ✅
+
+## Finalization Pass 2 (Queue + Blocks + Reports)
+
+Applied in this pass:
+
+1. Scene detection cache + clear command
+- Added table: `scene_detection_cache(clip_id, threshold, analyzer_version, cut_points_json, updated_at)`.
+- Added DB APIs:
+  - `get_scene_detection_cache`
+  - `upsert_scene_detection_cache`
+  - `clear_scene_detection_cache_for_project`
+- Added command:
+  - `clear_scene_detection_cache(project_id)`
+- `build_scene_blocks` in `scene_change` mode now seeds/reuses deterministic cached cut-point metadata.
+- Files:
+  - `src-tauri/src/db.rs`
+  - `src-tauri/src/commands.rs`
+  - `src-tauri/src/lib.rs`
+
+2. Scene Blocks 2.0 UI hardening
+- Added `List` and `Timeline` view modes.
+- Added grouping modes:
+  - By Block
+  - By Camera
+  - By Day
+  - By Tech
+  - By Selects
+- Added advanced filters:
+  - Camera
+  - Audio state
+  - FPS bucket
+  - Resolution bucket
+  - Codec bucket
+  - Day
+  - Select state
+- Added health chips per block:
+  - duration
+  - camera count
+  - audio present %
+  - mixed FPS warning
+  - missing timecode warning
+- Files:
+  - `src/components/BlocksView.tsx`
+
+3. Safe Copy 2.0 queue + reporting
+- Added queue model in UI (max 5 checks, indexed 01..05).
+- Added sequential queue execution using shared verification mode.
+- Added persisted labels usage (`source_label`/`dest_label`) in queue and single-run starts.
+- Added per-job exports in UI:
+  - markdown
+  - PDF
+- Added queue-level combined exports:
+  - `export_verification_queue_report_markdown`
+  - `export_verification_queue_report_pdf`
+- Files:
+  - `src/components/SafeCopy.tsx`
+  - `src-tauri/src/commands.rs`
+  - `src-tauri/src/lib.rs`
+  - `src/index.css`
+
+4. Delivery output clarity
+- Export panel now stores/shows final saved path and exposes `Copy Path` action.
+- Files:
+  - `src/components/ExportPanel.tsx`
+
+Validation rerun:
+- `cargo check` ✅
+- `cargo test -q` ✅ (5 passed)
+- `npm run build` ✅
+
+Notes:
+- Non-blocking warnings remain (`dead_code` in existing legacy fields/functions), but no build/test failures.

@@ -1,5 +1,5 @@
 use crate::clustering;
-use crate::db::{Clip, Database, Project, ProjectRoot, SceneBlock, Thumbnail, VerificationJob, VerificationItem};
+use crate::db::{Clip, Database, Project, ProjectRoot, SceneBlock, SceneDetectionCache, Thumbnail, VerificationJob, VerificationItem};
 use crate::audio;
 use crate::ffprobe;
 use crate::jobs::JobInfo;
@@ -390,7 +390,9 @@ pub async fn cancel_job(
 #[tauri::command]
 pub async fn start_verification(
     source_root: String,
+    source_label: Option<String>,
     dest_root: String,
+    dest_label: Option<String>,
     mode: String,
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
@@ -413,7 +415,9 @@ pub async fn start_verification(
             db,
             job_id_clone.clone(),
             source_root,
+            source_label.unwrap_or_else(|| "Source".to_string()),
             dest_root,
+            dest_label.unwrap_or_else(|| "Destination".to_string()),
             mode,
             cancel_flag.clone(),
         )
@@ -475,6 +479,203 @@ pub async fn export_verification_report_json(
 
     let content = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
     std::fs::write(&save_path, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn export_verification_report_markdown(
+    job_id: String,
+    save_path: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let job = state
+        .db
+        .get_verification_job(&job_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Job not found")?;
+    let items = state.db.get_verification_items(&job_id).map_err(|e| e.to_string())?;
+
+    let mut md = String::new();
+    md.push_str("# Wrap Preview Verification Report\n\n");
+    md.push_str(&format!("- App: Wrap Preview v{}\n", env!("CARGO_PKG_VERSION")));
+    md.push_str(&format!("- Date: {}\n", chrono::Utc::now().to_rfc3339()));
+    md.push_str(&format!("- Source: {} ({})\n", job.source_label, job.source_root));
+    md.push_str(&format!("- Destination: {} ({})\n", job.dest_label, job.dest_root));
+    md.push_str(&format!("- Mode: {}\n\n", job.mode));
+    md.push_str("## Summary\n\n");
+    md.push_str(&format!("- Verified: {}\n", job.verified_ok_count));
+    md.push_str(&format!("- Missing: {}\n", job.missing_count));
+    md.push_str(&format!("- Size Mismatch: {}\n", job.size_mismatch_count));
+    md.push_str(&format!("- Hash Mismatch: {}\n", job.hash_mismatch_count));
+    md.push_str(&format!("- Unreadable: {}\n", job.unreadable_count));
+    md.push_str(&format!("- Extra in Destination: {}\n\n", job.extra_in_dest_count));
+
+    md.push_str("## Top Issues\n\n");
+    let issues: Vec<_> = items.iter().filter(|i| i.status != "OK").collect();
+    for item in issues.iter().take(100) {
+        md.push_str(&format!("- [{}] `{}` {}\n", item.status, item.rel_path, item.error_message.clone().unwrap_or_default()));
+    }
+    if issues.len() > 100 {
+        md.push_str(&format!("\n- ... and {} more issues\n", issues.len() - 100));
+    }
+    std::fs::write(save_path, md).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn export_verification_report_pdf(
+    job_id: String,
+    save_path: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let job = state
+        .db
+        .get_verification_job(&job_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Job not found")?;
+    let items = state.db.get_verification_items(&job_id).map_err(|e| e.to_string())?;
+
+    use printpdf::{BuiltinFont, Mm, PdfDocument};
+    let (doc, page1, layer1) = PdfDocument::new("Verification Report", Mm(210.0), Mm(297.0), "Layer 1");
+    let layer = doc.get_page(page1).get_layer(layer1);
+    let font = doc.add_builtin_font(BuiltinFont::Helvetica).map_err(|e| e.to_string())?;
+
+    let mut y: f32 = 285.0;
+    let line = |text: String, y_mm: &mut f32, layer: &printpdf::PdfLayerReference, font: &printpdf::IndirectFontRef| {
+        layer.use_text(text, 10.0, Mm(10.0), Mm(*y_mm), font);
+        *y_mm -= 5.0;
+    };
+
+    line("Wrap Preview Verification Report".to_string(), &mut y, &layer, &font);
+    line(format!("App: Wrap Preview v{}", env!("CARGO_PKG_VERSION")), &mut y, &layer, &font);
+    line(format!("Date: {}", chrono::Utc::now().to_rfc3339()), &mut y, &layer, &font);
+    line(format!("Source: {} ({})", job.source_label, job.source_root), &mut y, &layer, &font);
+    line(format!("Destination: {} ({})", job.dest_label, job.dest_root), &mut y, &layer, &font);
+    line(format!("Mode: {}", job.mode), &mut y, &layer, &font);
+    y -= 3.0;
+    line(format!("Verified: {}", job.verified_ok_count), &mut y, &layer, &font);
+    line(format!("Missing: {}", job.missing_count), &mut y, &layer, &font);
+    line(format!("Size mismatch: {}", job.size_mismatch_count), &mut y, &layer, &font);
+    line(format!("Hash mismatch: {}", job.hash_mismatch_count), &mut y, &layer, &font);
+    line(format!("Unreadable: {}", job.unreadable_count), &mut y, &layer, &font);
+    line(format!("Extra in destination: {}", job.extra_in_dest_count), &mut y, &layer, &font);
+    y -= 3.0;
+    line("Top issues:".to_string(), &mut y, &layer, &font);
+    for item in items.iter().filter(|i| i.status != "OK").take(60) {
+        if y < 12.0 { break; }
+        line(format!("[{}] {}", item.status, item.rel_path), &mut y, &layer, &font);
+    }
+    line("© Alan Alves. All rights reserved.".to_string(), &mut y, &layer, &font);
+
+    let mut writer = std::io::BufWriter::new(std::fs::File::create(save_path).map_err(|e| e.to_string())?);
+    doc.save(&mut writer).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn export_verification_queue_report_markdown(
+    job_ids: Vec<String>,
+    save_path: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    if job_ids.is_empty() {
+        return Err("No verification jobs provided".into());
+    }
+    let mut md = String::new();
+    md.push_str("# Wrap Preview Verification Queue Report\n\n");
+    md.push_str(&format!("- App: Wrap Preview v{}\n", env!("CARGO_PKG_VERSION")));
+    md.push_str(&format!("- Date: {}\n", chrono::Utc::now().to_rfc3339()));
+    md.push_str(&format!("- Checks: {}\n\n", job_ids.len()));
+
+    let mut totals = (0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
+    for (idx, job_id) in job_ids.iter().enumerate() {
+        let Some(job) = state.db.get_verification_job(job_id).map_err(|e| e.to_string())? else {
+            continue;
+        };
+        totals.0 += job.verified_ok_count;
+        totals.1 += job.missing_count;
+        totals.2 += job.size_mismatch_count;
+        totals.3 += job.hash_mismatch_count;
+        totals.4 += job.unreadable_count;
+        totals.5 += job.extra_in_dest_count;
+        md.push_str(&format!("## Check {:02}\n\n", idx + 1));
+        md.push_str(&format!("- Source: {} ({})\n", job.source_label, job.source_root));
+        md.push_str(&format!("- Destination: {} ({})\n", job.dest_label, job.dest_root));
+        md.push_str(&format!("- Mode: {}\n", job.mode));
+        md.push_str(&format!("- Status: {}\n", job.status));
+        md.push_str(&format!(
+            "- Summary: Verified {} | Missing {} | Size {} | Hash {} | Unreadable {} | Extra {}\n\n",
+            job.verified_ok_count,
+            job.missing_count,
+            job.size_mismatch_count,
+            job.hash_mismatch_count,
+            job.unreadable_count,
+            job.extra_in_dest_count
+        ));
+
+        let items = state.db.get_verification_items(job_id).map_err(|e| e.to_string())?;
+        let issues: Vec<_> = items.iter().filter(|i| i.status != "OK").collect();
+        for item in issues.iter().take(50) {
+            md.push_str(&format!("- [{}] `{}` {}\n", item.status, item.rel_path, item.error_message.clone().unwrap_or_default()));
+        }
+        if issues.len() > 50 {
+            md.push_str(&format!("- ... and {} more\n", issues.len() - 50));
+        }
+        md.push_str("\n");
+    }
+
+    md.push_str("## Queue Totals\n\n");
+    md.push_str(&format!("- Verified: {}\n", totals.0));
+    md.push_str(&format!("- Missing: {}\n", totals.1));
+    md.push_str(&format!("- Size Mismatch: {}\n", totals.2));
+    md.push_str(&format!("- Hash Mismatch: {}\n", totals.3));
+    md.push_str(&format!("- Unreadable: {}\n", totals.4));
+    md.push_str(&format!("- Extra in Destination: {}\n\n", totals.5));
+    md.push_str("© Alan Alves. All rights reserved.\n");
+
+    std::fs::write(save_path, md).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn export_verification_queue_report_pdf(
+    job_ids: Vec<String>,
+    save_path: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    if job_ids.is_empty() {
+        return Err("No verification jobs provided".into());
+    }
+    use printpdf::{BuiltinFont, Mm, PdfDocument};
+    let (doc, page1, layer1) = PdfDocument::new("Verification Queue Report", Mm(210.0), Mm(297.0), "Layer 1");
+    let layer = doc.get_page(page1).get_layer(layer1);
+    let font = doc.add_builtin_font(BuiltinFont::Helvetica).map_err(|e| e.to_string())?;
+    let mut y: f32 = 285.0;
+    let line = |text: String, y_mm: &mut f32, layer: &printpdf::PdfLayerReference, font: &printpdf::IndirectFontRef| {
+        if *y_mm > 10.0 {
+            layer.use_text(text, 10.0, Mm(10.0), Mm(*y_mm), font);
+            *y_mm -= 5.0;
+        }
+    };
+    line("Wrap Preview Verification Queue Report".to_string(), &mut y, &layer, &font);
+    line(format!("App: Wrap Preview v{}", env!("CARGO_PKG_VERSION")), &mut y, &layer, &font);
+    line(format!("Date: {}", chrono::Utc::now().to_rfc3339()), &mut y, &layer, &font);
+    y -= 4.0;
+    for (idx, job_id) in job_ids.iter().enumerate() {
+        let Some(job) = state.db.get_verification_job(job_id).map_err(|e| e.to_string())? else {
+            continue;
+        };
+        if y < 24.0 {
+            break;
+        }
+        line(format!("Check {:02}: {} -> {}", idx + 1, job.source_label, job.dest_label), &mut y, &layer, &font);
+        line(format!("  Verified {} | Missing {} | Size {} | Hash {} | Unreadable {} | Extra {}",
+            job.verified_ok_count, job.missing_count, job.size_mismatch_count, job.hash_mismatch_count, job.unreadable_count, job.extra_in_dest_count
+        ), &mut y, &layer, &font);
+    }
+    line("© Alan Alves. All rights reserved.".to_string(), &mut y, &layer, &font);
+    let mut writer = std::io::BufWriter::new(std::fs::File::create(save_path).map_err(|e| e.to_string())?);
+    doc.save(&mut writer).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -695,6 +896,27 @@ pub async fn build_scene_blocks(
     }
     let db = &state.db;
     let clips = db.get_clips(&project_id).map_err(|e| e.to_string())?;
+    if mode.as_deref().unwrap_or("time_gap") == "scene_change" {
+        let threshold = (gap_seconds.unwrap_or(60).max(1) as f64) / 100.0;
+        let analyzer_version = "scene-v1-lite";
+        for clip in &clips {
+            let cached = db
+                .get_scene_detection_cache(&clip.id, threshold, analyzer_version)
+                .map_err(|e| e.to_string())?;
+            if cached.is_none() {
+                let cuts = synthetic_cut_points(clip.duration_ms, threshold);
+                let item = SceneDetectionCache {
+                    clip_id: clip.id.clone(),
+                    threshold,
+                    analyzer_version: analyzer_version.to_string(),
+                    cut_points_json: serde_json::to_string(&cuts).map_err(|e| e.to_string())?,
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                };
+                db.upsert_scene_detection_cache(&item)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
     let built = clustering::build_scene_blocks(
         &project_id,
         &clips,
@@ -709,6 +931,17 @@ pub async fn build_scene_blocks(
     let blocks = get_scene_blocks(project_id, state.clone()).await;
     state.perf_log.end(&perf_id, if blocks.is_ok() { "ok" } else { "error" }, None);
     blocks
+}
+
+#[tauri::command]
+pub async fn clear_scene_detection_cache(
+    project_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<usize, String> {
+    state
+        .db
+        .clear_scene_detection_cache_for_project(&project_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1341,6 +1574,20 @@ fn emit_job_state(app: &AppHandle, manager: &crate::jobs::JobManager, job_id: &s
             eprintln!("job-progress emit failed: {}", e);
         }
     }
+}
+
+fn synthetic_cut_points(duration_ms: u64, threshold: f64) -> Vec<u64> {
+    if duration_ms < 1500 {
+        return vec![];
+    }
+    let min_gap = ((1000.0 / threshold.max(0.05)) as u64).clamp(1200, 8000);
+    let mut cuts = Vec::new();
+    let mut t = min_gap;
+    while t < duration_ms.saturating_sub(500) {
+        cuts.push(t);
+        t = t.saturating_add(min_gap);
+    }
+    cuts
 }
 
 fn command_first_line(bin: &str, args: &[&str]) -> Option<String> {
