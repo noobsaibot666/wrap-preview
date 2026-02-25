@@ -7,7 +7,7 @@ use crate::scanner;
 use crate::thumbnail;
 use crate::verification;
 use sha2::{Digest, Sha256};
-use std::io::Write as _;
+use std::io::Write;
 use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -1158,6 +1158,112 @@ pub async fn auto_analyze_lookbook(
 }
 
 #[tauri::command]
+pub async fn generate_lut_thumbnails(
+    project_id: String,
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let db = &state.db;
+    
+    let settings = db.get_project_settings(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No LUT settings found for project".to_string())?;
+        
+    let settings_val: serde_json::Value = serde_json::from_str(&settings.settings_json)
+        .map_err(|e| e.to_string())?;
+        
+    let lut_path = settings_val["lut_path"].as_str().unwrap_or("");
+    let lut_hash = settings_val["lut_hash"].as_str().unwrap_or("");
+    
+    if lut_path.is_empty() || lut_hash.is_empty() {
+        return Err("Invalid LUT settings".to_string());
+    }
+
+    let lut_content = std::fs::read_to_string(lut_path).map_err(|e| e.to_string())?;
+    let lut = crate::lut::Lut3D::parse_cube(&lut_content).map_err(|e| e.to_string())?;
+
+    let _perf_id = state.perf_log.start("generate_lut_thumbnails", Some(project_id.clone()));
+    let cache_dir = state.cache_dir.clone();
+    let (job_id, cancel_flag) = state.job_manager.create_job("lut_thumbnails", None);
+    state
+        .job_manager
+        .mark_running(&job_id, "Applying LUT to thumbnails");
+    emit_job_state(&app, &state.job_manager, &job_id);
+
+    let clips = db
+        .get_clips(&project_id)
+        .map_err(|e| format!("Failed to get clips: {}", e))?;
+
+    let total_clips = clips.len();
+    let semaphore = Arc::new(Semaphore::new(3)); // 3 concurrent jobs
+
+    for (clip_idx, clip) in clips.iter().enumerate() {
+        if cancel_flag.load(Ordering::Relaxed) {
+            let _ = state.job_manager.cancel_job(&job_id);
+            emit_job_state(&app, &state.job_manager, &job_id);
+            break;
+        }
+        
+        // Skip clips without LUT enabled unless we want to cache all of them.
+        // Caching all makes sense so if they toggle it later, it's instant.
+        
+        let thumbnails = db.get_thumbnails(&clip.id).unwrap_or_default();
+        if thumbnails.is_empty() {
+             let _ = app.emit("lut-thumbnail-progress", ThumbnailProgress {
+                clip_id: clip.id.clone(),
+                clip_index: clip_idx,
+                total_clips,
+                status: "skipped".to_string(),
+                thumbnails: vec![],
+            });
+            continue;
+        }
+
+        let permit = semaphore.clone().acquire_owned().await.map_err(|e| e.to_string())?;
+        let clip_cache_dir = format!("{}/{}", cache_dir, clip.id);
+        
+        let mut processed_thumbs = Vec::new();
+
+        for thumb in &thumbnails {
+            let output_path = format!("{}/lut_{}_thumb_{}.jpg", clip_cache_dir, lut_hash, thumb.index);
+            
+            if std::path::Path::new(&output_path).exists() {
+                // already applied
+                let mut new_thumb = thumb.clone();
+                new_thumb.file_path = output_path;
+                processed_thumbs.push(new_thumb);
+                continue;
+            }
+
+            match crate::lut::apply_lut_to_image(&thumb.file_path, &lut, &output_path) {
+                Ok(_) => {
+                    let mut new_thumb = thumb.clone();
+                    new_thumb.file_path = output_path;
+                    processed_thumbs.push(new_thumb);
+                }
+                Err(err) => {
+                    eprintln!("LUT processing failed for {}: {}", thumb.file_path, err);
+                }
+            }
+        }
+
+        let _ = app.emit("lut-thumbnail-progress", ThumbnailProgress {
+            clip_id: clip.id.clone(),
+            clip_index: clip_idx,
+            total_clips,
+            status: "done".to_string(),
+            thumbnails: processed_thumbs,
+        });
+        drop(permit);
+    }
+    
+    state.job_manager.mark_done(&job_id, "LUT thumbnails processing complete");
+    emit_job_state(&app, &state.job_manager, &job_id);
+
+    Ok(job_id)
+}
+
+#[tauri::command]
 pub async fn update_clip_metadata(
     clip_id: String,
     rating: Option<i32>,
@@ -1166,10 +1272,11 @@ pub async fn update_clip_metadata(
     shot_size: Option<String>,
     movement: Option<String>,
     manual_order: Option<i32>,
+    lut_enabled: Option<i32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let db = &state.db;
-    db.update_clip_metadata(&clip_id, rating, flag, notes, shot_size, movement, manual_order)
+    db.update_clip_metadata(&clip_id, rating, flag, notes, shot_size, movement, manual_order, lut_enabled)
         .map_err(|e| format!("Failed to update clip metadata: {}", e))
 }
 
@@ -1313,6 +1420,76 @@ pub async fn get_scene_blocks(
         result.push(SceneBlockWithClips { block, clips });
     }
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn set_project_lut(
+    project_id: String,
+    lut_path: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    use crate::lut::Lut3D;
+    use serde_json::json;
+    use blake3;
+    use crate::db::ProjectSettings;
+
+    let content = std::fs::read_to_string(&lut_path)
+        .map_err(|e| format!("Failed to read LUT file: {}", e))?;
+        
+    let _parsed = Lut3D::parse_cube(&content)
+        .map_err(|e| format!("Invalid LUT format: {}", e))?;
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(content.as_bytes());
+    let hash_hex = hasher.finalize().to_hex()[..16].to_string();
+
+    let lut_name = std::path::Path::new(&lut_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Unknown LUT".to_string());
+
+    let settings = json!({
+        "lut_path": lut_path,
+        "lut_name": lut_name,
+        "lut_hash": hash_hex,
+        "lut_loaded_at": chrono::Utc::now().to_rfc3339(),
+    });
+
+    let project_settings = ProjectSettings {
+        project_id,
+        settings_json: settings.to_string(),
+    };
+
+    let db = &state.db;
+    db.upsert_project_settings(&project_settings)
+        .map_err(|e| format!("Failed to save project settings: {}", e))
+}
+
+#[tauri::command]
+pub async fn remove_project_lut(
+    project_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    use crate::db::ProjectSettings;
+    let db = &state.db;
+    let project_settings = ProjectSettings {
+        project_id,
+        settings_json: "{}".to_string(),
+    };
+
+    db.upsert_project_settings(&project_settings)
+        .map_err(|e| format!("Failed to clear project settings: {}", e))
+}
+
+#[tauri::command]
+pub async fn set_clip_lut_enabled(
+    clip_id: String,
+    enabled: i32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let db = &state.db;
+    db.update_clip_metadata(&clip_id, None, None, None, None, None, None, Some(enabled))
+        .map_err(|e| format!("Failed to update clip lut_enabled: {}", e))
 }
 
 #[tauri::command]
@@ -1791,6 +1968,7 @@ fn build_clip_from_file(
                 auto_analyzed_at: None,
                 auto_analyzer_version: None,
                 audio_envelope: None,
+                lut_enabled: 0,
             }
         }
         Err(e) => {
@@ -1836,6 +2014,7 @@ fn build_clip_from_file(
                 auto_analyzed_at: None,
                 auto_analyzer_version: None,
                 audio_envelope: None,
+                lut_enabled: 0,
             }
         }
     }
@@ -2183,5 +2362,21 @@ mod tests {
         let (s3, d3) = derive_labels(Some("Check Label".to_string()), 3);
         assert_eq!(s3, "Check Label Source");
         assert_eq!(d3, "Check Label Destination");
+    }
+}
+
+#[tauri::command]
+pub async fn get_project_settings(
+    project_id: String,
+    state: tauri::State<'_, std::sync::Arc<crate::commands::AppState>>,
+) -> Result<String, String> {
+    let settings = state
+        .db
+        .get_project_settings(&project_id)
+        .map_err(|e| format!("Failed to get project settings: {}", e))?;
+
+    match settings {
+        Some(s) => Ok(s.settings_json),
+        None => Ok("{}".to_string()),
     }
 }
