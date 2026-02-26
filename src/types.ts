@@ -28,13 +28,6 @@ export interface Clip {
     shot_size?: string | null;
     movement?: string | null;
     manual_order?: number | null;
-    auto_motion?: string | null;
-    auto_brightness?: string | null;
-    auto_contrast?: string | null;
-    auto_temp?: string | null;
-    auto_tags_json?: string | null;
-    auto_analyzed_at?: string | null;
-    auto_analyzer_version?: string | null;
     audio_envelope?: number[]; // Represented as byte array/number array from Rust Vec<u8>
     lut_enabled: number;
 }

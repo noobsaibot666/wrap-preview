@@ -9,8 +9,6 @@ import {
   Info,
   ShieldCheck,
   ArrowRight,
-  Clock,
-  Star,
   Boxes,
   BriefcaseBusiness,
   MessageCircleWarning,
@@ -20,10 +18,7 @@ import {
   ImageIcon,
   FileDown,
   FileText,
-  Plus,
-  Trash2,
-  RefreshCw,
-  Palette,
+  LayoutGrid,
 } from "lucide-react";
 import { ClipList } from "./components/ClipList";
 import { PrintLayout } from "./components/PrintLayout";
@@ -35,7 +30,7 @@ import { AboutPanel } from "./components/AboutPanel";
 import { TourGuide, TourStep } from "./components/TourGuide";
 import { exportElementAsImage } from "./utils/ExportUtils";
 import appLogo from "./assets/Icon_square_rounded.svg";
-import { AppInfo, Clip, ClipWithThumbnails, JobInfo, ProjectRoot, ScanResult, ThumbnailProgress } from "./types";
+import { AppInfo, Clip, ClipWithThumbnails, JobInfo, ScanResult, ThumbnailProgress } from "./types";
 import {
   LookbookSortMode,
   MOVEMENT_CANONICAL,
@@ -94,7 +89,6 @@ function AppContent() {
   });
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
-  const [projectRoots, setProjectRoots] = useState<ProjectRoot[]>([]);
   const [viewFilter, setViewFilter] = useState<"all" | "picks" | "rated_min">("all");
   const [viewMinRating, setViewMinRating] = useState<number>(3);
   const [jobsOpen, setJobsOpen] = useState(false);
@@ -122,7 +116,6 @@ function AppContent() {
     return localStorage.getItem("wp_sequence_movement_filter") || "all";
   });
   const [shotSizeFilter, setShotSizeFilter] = useState<string>(() => localStorage.getItem("wp_shot_size_filter") || "all");
-  const [processingWaveforms, setProcessingWaveforms] = useState(false);
   const [playingClipId, setPlayingClipId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -219,7 +212,6 @@ function AppContent() {
     const savedPid = localStorage.getItem("wp_project_id");
     if (savedPid) {
       refreshProjectClips(savedPid).catch(console.error);
-      refreshProjectRoots(savedPid).catch(console.error);
     }
   }, []);
 
@@ -431,34 +423,6 @@ function AppContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [hoveredClipId, clips, handleUpdateMetadata, tourRun, toggleClipSelection, activeTab]);
 
-  // Automatic Audio Analysis Trigger
-  useEffect(() => {
-    const processClips = async () => {
-      if (!projectId || processingWaveforms) return;
-      const clipsToProcess = clips.filter(c => !c.clip.audio_envelope && c.clip.audio_codec !== "none");
-      if (clipsToProcess.length === 0) return;
-
-      setProcessingWaveforms(true);
-      try {
-        for (const item of clipsToProcess) {
-          try {
-            const envelope = await invoke<number[]>("extract_audio_waveform", { clipId: item.clip.id });
-            setClips(prev => prev.map(c =>
-              c.clip.id === item.clip.id ? { ...c, clip: { ...c.clip, audio_envelope: envelope } } : c
-            ));
-          } catch (err) {
-            console.warn(`Failed to extract waveform for ${item.clip.id}:`, err);
-          }
-        }
-      } finally {
-        setProcessingWaveforms(false);
-      }
-    };
-
-    if (clips.length > 0 && !scanning && !processingWaveforms) {
-      processClips();
-    }
-  }, [projectId, clips.length, scanning, processingWaveforms]);
 
   useEffect(() => {
     if (projectId && postScanTab) {
@@ -533,14 +497,6 @@ function AppContent() {
     }
   }, [hydrateThumbnailCache]);
 
-  const refreshProjectRoots = useCallback(async (nextProjectId: string) => {
-    try {
-      const roots = await invoke<ProjectRoot[]>("list_project_roots", { projectId: nextProjectId });
-      setProjectRoots(roots);
-    } catch (error) {
-      console.error("Failed loading project roots", error);
-    }
-  }, []);
 
   // Listen for thumbnail progress events
   useEffect(() => {
@@ -621,6 +577,7 @@ function AppContent() {
       setProjectName(result.project_name);
       setClips(result.clips.map((clip) => ({ clip, thumbnails: [] })));
 
+      /* 
       setExtracting(true);
       setExtractProgress({ done: 0, total: result.clip_count });
       invoke("extract_thumbnails", { projectId: result.project_id }).catch(
@@ -630,12 +587,10 @@ function AppContent() {
           setExtracting(false);
         }
       );
+      */
 
       refreshProjectClips(result.project_id).catch((err) => {
         console.warn("Initial clip refresh failed", err);
-      });
-      refreshProjectRoots(result.project_id).catch((err) => {
-        console.warn("Initial roots refresh failed", err);
       });
     } catch (e) {
       console.error("Scan error:", e);
@@ -643,15 +598,13 @@ function AppContent() {
     } finally {
       setScanning(false);
     }
-  }, [refreshProjectClips, refreshProjectRoots]);
+  }, [refreshProjectClips]);
 
   useEffect(() => {
     if (!projectId) {
-      setProjectRoots([]);
       return;
     }
-    refreshProjectRoots(projectId).catch(console.error);
-  }, [projectId, refreshProjectRoots]);
+  }, [projectId]);
 
 
 
@@ -918,22 +871,6 @@ function AppContent() {
           <nav className="header-nav">
           </nav>
           <>
-            {projectId && (
-              <button
-                className="btn btn-secondary"
-                onClick={async () => {
-                  try {
-                    await invoke("auto_analyze_lookbook", { projectId, recompute: false });
-                    await refreshProjectClips(projectId);
-                  } catch (e) {
-                    console.error(e);
-                    setUiError({ title: "Auto Analyze failed", hint: "Retry analysis or export diagnostics if it persists." });
-                  }
-                }}
-              >
-                <Star size={16} /> Auto Analyze
-              </button>
-            )}
 
             <div className="help-menu-wrapper" style={{ position: 'relative' }}>
               <button className="btn btn-icon" onClick={() => setHelpMenuOpen(!helpMenuOpen)} title="Help & Info">
@@ -988,10 +925,16 @@ function AppContent() {
       </header>
 
       <div className="app-content">
-        {activeTab !== 'home' && activeTab !== 'shot-planner' && (
+        {activeTab !== 'home' && (
           <nav className="app-tabs-nav">
+            <button className="nav-tab" onClick={() => setActiveTab('home')}>
+              <LayoutGrid size={14} /> Modules
+            </button>
+            <button className={`nav-tab ${activeTab === 'shot-planner' ? 'active' : ''}`} onClick={() => setActiveTab('shot-planner')}>
+              <ImageIcon size={14} /> Shot Planner
+            </button>
             <button className={`nav-tab ${activeTab === 'media-workspace' ? 'active' : ''}`} onClick={() => setActiveTab('media-workspace')}>
-              <BriefcaseBusiness size={14} /> Workspace
+              <BriefcaseBusiness size={14} /> Media Workspace
             </button>
             <button className={`nav-tab ${activeTab === 'contact' ? 'active' : ''}`} onClick={() => setActiveTab('contact')}>
               <Camera size={14} /> Clip Review
@@ -1012,7 +955,7 @@ function AppContent() {
                 setShowExportPanel(true);
               }}
             >
-              <FileDown size={14} /> Delivery
+              <FileDown size={14} /> Handoff
             </button>
           </nav>
         )}
@@ -1054,7 +997,7 @@ function AppContent() {
                 <div className="stat-card">
                   <div className="stat-header">
                     <span className="stat-label">Total Duration</span>
-                    <Clock size={12} className="info-icon" data-tooltip="Cumulative runtime of all discovered clips." />
+                    <Info size={12} className="info-icon" data-tooltip="Cumulative runtime of all discovered clips." />
                   </div>
                   <span className="stat-value">{formatDuration(totalDuration)}</span>
                   <span className="stat-sub">{formatFileSize(totalSize)} total volume</span>
@@ -1062,7 +1005,7 @@ function AppContent() {
                 <div className={`stat-card ${projectLut ? 'stat-card-lut-loaded' : ''}`}>
                   <div className="stat-header">
                     <span className="stat-label">Color Profile</span>
-                    <Palette size={12} className="info-icon" />
+                    <Info size={12} className="info-icon" />
                   </div>
                   <span className="stat-value" style={{ fontSize: '1.2rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '100px' }}>
                     {projectLut ? projectLut.name : 'None'}
@@ -1227,14 +1170,6 @@ function AppContent() {
                 thumbnailCache={thumbnailCache}
                 thumbnailsByClipId={thumbnailsByClipId}
                 onSelectedBlockIdsChange={setSelectedBlockIds}
-                onRequestGenerateThumbnails={async () => {
-                  try {
-                    await invoke("auto_analyze_lookbook", { projectId, recompute: false });
-                    await refreshProjectClips(projectId);
-                  } catch (e) {
-                    console.error(e);
-                  }
-                }}
               />
             </div>
           ) : (
@@ -1255,72 +1190,16 @@ function AppContent() {
         ) : activeTab === 'media-workspace' ? (
           <div className="onboarding-container">
             <div className="onboarding-header">
-              <h1>Media Workspace</h1>
-              <p>Verify, review, organize, export.</p>
-            </div>
-            {projectId && (
-              <div className="workspace-roots-panel">
-                <div className="workspace-roots-header">
-                  <span className="toolbar-label">Project Roots</span>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={async () => {
-                        const selected = await open({ directory: true, multiple: false, title: "Add Project Root" });
-                        if (!selected || typeof selected !== "string") return;
-                        await invoke("add_project_root", { projectId, rootPath: selected, label: `Root ${String(projectRoots.length + 1).padStart(2, "0")}` });
-                        await refreshProjectRoots(projectId);
-                      }}
-                    >
-                      <Plus size={14} /> Add Root
-                    </button>
-                    <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={async () => {
-                        await invoke("rescan_project", { projectId });
-                        await refreshProjectClips(projectId);
-                        setExtracting(true);
-                        setExtractProgress({ done: 0, total: 0 });
-                        invoke("extract_thumbnails", { projectId }).catch((e) => {
-                          console.error("Thumbnail extraction error after rescan:", e);
-                          setExtracting(false);
-                        });
-                      }}
-                    >
-                      <RefreshCw size={14} /> Rescan
-                    </button>
-                  </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <div>
+                  <h1>Media Workspace</h1>
+                  <p>Verify, review, organize, export.</p>
                 </div>
-                <div className="workspace-roots-list">
-                  {projectRoots.map((root) => (
-                    <div key={root.id} className="workspace-root-item">
-                      <input
-                        className="input-text"
-                        defaultValue={root.label}
-                        onBlur={async (e) => {
-                          const nextLabel = e.currentTarget.value.trim();
-                          if (!nextLabel || nextLabel === root.label) return;
-                          await invoke("update_project_root_label", { rootId: root.id, label: nextLabel });
-                          await refreshProjectRoots(projectId);
-                        }}
-                      />
-                      <span className="workspace-root-path">{root.root_path}</span>
-                      <button
-                        className="btn btn-danger btn-sm"
-                        onClick={async () => {
-                          await invoke("remove_project_root", { rootId: root.id });
-                          await refreshProjectRoots(projectId);
-                          await invoke("rescan_project", { projectId });
-                          await refreshProjectClips(projectId);
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                {projectId && (
+                  <div />
+                )}
               </div>
-            )}
+            </div>
             <div className="onboarding-grid workspace-apps-grid">
               <div
                 className="module-card premium-card"
@@ -1355,7 +1234,7 @@ function AppContent() {
                   if (projectId) setActiveTab("blocks");
                   else handleSelectFolder("blocks");
                 }}
-                style={{ "--corner-color": "var(--color-accent-amethyst-soft)", "--card-accent": "var(--color-accent-amethyst)", "--card-accent-soft": "var(--color-accent-amethyst-soft)" } as any}
+                style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
               >
                 <div className="module-icon"><Boxes size={32} strokeWidth={1.5} /></div>
                 <div className="module-info">
@@ -1396,7 +1275,7 @@ function AppContent() {
                       if (projectId) setActiveTab("shot-planner");
                       else handleSelectFolder("shot-planner");
                     }}
-                    style={{ "--corner-color": "var(--color-accent-amethyst-soft)", "--card-accent": "var(--color-accent-amethyst)", "--card-accent-soft": "var(--color-accent-amethyst-soft)" } as any}
+                    style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
                   >
                     <div className="module-icon">
                       {scanning ? <div className="spinner" /> : <ImageIcon size={32} strokeWidth={1.5} />}

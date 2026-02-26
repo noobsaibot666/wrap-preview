@@ -9,7 +9,6 @@ interface BlocksViewProps {
   thumbnailCache: Record<string, string>;
   thumbnailsByClipId: Record<string, Thumbnail[]>;
   onSelectedBlockIdsChange: (ids: string[]) => void;
-  onRequestGenerateThumbnails: () => Promise<void>;
 }
 
 type BuildMode = "time_gap" | "scene_change" | "multicam_overlap";
@@ -21,7 +20,6 @@ export function BlocksView({
   thumbnailCache,
   thumbnailsByClipId,
   onSelectedBlockIdsChange,
-  onRequestGenerateThumbnails
 }: BlocksViewProps) {
   const [blocks, setBlocks] = useState<SceneBlockWithClips[]>([]);
   const [loading, setLoading] = useState(false);
@@ -344,11 +342,6 @@ export function BlocksView({
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{clip.filename}</span>
                             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              {!thumbnailsByClipId[clip.id] || thumbnailsByClipId[clip.id].length === 0 ? (
-                                <button className="btn-link" onClick={onRequestGenerateThumbnails}>
-                                  Generate thumbnails
-                                </button>
-                              ) : null}
                               {clipIdx > 0 && groupMode === "block" && (
                                 <button className="btn-link" onClick={() => splitAtClip(item.block.id, clip.id)}>
                                   Split Here

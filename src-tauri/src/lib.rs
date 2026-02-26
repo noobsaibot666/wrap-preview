@@ -78,7 +78,6 @@ pub fn run() {
             commands::export_verification_queue_report_markdown,
             commands::export_verification_queue_report_pdf,
             commands::extract_audio_waveform,
-            commands::auto_analyze_lookbook,
             commands::update_clip_metadata,
             commands::export_to_fcpxml,
             commands::export_director_pack,

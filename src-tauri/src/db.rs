@@ -56,13 +56,6 @@ pub struct Clip {
     pub shot_size: Option<String>,
     pub movement: Option<String>,
     pub manual_order: i32,
-    pub auto_motion: Option<String>,
-    pub auto_brightness: Option<String>,
-    pub auto_contrast: Option<String>,
-    pub auto_temp: Option<String>,
-    pub auto_tags_json: Option<String>,
-    pub auto_analyzed_at: Option<String>,
-    pub auto_analyzer_version: Option<String>,
     pub audio_envelope: Option<Vec<u8>>,
     pub lut_enabled: i32,
 }
@@ -257,30 +250,6 @@ impl Database {
             if !columns.contains(&"manual_order".to_string()) {
                 conn.execute(
                     "ALTER TABLE clips ADD COLUMN manual_order INTEGER NOT NULL DEFAULT 0",
-                    [],
-                )?;
-            }
-            if !columns.contains(&"auto_motion".to_string()) {
-                conn.execute("ALTER TABLE clips ADD COLUMN auto_motion TEXT", [])?;
-            }
-            if !columns.contains(&"auto_brightness".to_string()) {
-                conn.execute("ALTER TABLE clips ADD COLUMN auto_brightness TEXT", [])?;
-            }
-            if !columns.contains(&"auto_contrast".to_string()) {
-                conn.execute("ALTER TABLE clips ADD COLUMN auto_contrast TEXT", [])?;
-            }
-            if !columns.contains(&"auto_temp".to_string()) {
-                conn.execute("ALTER TABLE clips ADD COLUMN auto_temp TEXT", [])?;
-            }
-            if !columns.contains(&"auto_tags_json".to_string()) {
-                conn.execute("ALTER TABLE clips ADD COLUMN auto_tags_json TEXT", [])?;
-            }
-            if !columns.contains(&"auto_analyzed_at".to_string()) {
-                conn.execute("ALTER TABLE clips ADD COLUMN auto_analyzed_at TEXT", [])?;
-            }
-            if !columns.contains(&"auto_analyzer_version".to_string()) {
-                conn.execute(
-                    "ALTER TABLE clips ADD COLUMN auto_analyzer_version TEXT",
                     [],
                 )?;
             }
@@ -487,13 +456,6 @@ impl Database {
                 shot_size TEXT,
                 movement TEXT,
                 manual_order INTEGER NOT NULL DEFAULT 0,
-                auto_motion TEXT,
-                auto_brightness TEXT,
-                auto_contrast TEXT,
-                auto_temp TEXT,
-                auto_tags_json TEXT,
-                auto_analyzed_at TEXT,
-                auto_analyzer_version TEXT,
                 audio_envelope BLOB,
                 lut_enabled INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (project_id) REFERENCES projects(id)
@@ -752,46 +714,6 @@ impl Database {
                 id, project_id, root_id, rel_path, filename, file_path, size_bytes, created_at, duration_ms, fps, width, height,
                 video_codec, video_bitrate, format_name, audio_codec, audio_channels, audio_sample_rate,
                 camera_iso, camera_white_balance, audio_summary, timecode, status, rating, flag, notes,
-                shot_size, movement, manual_order, auto_motion, auto_brightness, auto_contrast, auto_temp,
-                auto_tags_json, auto_analyzed_at, auto_analyzer_version, audio_envelope, lut_enabled
-             )
-             VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                ?13, ?14, ?15, ?16, ?17, ?18,
-                ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-                ?27, ?28, ?29, ?30, ?31, ?32, ?33,
-                ?34, ?35, ?36, ?37, ?38
-             )
-             ON CONFLICT(id) DO UPDATE SET
-                project_id = excluded.project_id,
-                root_id = excluded.root_id,
-                rel_path = excluded.rel_path,
-                filename = excluded.filename,
-                file_path = excluded.file_path,
-                size_bytes = excluded.size_bytes,
-                created_at = excluded.created_at,
-                duration_ms = excluded.duration_ms,
-                fps = excluded.fps,
-                width = excluded.width,
-                height = excluded.height,
-                video_codec = excluded.video_codec,
-                video_bitrate = excluded.video_bitrate,
-                format_name = excluded.format_name,
-                audio_codec = excluded.audio_codec,
-                audio_channels = excluded.audio_channels,
-                audio_sample_rate = excluded.audio_sample_rate,
-                camera_iso = excluded.camera_iso,
-                camera_white_balance = excluded.camera_white_balance,
-                audio_summary = excluded.audio_summary,
-                timecode = excluded.timecode,
-                status = excluded.status,
-                auto_motion = excluded.auto_motion,
-                auto_brightness = excluded.auto_brightness,
-                auto_contrast = excluded.auto_contrast,
-                auto_temp = excluded.auto_temp,
-                auto_tags_json = excluded.auto_tags_json,
-                auto_analyzed_at = excluded.auto_analyzed_at,
-                auto_analyzer_version = excluded.auto_analyzer_version,
                 audio_envelope = excluded.audio_envelope
                 -- intentionally excluding lut_enabled from UPDATE to prevent rescans from overwriting it",
             params![
@@ -824,13 +746,6 @@ impl Database {
                 clip.shot_size,
                 clip.movement,
                 clip.manual_order,
-                clip.auto_motion,
-                clip.auto_brightness,
-                clip.auto_contrast,
-                clip.auto_temp,
-                clip.auto_tags_json,
-                clip.auto_analyzed_at,
-                clip.auto_analyzer_version,
                 clip.audio_envelope,
                 clip.lut_enabled,
             ],
@@ -844,8 +759,7 @@ impl Database {
             "SELECT id, project_id, root_id, rel_path, filename, file_path, size_bytes, created_at, duration_ms, fps, width, height,
                     video_codec, video_bitrate, format_name, audio_codec, audio_channels, audio_sample_rate,
                     camera_iso, camera_white_balance, audio_summary, timecode, status, rating, flag, notes,
-                    shot_size, movement, manual_order, auto_motion, auto_brightness, auto_contrast, auto_temp,
-                    auto_tags_json, auto_analyzed_at, auto_analyzer_version, audio_envelope, lut_enabled
+                    shot_size, movement, manual_order, audio_envelope, lut_enabled
              FROM clips WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], |row| {
@@ -879,15 +793,8 @@ impl Database {
                 shot_size: row.get(26)?,
                 movement: row.get(27)?,
                 manual_order: row.get(28)?,
-                auto_motion: row.get(29)?,
-                auto_brightness: row.get(30)?,
-                auto_contrast: row.get(31)?,
-                auto_temp: row.get(32)?,
-                auto_tags_json: row.get(33)?,
-                auto_analyzed_at: row.get(34)?,
-                auto_analyzer_version: row.get(35)?,
-                audio_envelope: row.get(36)?,
-                lut_enabled: row.get(37)?,
+                audio_envelope: row.get(29)?,
+                lut_enabled: row.get(30)?,
             })
         })?;
         match rows.next() {
@@ -903,8 +810,7 @@ impl Database {
             "SELECT id, project_id, root_id, rel_path, filename, file_path, size_bytes, created_at, duration_ms, fps, width, height,
                     video_codec, video_bitrate, format_name, audio_codec, audio_channels, audio_sample_rate,
                     camera_iso, camera_white_balance, audio_summary, timecode, status, rating, flag, notes,
-                    shot_size, movement, manual_order, auto_motion, auto_brightness, auto_contrast, auto_temp,
-                    auto_tags_json, auto_analyzed_at, auto_analyzer_version, audio_envelope, lut_enabled
+                    shot_size, movement, manual_order, audio_envelope, lut_enabled
              FROM clips WHERE project_id = ?1 ORDER BY filename",
         )?;
         let clips = stmt
@@ -939,15 +845,8 @@ impl Database {
                     shot_size: row.get(26)?,
                     movement: row.get(27)?,
                     manual_order: row.get(28)?,
-                    auto_motion: row.get(29)?,
-                    auto_brightness: row.get(30)?,
-                    auto_contrast: row.get(31)?,
-                    auto_temp: row.get(32)?,
-                    auto_tags_json: row.get(33)?,
-                    auto_analyzed_at: row.get(34)?,
-                    auto_analyzer_version: row.get(35)?,
-                    audio_envelope: row.get(36)?,
-                    lut_enabled: row.get(37)?,
+                    audio_envelope: row.get(29)?,
+                    lut_enabled: row.get(30)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -962,8 +861,7 @@ impl Database {
             "SELECT id, project_id, root_id, rel_path, filename, file_path, size_bytes, created_at, duration_ms, fps, width, height,
                     video_codec, video_bitrate, format_name, audio_codec, audio_channels, audio_sample_rate,
                     camera_iso, camera_white_balance, audio_summary, timecode, status, rating, flag, notes,
-                    shot_size, movement, manual_order, auto_motion, auto_brightness, auto_contrast, auto_temp,
-                    auto_tags_json, auto_analyzed_at, auto_analyzer_version, audio_envelope, lut_enabled
+                    shot_size, movement, manual_order, audio_envelope, lut_enabled
              FROM clips WHERE id IN ({})",
             placeholders
         );
@@ -1000,15 +898,8 @@ impl Database {
                     shot_size: row.get(26)?,
                     movement: row.get(27)?,
                     manual_order: row.get(28)?,
-                    auto_motion: row.get(29)?,
-                    auto_brightness: row.get(30)?,
-                    auto_contrast: row.get(31)?,
-                    auto_temp: row.get(32)?,
-                    auto_tags_json: row.get(33)?,
-                    auto_analyzed_at: row.get(34)?,
-                    auto_analyzer_version: row.get(35)?,
-                    audio_envelope: row.get(36)?,
-                    lut_enabled: row.get(37)?,
+                    audio_envelope: row.get(29)?,
+                    lut_enabled: row.get(30)?,
                 })
             })?
             .filter_map(|r| r.ok())
@@ -1078,41 +969,6 @@ impl Database {
         conn.execute(
             "UPDATE clips SET audio_envelope = ?1 WHERE id = ?2",
             params![envelope, clip_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn update_auto_tags(
-        &self,
-        clip_id: &str,
-        auto_motion: Option<String>,
-        auto_brightness: Option<String>,
-        auto_contrast: Option<String>,
-        auto_temp: Option<String>,
-        auto_tags_json: Option<String>,
-        auto_analyzer_version: Option<String>,
-    ) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "UPDATE clips
-             SET auto_motion = ?1,
-                 auto_brightness = ?2,
-                 auto_contrast = ?3,
-                 auto_temp = ?4,
-                 auto_tags_json = ?5,
-                 auto_analyzed_at = ?6,
-                 auto_analyzer_version = ?7
-             WHERE id = ?8",
-            params![
-                auto_motion,
-                auto_brightness,
-                auto_contrast,
-                auto_temp,
-                auto_tags_json,
-                chrono::Utc::now().to_rfc3339(),
-                auto_analyzer_version,
-                clip_id
-            ],
         )?;
         Ok(())
     }
@@ -1241,8 +1097,7 @@ impl Database {
             "SELECT c.id, c.project_id, c.root_id, c.rel_path, c.filename, c.file_path, c.size_bytes, c.created_at, c.duration_ms, c.fps, c.width, c.height,
                     c.video_codec, c.video_bitrate, c.format_name, c.audio_codec, c.audio_channels, c.audio_sample_rate,
                     c.camera_iso, c.camera_white_balance, c.audio_summary, c.timecode, c.status, c.rating, c.flag, c.notes,
-                    c.shot_size, c.movement, c.manual_order, c.auto_motion, c.auto_brightness, c.auto_contrast, c.auto_temp,
-                    c.auto_tags_json, c.auto_analyzed_at, c.auto_analyzer_version, c.audio_envelope
+                    c.shot_size, c.movement, c.manual_order, c.audio_envelope, c.lut_enabled
              FROM block_clips bc
              JOIN clips c ON c.id = bc.clip_id
              WHERE bc.block_id = ?1
@@ -1280,15 +1135,8 @@ impl Database {
                     shot_size: row.get(26)?,
                     movement: row.get(27)?,
                     manual_order: row.get(28)?,
-                    auto_motion: row.get(29)?,
-                    auto_brightness: row.get(30)?,
-                    auto_contrast: row.get(31)?,
-                    auto_temp: row.get(32)?,
-                    auto_tags_json: row.get(33)?,
-                    auto_analyzed_at: row.get(34)?,
-                    auto_analyzer_version: row.get(35)?,
-                    audio_envelope: row.get(36)?,
-                    lut_enabled: row.get(37)?,
+                    audio_envelope: row.get(29)?,
+                    lut_enabled: row.get(30)?,
                 })
             })?
             .filter_map(|r| r.ok())

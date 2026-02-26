@@ -1406,91 +1406,6 @@ pub async fn extract_audio_waveform(
 }
 
 #[tauri::command]
-pub async fn auto_analyze_lookbook(
-    project_id: String,
-    recompute: Option<bool>,
-    app: AppHandle,
-    state: State<'_, Arc<AppState>>,
-) -> Result<String, String> {
-    let (job_id, cancel_flag) = state.job_manager.create_job("auto_analyze", None);
-    state
-        .job_manager
-        .mark_running(&job_id, "Auto analyze started");
-    emit_job_state(&app, &state.job_manager, &job_id);
-
-    let clips = state.db.get_clips(&project_id).map_err(|e| e.to_string())?;
-    let total = clips.len().max(1);
-    for (idx, clip) in clips.iter().enumerate() {
-        if cancel_flag.load(Ordering::Relaxed) {
-            let _ = state.job_manager.cancel_job(&job_id);
-            emit_job_state(&app, &state.job_manager, &job_id);
-            return Ok(job_id);
-        }
-        if !recompute.unwrap_or(false)
-            && clip.auto_motion.is_some()
-            && clip.auto_brightness.is_some()
-        {
-            continue;
-        }
-
-        // Cheap deterministic heuristics from existing metadata.
-        let motion = if clip.fps >= 48.0 {
-            "high-motion"
-        } else if clip.fps >= 30.0 {
-            "moving"
-        } else {
-            "static"
-        };
-        let brightness = if clip.video_bitrate > 250_000_000 {
-            "bright"
-        } else if clip.video_bitrate > 0 {
-            "normal"
-        } else {
-            "low"
-        };
-        let contrast = if clip.video_codec.contains("raw") || clip.video_codec.contains("braw") {
-            "flat"
-        } else {
-            "normal"
-        };
-        let temp = "neutral";
-        let tags_json = serde_json::json!({
-            "auto_motion": motion,
-            "auto_brightness": brightness,
-            "auto_contrast": contrast,
-            "auto_temp": temp,
-        })
-        .to_string();
-
-        state
-            .db
-            .update_auto_tags(
-                &clip.id,
-                Some(motion.to_string()),
-                Some(brightness.to_string()),
-                Some(contrast.to_string()),
-                Some(temp.to_string()),
-                Some(tags_json),
-                Some("v1-lite".to_string()),
-            )
-            .map_err(|e| e.to_string())?;
-
-        state.job_manager.update_progress(
-            &job_id,
-            (idx + 1) as f32 / total as f32,
-            Some(format!("Analyzed {}/{} clips", idx + 1, total)),
-        );
-        emit_job_state(&app, &state.job_manager, &job_id);
-    }
-
-    state
-        .job_manager
-        .mark_done(&job_id, "Auto analyze complete");
-    emit_job_state(&app, &state.job_manager, &job_id);
-    Ok(job_id)
-}
-
-#[tauri::command]
 pub async fn generate_lut_thumbnails(
     project_id: String,
     app: AppHandle,
@@ -2405,15 +2320,6 @@ fn build_clip_from_file(
                 shot_size: existing.as_ref().and_then(|c| c.shot_size.clone()),
                 movement: existing.as_ref().and_then(|c| c.movement.clone()),
                 manual_order: existing.as_ref().map(|c| c.manual_order).unwrap_or(0),
-                auto_motion: existing.as_ref().and_then(|c| c.auto_motion.clone()),
-                auto_brightness: existing.as_ref().and_then(|c| c.auto_brightness.clone()),
-                auto_contrast: existing.as_ref().and_then(|c| c.auto_contrast.clone()),
-                auto_temp: existing.as_ref().and_then(|c| c.auto_temp.clone()),
-                auto_tags_json: existing.as_ref().and_then(|c| c.auto_tags_json.clone()),
-                auto_analyzed_at: existing.as_ref().and_then(|c| c.auto_analyzed_at.clone()),
-                auto_analyzer_version: existing
-                    .as_ref()
-                    .and_then(|c| c.auto_analyzer_version.clone()),
                 audio_envelope: existing.as_ref().and_then(|c| c.audio_envelope.clone()),
                 lut_enabled: existing.as_ref().map(|c| c.lut_enabled).unwrap_or(0),
             }
@@ -2456,15 +2362,6 @@ fn build_clip_from_file(
                 shot_size: existing.as_ref().and_then(|c| c.shot_size.clone()),
                 movement: existing.as_ref().and_then(|c| c.movement.clone()),
                 manual_order: existing.as_ref().map(|c| c.manual_order).unwrap_or(0),
-                auto_motion: existing.as_ref().and_then(|c| c.auto_motion.clone()),
-                auto_brightness: existing.as_ref().and_then(|c| c.auto_brightness.clone()),
-                auto_contrast: existing.as_ref().and_then(|c| c.auto_contrast.clone()),
-                auto_temp: existing.as_ref().and_then(|c| c.auto_temp.clone()),
-                auto_tags_json: existing.as_ref().and_then(|c| c.auto_tags_json.clone()),
-                auto_analyzed_at: existing.as_ref().and_then(|c| c.auto_analyzed_at.clone()),
-                auto_analyzer_version: existing
-                    .as_ref()
-                    .and_then(|c| c.auto_analyzer_version.clone()),
                 audio_envelope: existing.as_ref().and_then(|c| c.audio_envelope.clone()),
                 lut_enabled: existing.as_ref().map(|c| c.lut_enabled).unwrap_or(0),
             }
@@ -2782,13 +2679,6 @@ mod tests {
             shot_size: None,
             movement: None,
             manual_order: 0,
-            auto_motion: None,
-            auto_brightness: None,
-            auto_contrast: None,
-            auto_temp: None,
-            auto_tags_json: None,
-            auto_analyzed_at: None,
-            auto_analyzer_version: None,
             audio_envelope: None,
             lut_enabled: 0,
         }
