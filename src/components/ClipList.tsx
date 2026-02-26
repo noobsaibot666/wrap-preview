@@ -201,8 +201,8 @@ function ClipCard({
                         <Film size={14} style={{ opacity: 0.6 }} /> {clip.filename}
                     </span>
                 </div>
-                    <div className="clip-card-header-right">
-                        <div className="clip-rating">
+                <div className="clip-card-header-right">
+                    <div className="clip-rating">
                         {[1, 2, 3, 4, 5].map((star) => (
                             <Star
                                 key={star}
@@ -211,7 +211,7 @@ function ClipCard({
                                 onClick={() => onUpdateMetadata(clip.id, { rating: star === clip.rating ? 0 : star })}
                             />
                         ))}
-                        </div>
+                    </div>
                     <div className="clip-flags">
                         <button
                             className={`btn-flag btn-lut ${clip.lut_enabled === 1 ? 'active' : ''}`}
@@ -277,10 +277,11 @@ function ClipCard({
             <div className="clip-card-footer">
                 <div className="clip-metadata-compact">
                     {metadataTags.map((tag) => (
-                        <span key={`${clip.id}-${tag.label}-${tag.value}`} className={`metadata-tag ${tag.highlight ? "highlight-tag" : ""}`}>
+                        <span key={`${clip.id}-${tag.label}-${tag.value}`} className={`metadata-tag ${tag.highlight ? "highlight-tag" : ""} ${tag.value === "POSSIBLE CLIP" ? "danger-tag" : tag.value === "VERY LOW" ? "warn-tag" : ""}`}>
                             {tag.value}
                         </span>
                     ))}
+                    {!clip.timecode && <span className="metadata-tag danger-tag">NO TC</span>}
                     <div className="clip-card-status-wrapper">
                         <span className={`clip-status-dot ${clip.status}`} />
                     </div>

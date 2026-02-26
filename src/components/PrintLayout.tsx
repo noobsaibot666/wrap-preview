@@ -98,6 +98,9 @@ function PrintClipRow({
                     (e.target as HTMLImageElement).src = thumbnailCache[cacheKey];
                   }
                 }} />
+                {idx === 0 && clip.lut_enabled === 1 && (
+                  <div className="lut-badge-label">LUT ENABLED</div>
+                )}
               </div>
             );
           }
@@ -259,6 +262,22 @@ const printStyles = `
     flex: 1;
     aspect-ratio: 16 / 9;
     overflow: hidden;
+    position: relative;
+  }
+  
+  .lut-badge-label {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    background: #000;
+    color: #fff;
+    font-size: 6pt;
+    font-weight: 800;
+    padding: 1px 4px;
+    border-radius: 2px;
+    border: 0.5pt solid #fff;
+    pointer-events: none;
+    line-height: 1;
   }
 
   .print-thumb img {

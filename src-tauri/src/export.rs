@@ -222,7 +222,9 @@ fn write_project_sequence(
     }
     let seq_format = clips
         .first()
-        .and_then(|first| format_map.get(&format!("{}x{}@{}", first.width, first.height, first.fps)))
+        .and_then(|first| {
+            format_map.get(&format!("{}x{}@{}", first.width, first.height, first.fps))
+        })
         .cloned()
         .unwrap_or_else(|| "f1".to_string());
     let total_duration_ms: u64 = clips.iter().map(|c| c.duration_ms).sum();
@@ -295,7 +297,10 @@ fn build_block_groups(clips: &[Clip]) -> Vec<(String, Vec<Clip>)> {
     let mut groups: Vec<(String, Vec<Clip>)> = Vec::new();
     for clip in clips {
         if let Some((_, block_clips)) = groups.last_mut() {
-            let split = match (block_clips.last().and_then(clip_timestamp), clip_timestamp(clip)) {
+            let split = match (
+                block_clips.last().and_then(clip_timestamp),
+                clip_timestamp(clip),
+            ) {
                 (Some(prev), Some(cur)) => cur - prev > 60,
                 _ => false,
             };
@@ -388,6 +393,7 @@ mod tests {
             auto_analyzed_at: None,
             auto_analyzer_version: None,
             audio_envelope: None,
+            lut_enabled: 0,
         }
     }
 

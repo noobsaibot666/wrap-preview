@@ -333,8 +333,9 @@ export function BlocksView({
                       <span className="metadata-tag">Cameras {stats.cameraCount}</span>
                       <span className="metadata-tag">Audio {stats.audioPresentPct}%</span>
                       <span className="metadata-tag">Confidence {(item.block.confidence * 100).toFixed(0)}%</span>
-                      {stats.mixedFps && <span className="metadata-tag warn">Mixed FPS</span>}
-                      {stats.missingTimecode && <span className="metadata-tag warn">Missing Timecode</span>}
+                      {stats.mixedFps && <span className="metadata-tag danger-tag">Mixed FPS</span>}
+                      {stats.missingTimecode && <span className="metadata-tag danger-tag">No TC</span>}
+                      {stats.audioPresentPct < 100 && <span className="metadata-tag warn-tag">Partial Audio ({stats.audioPresentPct}%)</span>}
                     </div>
 
                     <div style={{ display: "grid", gap: 10 }}>

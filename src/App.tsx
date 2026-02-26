@@ -74,8 +74,8 @@ function AppContent() {
   const TOUR_VERSION = "1.0.0-beta.1";
   const TOUR_SEEN_KEY = "wp_has_seen_tour";
   const TOUR_VERSION_KEY = "wp_tour_version";
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState("");
+  const [projectId, setProjectId] = useState<string | null>(() => localStorage.getItem("wp_project_id"));
+  const [projectName, setProjectName] = useState(() => localStorage.getItem("wp_project_name") || "");
   const [clips, setClips] = useState<ClipWithThumbnails[]>([]);
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [scanning, setScanning] = useState(false);
@@ -104,6 +104,7 @@ function AppContent() {
   const [lastVerificationJobId, setLastVerificationJobId] = useState<string | null>(null);
   const [uiError, setUiError] = useState<{ title: string; hint: string } | null>(null);
   const [tourRun, setTourRun] = useState(false);
+  const [brandProfile, setBrandProfile] = useState<any>(null);
   const [helpMenuOpen, setHelpMenuOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [openExportAfterScan, setOpenExportAfterScan] = useState(false);
@@ -152,6 +153,35 @@ function AppContent() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (projectId) {
+      localStorage.setItem("wp_project_id", projectId);
+      localStorage.setItem("wp_project_name", projectName);
+    } else {
+      localStorage.removeItem("wp_project_id");
+      localStorage.removeItem("wp_project_name");
+    }
+  }, [projectId, projectName]);
+
+  useEffect(() => {
+    if (projectId) {
+      const loadBrand = async () => {
+        try {
+          const p = await invoke<any>("get_project", { id: projectId });
+          if (p && p.root_path) {
+            const profile = await invoke<any>("load_brand_profile", { projectPath: p.root_path });
+            setBrandProfile(profile);
+          }
+        } catch (e) {
+          console.error("Failed to load brand:", e);
+        }
+      };
+      loadBrand();
+    } else {
+      setBrandProfile(null);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
     const seen = localStorage.getItem(TOUR_SEEN_KEY) === "true";
     const version = localStorage.getItem(TOUR_VERSION_KEY);
     if (!seen || version !== TOUR_VERSION) {
@@ -184,10 +214,17 @@ function AppContent() {
 
   useEffect(() => {
     invoke<AppInfo>("get_app_info").then(setAppInfo).catch(console.error);
+
+    // Restore session on mount
+    const savedPid = localStorage.getItem("wp_project_id");
+    if (savedPid) {
+      refreshProjectClips(savedPid).catch(console.error);
+      refreshProjectRoots(savedPid).catch(console.error);
+    }
   }, []);
 
   // State for delayed actions
-  const [postScanTab, setPostScanTab] = useState<"shot-planner" | "media-workspace" | "contact" | "blocks" | null>(null);
+  const [postScanTab, setPostScanTab] = useState<"shot-planner" | "media-workspace" | "contact" | "blocks" | "all" | null>(null);
 
   const [projectLut, setProjectLut] = useState<{ path: string; name: string; hash: string } | null>(null);
   const [lutRenderNonce, setLutRenderNonce] = useState(0);
@@ -558,7 +595,7 @@ function AppContent() {
     };
   }, [projectId, refreshProjectClips]);
 
-  const handleSelectFolder = useCallback(async (targetTab?: "shot-planner" | "media-workspace" | "contact" | "blocks") => {
+  const handleSelectFolder = useCallback(async (targetTab?: "shot-planner" | "media-workspace" | "contact" | "blocks" | "all") => {
     const selected = await open({
       directory: true,
       multiple: false,
@@ -841,7 +878,7 @@ function AppContent() {
             projectName={projectName}
             clips={sortedClips.filter(c => selectedClipIds.has(c.clip.id) && c.clip.flag !== "reject")}
             thumbnailCache={thumbnailCache}
-            brandProfile={null}
+            brandProfile={brandProfile}
             logoSrc={appLogo}
             appVersion={appInfo?.version || "unknown"}
             thumbCount={thumbCount}
@@ -951,19 +988,19 @@ function AppContent() {
       </header>
 
       <div className="app-content">
-        {activeTab !== 'home' && (
+        {activeTab !== 'home' && activeTab !== 'shot-planner' && (
           <nav className="app-tabs-nav">
-            <button className={`nav-tab ${activeTab === 'media-workspace' || activeTab === 'safe-copy' || activeTab === 'blocks' ? 'active' : ''}`} onClick={() => setActiveTab('media-workspace')}>
-              Workspace
+            <button className={`nav-tab ${activeTab === 'media-workspace' ? 'active' : ''}`} onClick={() => setActiveTab('media-workspace')}>
+              <BriefcaseBusiness size={14} /> Workspace
             </button>
             <button className={`nav-tab ${activeTab === 'contact' ? 'active' : ''}`} onClick={() => setActiveTab('contact')}>
-              Clip Review
-            </button>
-            <button className={`nav-tab ${activeTab === 'shot-planner' ? 'active' : ''}`} onClick={() => setActiveTab('shot-planner')}>
-              Shot Planner
+              <Camera size={14} /> Clip Review
             </button>
             <button className={`nav-tab ${activeTab === 'blocks' ? 'active' : ''}`} onClick={() => setActiveTab('blocks')}>
-              Blocks
+              <Boxes size={14} /> Blocks
+            </button>
+            <button className={`nav-tab ${activeTab === 'safe-copy' ? 'active' : ''}`} onClick={() => setActiveTab('safe-copy')}>
+              <ShieldCheck size={14} /> Safe Copy
             </button>
             <button
               className={`nav-tab ${showExportPanel ? 'active' : ''}`}
@@ -975,7 +1012,7 @@ function AppContent() {
                 setShowExportPanel(true);
               }}
             >
-              Delivery
+              <FileDown size={14} /> Delivery
             </button>
           </nav>
         )}
@@ -984,7 +1021,7 @@ function AppContent() {
             <strong>{uiError.title}</strong> {uiError.hint}
           </div>
         )}
-        {activeTab === 'contact' || activeTab === 'all' ? (
+        {activeTab === 'contact' || activeTab === 'all' || activeTab === 'shot-planner' ? (
           projectId ? (
             <div className="media-workspace">
               <div className="stats-bar">
@@ -1154,7 +1191,7 @@ function AppContent() {
                 shotSizeOptions={[...SHOT_SIZE_CANONICAL, ...(enableOptionalShotTags ? SHOT_SIZE_OPTIONAL : [])]}
                 movementOptions={[...MOVEMENT_CANONICAL]}
                 lookbookSortMode={lookbookSortMode}
-                groupByShotSize={false}
+                groupByShotSize={activeTab === 'shot-planner'}
                 onPromoteClip={handlePromoteClip}
                 onPlayClip={handlePlayClip}
                 playingClipId={playingClipId}
@@ -1166,10 +1203,16 @@ function AppContent() {
           ) : (
             <div className="onboarding-container" style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <div className="empty-state-card premium-card" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
-                <div className="module-icon" style={{ marginBottom: 24, transform: 'scale(1.5)' }}><Camera size={48} strokeWidth={1} /></div>
-                <h2>Ready to Review?</h2>
-                <p style={{ opacity: 0.6, marginBottom: 32 }}>Select a media folder to analyze thumbnails, metadata, and shot sequencing.</p>
-                <button className="btn btn-primary btn-lg" onClick={() => handleSelectFolder("contact")} disabled={scanning}>
+                <div className="module-icon" style={{ marginBottom: 24, transform: 'scale(1.5)' }}>
+                  {activeTab === 'shot-planner' ? <ImageIcon size={48} strokeWidth={1} /> : <Camera size={48} strokeWidth={1} />}
+                </div>
+                <h2>{activeTab === 'shot-planner' ? 'Shot Planner' : 'Ready to Review?'}</h2>
+                <p style={{ opacity: 0.6, marginBottom: 32 }}>
+                  {activeTab === 'shot-planner'
+                    ? 'References, sequencing, vertical plans. Load clips to begin.'
+                    : 'Select a media folder to analyze thumbnails, metadata, and shot sequencing.'}
+                </p>
+                <button className="btn btn-primary btn-lg" onClick={() => handleSelectFolder(activeTab)} disabled={scanning}>
                   {scanning ? <div className="spinner" /> : <FolderOpen size={18} />}
                   <span>{scanning ? "Scanning..." : "Open Media Folder"}</span>
                 </button>
@@ -1207,7 +1250,7 @@ function AppContent() {
               </div>
             </div>
           )
-        ) : activeTab === 'shot-planner' ? (
+        ) : activeTab === 'safe-copy' ? (
           <SafeCopy projectId={projectId ?? "__global__"} onJobCreated={setLastVerificationJobId} onError={setUiError} />
         ) : activeTab === 'media-workspace' ? (
           <div className="onboarding-container">
@@ -1349,7 +1392,10 @@ function AppContent() {
                 <div className="onboarding-grid">
                   <div
                     className={`module-card tour-contact-module ${scanning ? 'disabled' : ''} premium-card`}
-                    onClick={scanning ? undefined : () => setActiveTab("all")}
+                    onClick={scanning ? undefined : () => {
+                      if (projectId) setActiveTab("shot-planner");
+                      else handleSelectFolder("shot-planner");
+                    }}
                     style={{ "--corner-color": "var(--color-accent-amethyst-soft)", "--card-accent": "var(--color-accent-amethyst)", "--card-accent-soft": "var(--color-accent-amethyst-soft)" } as any}
                   >
                     <div className="module-icon">
@@ -1365,6 +1411,7 @@ function AppContent() {
                   </div>
                 </div>
               </div>
+
 
               <div className="onboarding-phase">
                 <div className="onboarding-grid">

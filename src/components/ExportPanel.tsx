@@ -275,16 +275,26 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
           <button onClick={onClose} className="btn btn-secondary">
             Cancel
           </button>
-          <button onClick={handleDirectorPack} disabled={isExporting || !deliveryType || !scope || deliveryType !== "director_pack"} className="btn btn-accent btn-glow">
-            Director Pack
-            <Package size={18} />
-          </button>
-          <button onClick={handleExport} disabled={isExporting || !deliveryType || !scope || deliveryType !== "resolve"} className="btn btn-primary">
-            <span className={isExporting ? "shimmer-text" : ""}>
-              {isExporting ? "Exporting..." : "Export Resolve FCPXML"}
-            </span>
-            {!isExporting && <FileDown size={18} />}
-          </button>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button
+              onClick={handleDirectorPack}
+              disabled={isExporting || !deliveryType || !scope || deliveryType !== "director_pack"}
+              className={`btn btn-accent btn-glow ${deliveryType === "director_pack" ? "" : "opacity-30"}`}
+            >
+              Step 3: Export Director Pack
+              <Package size={18} />
+            </button>
+            <button
+              onClick={handleExport}
+              disabled={isExporting || !deliveryType || !scope || deliveryType !== "resolve"}
+              className={`btn btn-primary ${deliveryType === "resolve" ? "" : "opacity-30"}`}
+            >
+              <span className={isExporting ? "shimmer-text" : ""}>
+                {isExporting ? "Exporting..." : "Step 3: Export FCPXML"}
+              </span>
+              {!isExporting && <FileDown size={18} />}
+            </button>
+          </div>
         </div>
       </div>
     </div>

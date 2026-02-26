@@ -89,7 +89,10 @@ pub fn build_scene_blocks(
         }
     }
 
-    BuiltBlocks { blocks, memberships }
+    BuiltBlocks {
+        blocks,
+        memberships,
+    }
 }
 
 fn compute_confidence(clip_count: usize, camera_count: usize) -> f32 {
@@ -189,6 +192,7 @@ mod tests {
             auto_analyzed_at: None,
             auto_analyzer_version: None,
             audio_envelope: None,
+            lut_enabled: 0,
         }
     }
 
@@ -207,8 +211,14 @@ mod tests {
 
     #[test]
     fn infers_camera_labels() {
-        assert_eq!(infer_camera_label("clip_CAMA_001.mov"), Some("Cam A".to_string()));
-        assert_eq!(infer_camera_label("clip_B_001.mov"), Some("Cam B".to_string()));
+        assert_eq!(
+            infer_camera_label("clip_CAMA_001.mov"),
+            Some("Cam A".to_string())
+        );
+        assert_eq!(
+            infer_camera_label("clip_B_001.mov"),
+            Some("Cam B".to_string())
+        );
         assert_eq!(infer_camera_label("clip_unknown_001.mov"), None);
     }
 }

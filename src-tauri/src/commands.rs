@@ -1,6 +1,9 @@
-use crate::clustering;
-use crate::db::{Clip, Database, Project, ProjectRoot, SceneBlock, SceneDetectionCache, Thumbnail, VerificationJob, VerificationItem, VerificationQueueItem};
 use crate::audio;
+use crate::clustering;
+use crate::db::{
+    Clip, Database, Project, ProjectRoot, SceneBlock, SceneDetectionCache, Thumbnail,
+    VerificationItem, VerificationJob, VerificationQueueItem,
+};
 use crate::ffprobe;
 use crate::jobs::JobInfo;
 use crate::scanner;
@@ -82,7 +85,10 @@ pub async fn list_project_roots(
     project_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<ProjectRoot>, String> {
-    state.db.list_project_roots(&project_id).map_err(|e| e.to_string())
+    state
+        .db
+        .list_project_roots(&project_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -157,10 +163,8 @@ pub async fn get_clips(
     let roots = db
         .list_project_roots(&project_id)
         .map_err(|e| format!("Failed to get project roots: {}", e))?;
-    let root_map: std::collections::HashMap<String, String> = roots
-        .into_iter()
-        .map(|r| (r.id, r.root_path))
-        .collect();
+    let root_map: std::collections::HashMap<String, String> =
+        roots.into_iter().map(|r| (r.id, r.root_path)).collect();
 
     let clips = db
         .get_clips(&project_id)
@@ -193,7 +197,9 @@ pub async fn extract_thumbnails(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    let perf_id = state.perf_log.start("extract_thumbnails", Some(project_id.clone()));
+    let perf_id = state
+        .perf_log
+        .start("extract_thumbnails", Some(project_id.clone()));
     let db = &state.db;
     let cache_dir = state.cache_dir.clone();
     let (job_id, cancel_flag) = state.job_manager.create_job("thumbnails", None);
@@ -217,18 +223,25 @@ pub async fn extract_thumbnails(
         }
         if clip.status == "fail" || clip.duration_ms == 0 {
             // Emit progress even for skipped clips
-            let _ = app.emit("thumbnail-progress", ThumbnailProgress {
-                project_id: project_id.clone(),
-                clip_id: clip.id.clone(),
-                clip_index: clip_idx,
-                total_clips,
-                status: "skipped".to_string(),
-                thumbnails: vec![],
-            });
+            let _ = app.emit(
+                "thumbnail-progress",
+                ThumbnailProgress {
+                    project_id: project_id.clone(),
+                    clip_id: clip.id.clone(),
+                    clip_index: clip_idx,
+                    total_clips,
+                    status: "skipped".to_string(),
+                    thumbnails: vec![],
+                },
+            );
             continue;
         }
 
-        let permit = semaphore.clone().acquire_owned().await.map_err(|e| e.to_string())?;
+        let permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|e| e.to_string())?;
 
         // Extract 7 thumbnails to support all layout options (3, 5, 7)
         let timestamps = thumbnail::calculate_timestamps(clip.duration_ms, 7);
@@ -239,7 +252,10 @@ pub async fn extract_thumbnails(
         }
         if std::path::Path::new(&clip_cache_dir).exists() {
             if let Err(e) = std::fs::remove_dir_all(&clip_cache_dir) {
-                eprintln!("thumbnail: failed to clear cache dir {}: {}", clip_cache_dir, e);
+                eprintln!(
+                    "thumbnail: failed to clear cache dir {}: {}",
+                    clip_cache_dir, e
+                );
             }
         }
         std::fs::create_dir_all(&clip_cache_dir).ok();
@@ -283,14 +299,17 @@ pub async fn extract_thumbnails(
             }
         }
 
-        let _ = app.emit("thumbnail-progress", ThumbnailProgress {
-            project_id: project_id.clone(),
-            clip_id: clip.id.clone(),
-            clip_index: clip_idx,
-            total_clips,
-            status: "done".to_string(),
-            thumbnails: thumb_results,
-        });
+        let _ = app.emit(
+            "thumbnail-progress",
+            ThumbnailProgress {
+                project_id: project_id.clone(),
+                clip_id: clip.id.clone(),
+                clip_index: clip_idx,
+                total_clips,
+                status: "done".to_string(),
+                thumbnails: thumb_results,
+            },
+        );
         state.job_manager.update_progress(
             &job_id,
             (clip_idx + 1) as f32 / total_clips.max(1) as f32,
@@ -301,9 +320,12 @@ pub async fn extract_thumbnails(
         drop(permit);
     }
 
-    let _ = app.emit("thumbnail-complete", serde_json::json!({
-        "project_id": project_id,
-    }));
+    let _ = app.emit(
+        "thumbnail-complete",
+        serde_json::json!({
+            "project_id": project_id,
+        }),
+    );
 
     if !crate::jobs::JobManager::is_cancelled(&cancel_flag) {
         state
@@ -328,8 +350,8 @@ pub async fn get_project(
 
 #[tauri::command]
 pub async fn read_thumbnail(path: String) -> Result<String, String> {
-    let bytes = std::fs::read(&path)
-        .map_err(|e| format!("Failed to read thumbnail at {}: {}", path, e))?;
+    let bytes =
+        std::fs::read(&path).map_err(|e| format!("Failed to read thumbnail at {}: {}", path, e))?;
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
     Ok(format!("data:image/jpeg;base64,{}", b64))
 }
@@ -349,7 +371,8 @@ pub async fn save_image_data_url(path: String, data_url: String) -> Result<(), S
 #[tauri::command]
 pub async fn load_brand_profile(project_path: String) -> Result<serde_json::Value, String> {
     let brand_path = format!("{}/brand/profile.json", project_path);
-    let fallback_path = std::path::Path::new(&project_path).parent()
+    let fallback_path = std::path::Path::new(&project_path)
+        .parent()
         .map(|p| format!("{}/brand/profile.json", p.display()))
         .unwrap_or_default();
 
@@ -363,8 +386,7 @@ pub async fn load_brand_profile(project_path: String) -> Result<serde_json::Valu
 
     let content = std::fs::read_to_string(&profile_path)
         .map_err(|e| format!("Failed to read brand profile: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse brand profile: {}", e))
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse brand profile: {}", e))
 }
 
 #[tauri::command]
@@ -408,7 +430,10 @@ pub async fn save_brand_logo(project_path: String, _content: String) -> Result<(
 }
 
 #[tauri::command]
-pub async fn get_job(job_id: String, state: State<'_, Arc<AppState>>) -> Result<Option<JobInfo>, String> {
+pub async fn get_job(
+    job_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<JobInfo>, String> {
     Ok(state.job_manager.get_job(&job_id))
 }
 
@@ -441,12 +466,15 @@ pub async fn start_verification(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    let perf_id = state
-        .perf_log
-        .start("start_verification", Some(format!("{} -> {}", source_root, dest_root)));
+    let perf_id = state.perf_log.start(
+        "start_verification",
+        Some(format!("{} -> {}", source_root, dest_root)),
+    );
     let app_state = state.inner().clone();
     let (job_id, cancel_flag) = app_state.job_manager.create_job("verification", None);
-    app_state.job_manager.mark_running(&job_id, "Verification started");
+    app_state
+        .job_manager
+        .mark_running(&job_id, "Verification started");
     emit_job_state(&app, &app_state.job_manager, &job_id);
 
     let db = Arc::new(app_state.db.clone());
@@ -469,13 +497,17 @@ pub async fn start_verification(
         .await;
 
         if crate::jobs::JobManager::is_cancelled(&cancel_flag) {
-            app_state_for_task
-                .job_manager
-                .update_progress(&job_id_clone, 1.0, Some("Cancelled".to_string()));
+            app_state_for_task.job_manager.update_progress(
+                &job_id_clone,
+                1.0,
+                Some("Cancelled".to_string()),
+            );
             let _ = app_state_for_task.job_manager.cancel_job(&job_id_clone);
         } else if let Err(err) = result {
             eprintln!("verification job failed: {}", err);
-            app_state_for_task.job_manager.mark_failed(&job_id_clone, &err);
+            app_state_for_task
+                .job_manager
+                .mark_failed(&job_id_clone, &err);
         } else {
             app_state_for_task
                 .job_manager
@@ -484,7 +516,9 @@ pub async fn start_verification(
         emit_job_state(&app_clone, &app_state_for_task.job_manager, &job_id_clone);
     });
 
-    state.perf_log.end(&perf_id, "ok", Some(format!("job_id={}", job_id)));
+    state
+        .perf_log
+        .end(&perf_id, "ok", Some(format!("job_id={}", job_id)));
     Ok(job_id)
 }
 
@@ -493,7 +527,10 @@ pub async fn get_verification_job(
     job_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<VerificationJob>, String> {
-    state.db.get_verification_job(&job_id).map_err(|e| e.to_string())
+    state
+        .db
+        .get_verification_job(&job_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -501,7 +538,10 @@ pub async fn get_verification_items(
     job_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<VerificationItem>, String> {
-    state.db.get_verification_items(&job_id).map_err(|e| e.to_string())
+    state
+        .db
+        .get_verification_items(&job_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -642,9 +682,10 @@ pub async fn start_verification_queue(
                         pending,
                         &mode_upper,
                     );
-                    let _ = app_state
-                        .db
-                        .attach_queue_job(&project_id, pending.idx, &cancelled_job_id);
+                    let _ =
+                        app_state
+                            .db
+                            .attach_queue_job(&project_id, pending.idx, &cancelled_job_id);
                 }
                 break;
             }
@@ -708,12 +749,16 @@ pub async fn start_verification_queue(
                     .map(|j| j.status)
                     .unwrap_or_else(|| "FAILED".to_string());
                 if status == "DONE" {
-                    app_state.job_manager.mark_done(&child_job_id, "Verification complete");
+                    app_state
+                        .job_manager
+                        .mark_done(&child_job_id, "Verification complete");
                 } else if status == "CANCELLED" {
                     let _ = app_state.job_manager.cancel_job(&child_job_id);
                 } else {
                     failed_count += 1;
-                    app_state.job_manager.mark_failed(&child_job_id, "Verification failed");
+                    app_state
+                        .job_manager
+                        .mark_failed(&child_job_id, "Verification failed");
                 }
             }
             emit_job_state(&app_clone, &app_state.job_manager, &child_job_id);
@@ -769,9 +814,15 @@ pub async fn export_verification_report_json(
     save_path: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let job = state.db.get_verification_job(&job_id).map_err(|e| e.to_string())?
+    let job = state
+        .db
+        .get_verification_job(&job_id)
+        .map_err(|e| e.to_string())?
         .ok_or("Job not found")?;
-    let items = state.db.get_verification_items(&job_id).map_err(|e| e.to_string())?;
+    let items = state
+        .db
+        .get_verification_items(&job_id)
+        .map_err(|e| e.to_string())?;
 
     let report = serde_json::json!({
         "job": job,
@@ -797,14 +848,39 @@ pub async fn export_verification_report_markdown(
         .get_verification_job(&job_id)
         .map_err(|e| e.to_string())?
         .ok_or("Job not found")?;
-    let items = state.db.get_verification_items(&job_id).map_err(|e| e.to_string())?;
+    let items = state
+        .db
+        .get_verification_items(&job_id)
+        .map_err(|e| e.to_string())?;
+
+    let project = state
+        .db
+        .get_project(&job.project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Project not found")?;
+    let brand_name = match load_brand_profile(project.root_path.clone()).await {
+        Ok(profile) => profile["name"]
+            .as_str()
+            .unwrap_or("Wrap Preview")
+            .to_string(),
+        Err(_) => "Wrap Preview".to_string(),
+    };
 
     let mut md = String::new();
-    md.push_str("# Wrap Preview Verification Report\n\n");
-    md.push_str(&format!("- App: Wrap Preview v{}\n", env!("CARGO_PKG_VERSION")));
+    md.push_str(&format!("# {} Verification Report\n\n", brand_name));
+    md.push_str(&format!(
+        "- App: Wrap Preview v{}\n",
+        env!("CARGO_PKG_VERSION")
+    ));
     md.push_str(&format!("- Date: {}\n", chrono::Utc::now().to_rfc3339()));
-    md.push_str(&format!("- Source: {} ({})\n", job.source_label, job.source_root));
-    md.push_str(&format!("- Destination: {} ({})\n", job.dest_label, job.dest_root));
+    md.push_str(&format!(
+        "- Source: {} ({})\n",
+        job.source_label, job.source_root
+    ));
+    md.push_str(&format!(
+        "- Destination: {} ({})\n",
+        job.dest_label, job.dest_root
+    ));
     md.push_str(&format!("- Mode: {}\n\n", job.mode));
     md.push_str("## Summary\n\n");
     md.push_str(&format!("- Verified: {}\n", job.verified_ok_count));
@@ -812,12 +888,20 @@ pub async fn export_verification_report_markdown(
     md.push_str(&format!("- Size Mismatch: {}\n", job.size_mismatch_count));
     md.push_str(&format!("- Hash Mismatch: {}\n", job.hash_mismatch_count));
     md.push_str(&format!("- Unreadable: {}\n", job.unreadable_count));
-    md.push_str(&format!("- Extra in Destination: {}\n\n", job.extra_in_dest_count));
+    md.push_str(&format!(
+        "- Extra in Destination: {}\n\n",
+        job.extra_in_dest_count
+    ));
 
     md.push_str("## Top Issues\n\n");
     let issues: Vec<_> = items.iter().filter(|i| i.status != "OK").collect();
     for item in issues.iter().take(100) {
-        md.push_str(&format!("- [{}] `{}` {}\n", item.status, item.rel_path, item.error_message.clone().unwrap_or_default()));
+        md.push_str(&format!(
+            "- [{}] `{}` {}\n",
+            item.status,
+            item.rel_path,
+            item.error_message.clone().unwrap_or_default()
+        ));
     }
     if issues.len() > 100 {
         md.push_str(&format!("\n- ... and {} more issues\n", issues.len() - 100));
@@ -843,42 +927,128 @@ pub async fn export_verification_report_pdf(
         .get_verification_job(&job_id)
         .map_err(|e| e.to_string())?
         .ok_or("Job not found")?;
-    let items = state.db.get_verification_items(&job_id).map_err(|e| e.to_string())?;
+    let items = state
+        .db
+        .get_verification_items(&job_id)
+        .map_err(|e| e.to_string())?;
+
+    let project = state
+        .db
+        .get_project(&job.project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Project not found")?;
+    let brand_name = match load_brand_profile(project.root_path.clone()).await {
+        Ok(profile) => profile["name"]
+            .as_str()
+            .unwrap_or("Wrap Preview")
+            .to_string(),
+        Err(_) => "Wrap Preview".to_string(),
+    };
 
     use printpdf::{BuiltinFont, Mm, PdfDocument};
-    let (doc, page1, layer1) = PdfDocument::new("Verification Report", Mm(210.0), Mm(297.0), "Layer 1");
+    let (doc, page1, layer1) = PdfDocument::new(
+        format!("{} - Verification Report", brand_name),
+        Mm(210.0),
+        Mm(297.0),
+        "Layer 1",
+    );
     let layer = doc.get_page(page1).get_layer(layer1);
-    let font = doc.add_builtin_font(BuiltinFont::Helvetica).map_err(|e| e.to_string())?;
+    let font = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| e.to_string())?;
 
     let mut y: f32 = 285.0;
-    let line = |text: String, y_mm: &mut f32, layer: &printpdf::PdfLayerReference, font: &printpdf::IndirectFontRef| {
+    let line = |text: String,
+                y_mm: &mut f32,
+                layer: &printpdf::PdfLayerReference,
+                font: &printpdf::IndirectFontRef| {
         layer.use_text(text, 10.0, Mm(10.0), Mm(*y_mm), font);
         *y_mm -= 5.0;
     };
 
-    let created = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
-    line("Wrap Preview".to_string(), &mut y, &layer, &font);
+    let created = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S UTC")
+        .to_string();
+    line(brand_name.clone(), &mut y, &layer, &font);
     line("Verification Report".to_string(), &mut y, &layer, &font);
     line(format!("Date created: {}", created), &mut y, &layer, &font);
-    line(format!("App: Wrap Preview v{}", env!("CARGO_PKG_VERSION")), &mut y, &layer, &font);
-    line("This report was created with Wrap Preview — a professional offline tool for creatives to verify, review, and prepare footage for post-production.".to_string(), &mut y, &layer, &font);
-    line(format!("Source: {} ({})", job.source_label, job.source_root), &mut y, &layer, &font);
-    line(format!("Destination: {} ({})", job.dest_label, job.dest_root), &mut y, &layer, &font);
+    line(
+        format!("App: {} v{}", brand_name, env!("CARGO_PKG_VERSION")),
+        &mut y,
+        &layer,
+        &font,
+    );
+    line(format!("This report was created with {} — a professional offline tool for creatives to verify, review, and prepare footage for post-production.", brand_name), &mut y, &layer, &font);
+    line(
+        format!("Source: {} ({})", job.source_label, job.source_root),
+        &mut y,
+        &layer,
+        &font,
+    );
+    line(
+        format!("Destination: {} ({})", job.dest_label, job.dest_root),
+        &mut y,
+        &layer,
+        &font,
+    );
     line(format!("Mode: {}", job.mode), &mut y, &layer, &font);
     y -= 3.0;
-    line(format!("Verified: {}", job.verified_ok_count), &mut y, &layer, &font);
-    line(format!("Missing: {}", job.missing_count), &mut y, &layer, &font);
-    line(format!("Size mismatch: {}", job.size_mismatch_count), &mut y, &layer, &font);
-    line(format!("Hash mismatch: {}", job.hash_mismatch_count), &mut y, &layer, &font);
-    line(format!("Unreadable: {}", job.unreadable_count), &mut y, &layer, &font);
-    line(format!("Extra in destination: {}", job.extra_in_dest_count), &mut y, &layer, &font);
+    line(
+        format!("Verified: {}", job.verified_ok_count),
+        &mut y,
+        &layer,
+        &font,
+    );
+    line(
+        format!("Missing: {}", job.missing_count),
+        &mut y,
+        &layer,
+        &font,
+    );
+    line(
+        format!("Size mismatch: {}", job.size_mismatch_count),
+        &mut y,
+        &layer,
+        &font,
+    );
+    line(
+        format!("Hash mismatch: {}", job.hash_mismatch_count),
+        &mut y,
+        &layer,
+        &font,
+    );
+    line(
+        format!("Unreadable: {}", job.unreadable_count),
+        &mut y,
+        &layer,
+        &font,
+    );
+    line(
+        format!("Extra in destination: {}", job.extra_in_dest_count),
+        &mut y,
+        &layer,
+        &font,
+    );
     y -= 3.0;
     line("Top issues:".to_string(), &mut y, &layer, &font);
     for item in items.iter().filter(|i| i.status != "OK").take(60) {
-        if y < 12.0 { break; }
-        line(format!("[{}] {}", item.status, item.rel_path), &mut y, &layer, &font);
+        if y < 12.0 {
+            break;
+        }
+        line(
+            format!("[{}] {}", item.status, item.rel_path),
+            &mut y,
+            &layer,
+            &font,
+        );
     }
-    layer.use_text("© Alan Alves. All rights reserved.", 9.0, Mm(10.0), Mm(8.0), &font);
+    layer.use_text(
+        format!("© {}. All rights reserved.", brand_name),
+        9.0,
+        Mm(10.0),
+        Mm(8.0),
+        &font,
+    );
 
     std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
     let path = format!(
@@ -886,7 +1056,8 @@ pub async fn export_verification_report_pdf(
         out_dir,
         &job_id.chars().take(8).collect::<String>()
     );
-    let mut writer = std::io::BufWriter::new(std::fs::File::create(&path).map_err(|e| e.to_string())?);
+    let mut writer =
+        std::io::BufWriter::new(std::fs::File::create(&path).map_err(|e| e.to_string())?);
     doc.save(&mut writer).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "path": path }))
 }
@@ -904,6 +1075,19 @@ pub async fn export_verification_queue_report_markdown(
     if queue_items.is_empty() {
         return Err("No verification jobs provided".into());
     }
+    let project = state
+        .db
+        .get_project(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Project not found")?;
+    let brand_name = match load_brand_profile(project.root_path.clone()).await {
+        Ok(profile) => profile["name"]
+            .as_str()
+            .unwrap_or("Wrap Preview")
+            .to_string(),
+        Err(_) => "Wrap Preview".to_string(),
+    };
+
     let queue_with_jobs: Vec<(VerificationQueueItem, VerificationJob)> = queue_items
         .into_iter()
         .filter_map(|item| {
@@ -919,8 +1103,14 @@ pub async fn export_verification_queue_report_markdown(
     }
     let mut md = String::new();
     md.push_str("# Wrap Preview — Safe Copy Verification (Queue)\n\n");
-    md.push_str(&format!("- App: Wrap Preview v{}\n", env!("CARGO_PKG_VERSION")));
-    md.push_str(&format!("- Date: {}\n", chrono::Local::now().format("%Y-%m-%d %H:%M:%S %Z")));
+    md.push_str(&format!(
+        "- App: Wrap Preview v{}\n",
+        env!("CARGO_PKG_VERSION")
+    ));
+    md.push_str(&format!(
+        "- Date: {}\n",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S %Z")
+    ));
     md.push_str(&format!(
         "- Smart Copy: This report was created with Wrap Preview v{} — a professional offline tool for creatives to verify, review, and prepare footage for post-production.\n",
         env!("CARGO_PKG_VERSION")
@@ -950,11 +1140,20 @@ pub async fn export_verification_queue_report_markdown(
                 .clone()
                 .unwrap_or_else(|| format!("{} → {}", job.source_label, job.dest_label))
         ));
-        md.push_str(&format!("- Source: {} ({})\n", job.source_label, job.source_root));
-        md.push_str(&format!("- Destination: {} ({})\n", job.dest_label, job.dest_root));
+        md.push_str(&format!(
+            "- Source: {} ({})\n",
+            job.source_label, job.source_root
+        ));
+        md.push_str(&format!(
+            "- Destination: {} ({})\n",
+            job.dest_label, job.dest_root
+        ));
         md.push_str(&format!("- Mode: {}\n", job.mode));
         md.push_str(&format!("- Status: {}\n", job.status));
-        md.push_str(&format!("- Duration (ms): {}\n", job.duration_ms.unwrap_or(0)));
+        md.push_str(&format!(
+            "- Duration (ms): {}\n",
+            job.duration_ms.unwrap_or(0)
+        ));
         md.push_str(&format!(
             "- Summary: Verified {} | Missing {} | Size {} | Hash {} | Unreadable {} | Extra {}\n\n",
             job.verified_ok_count,
@@ -965,10 +1164,18 @@ pub async fn export_verification_queue_report_markdown(
             job.extra_in_dest_count
         ));
 
-        let items = state.db.get_verification_items(&job.id).map_err(|e| e.to_string())?;
+        let items = state
+            .db
+            .get_verification_items(&job.id)
+            .map_err(|e| e.to_string())?;
         let issues: Vec<_> = items.iter().filter(|i| i.status != "OK").collect();
         for issue in issues.iter().take(20) {
-            md.push_str(&format!("- [{}] `{}` {}\n", issue.status, issue.rel_path, issue.error_message.clone().unwrap_or_default()));
+            md.push_str(&format!(
+                "- [{}] `{}` {}\n",
+                issue.status,
+                issue.rel_path,
+                issue.error_message.clone().unwrap_or_default()
+            ));
         }
         if issues.len() > 20 {
             md.push_str(&format!("- ... and {} more\n", issues.len() - 20));
@@ -986,7 +1193,7 @@ pub async fn export_verification_queue_report_markdown(
     md.push_str(&format!("- Hash Mismatch: {}\n", totals.3));
     md.push_str(&format!("- Unreadable: {}\n", totals.4));
     md.push_str(&format!("- Extra in Destination: {}\n\n", totals.5));
-    md.push_str("© Alan Alves. All rights reserved.\n");
+    md.push_str(&format!("© {}. All rights reserved.\n", brand_name));
     std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
     let path = format!(
         "{}/SafeCopy_Queue_Report_{}.md",
@@ -1023,22 +1230,57 @@ pub async fn export_verification_queue_report_pdf(
     if queue_with_jobs.is_empty() {
         return Err("Queue has no completed checks with job data.".into());
     }
+    let project = state
+        .db
+        .get_project(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or("Project not found")?;
+    let brand_name = match load_brand_profile(project.root_path.clone()).await {
+        Ok(profile) => profile["name"]
+            .as_str()
+            .unwrap_or("Wrap Preview")
+            .to_string(),
+        Err(_) => "Wrap Preview".to_string(),
+    };
+
     use printpdf::{BuiltinFont, Mm, PdfDocument};
-    let (doc, page1, layer1) = PdfDocument::new("Verification Queue Report", Mm(210.0), Mm(297.0), "Layer 1");
+    let (doc, page1, layer1) = PdfDocument::new(
+        format!("{} - Verification Report", brand_name),
+        Mm(210.0),
+        Mm(297.0),
+        "Layer 1",
+    );
     let layer = doc.get_page(page1).get_layer(layer1);
-    let font = doc.add_builtin_font(BuiltinFont::Helvetica).map_err(|e| e.to_string())?;
+    let font = doc
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| e.to_string())?;
     let mut y: f32 = 285.0;
-    let line = |text: String, y_mm: &mut f32, layer: &printpdf::PdfLayerReference, font: &printpdf::IndirectFontRef| {
+    let line = |text: String,
+                y_mm: &mut f32,
+                layer: &printpdf::PdfLayerReference,
+                font: &printpdf::IndirectFontRef| {
         if *y_mm > 10.0 {
             layer.use_text(text, 10.0, Mm(10.0), Mm(*y_mm), font);
             *y_mm -= 5.0;
         }
     };
-    let created = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
-    line("Wrap Preview".to_string(), &mut y, &layer, &font);
-    line("Verification Queue Report".to_string(), &mut y, &layer, &font);
+    let created = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S UTC")
+        .to_string();
+    line(brand_name.clone(), &mut y, &layer, &font);
+    line(
+        "Verification Queue Report".to_string(),
+        &mut y,
+        &layer,
+        &font,
+    );
     line(format!("Date created: {}", created), &mut y, &layer, &font);
-    line(format!("App: Wrap Preview v{}", env!("CARGO_PKG_VERSION")), &mut y, &layer, &font);
+    line(
+        format!("App: Wrap Preview v{}", env!("CARGO_PKG_VERSION")),
+        &mut y,
+        &layer,
+        &font,
+    );
     line("This report was created with Wrap Preview — a professional offline tool for creatives to verify, review, and prepare footage for post-production.".to_string(), &mut y, &layer, &font);
     y -= 4.0;
     for (item, job) in &queue_with_jobs {
@@ -1057,21 +1299,59 @@ pub async fn export_verification_queue_report_pdf(
             &layer,
             &font,
         );
-        line(format!("  Source: {}", job.source_root), &mut y, &layer, &font);
-        line(format!("  Destination: {}", job.dest_root), &mut y, &layer, &font);
-        line(format!("  Status: {} | Mode: {} | Duration(ms): {}", job.status, job.mode, job.duration_ms.unwrap_or(0)), &mut y, &layer, &font);
-        line(format!("  Verified {} | Missing {} | Size {} | Hash {} | Unreadable {} | Extra {}",
-            job.verified_ok_count, job.missing_count, job.size_mismatch_count, job.hash_mismatch_count, job.unreadable_count, job.extra_in_dest_count
-        ), &mut y, &layer, &font);
+        line(
+            format!("  Source: {}", job.source_root),
+            &mut y,
+            &layer,
+            &font,
+        );
+        line(
+            format!("  Destination: {}", job.dest_root),
+            &mut y,
+            &layer,
+            &font,
+        );
+        line(
+            format!(
+                "  Status: {} | Mode: {} | Duration(ms): {}",
+                job.status,
+                job.mode,
+                job.duration_ms.unwrap_or(0)
+            ),
+            &mut y,
+            &layer,
+            &font,
+        );
+        line(
+            format!(
+                "  Verified {} | Missing {} | Size {} | Hash {} | Unreadable {} | Extra {}",
+                job.verified_ok_count,
+                job.missing_count,
+                job.size_mismatch_count,
+                job.hash_mismatch_count,
+                job.unreadable_count,
+                job.extra_in_dest_count
+            ),
+            &mut y,
+            &layer,
+            &font,
+        );
     }
-    layer.use_text("© Alan Alves. All rights reserved.", 9.0, Mm(10.0), Mm(8.0), &font);
+    layer.use_text(
+        format!("© {}. All rights reserved.", brand_name),
+        9.0,
+        Mm(10.0),
+        Mm(8.0),
+        &font,
+    );
     std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
     let path = format!(
         "{}/SafeCopy_Queue_Report_{}.pdf",
         out_dir,
         chrono::Local::now().format("%Y%m%d_%H%M%S")
     );
-    let mut writer = std::io::BufWriter::new(std::fs::File::create(&path).map_err(|e| e.to_string())?);
+    let mut writer =
+        std::io::BufWriter::new(std::fs::File::create(&path).map_err(|e| e.to_string())?);
     doc.save(&mut writer).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "path": path }))
 }
@@ -1082,7 +1362,9 @@ pub async fn extract_audio_waveform(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<u8>, String> {
-    let perf_id = state.perf_log.start("extract_audio_waveform", Some(clip_id.clone()));
+    let perf_id = state
+        .perf_log
+        .start("extract_audio_waveform", Some(clip_id.clone()));
     let (job_id, _cancel_flag) = state
         .job_manager
         .create_job("waveform", Some(format!("waveform-{}", clip_id)));
@@ -1092,7 +1374,8 @@ pub async fn extract_audio_waveform(
     emit_job_state(&app, &state.job_manager, &job_id);
 
     let db = &state.db;
-    let clip = db.get_clips_by_ids(&[clip_id.clone()])
+    let clip = db
+        .get_clips_by_ids(&[clip_id.clone()])
         .map_err(|e| e.to_string())?
         .into_iter()
         .next()
@@ -1109,7 +1392,7 @@ pub async fn extract_audio_waveform(
 
     // Otherwise extract
     let result = audio::extract_envelope(&clip.file_path, 150)?;
-    
+
     // Save to DB
     db.update_audio_envelope(&clip_id, &result.envelope)
         .map_err(|e| format!("Failed to save audio envelope: {}", e))?;
@@ -1130,7 +1413,9 @@ pub async fn auto_analyze_lookbook(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let (job_id, cancel_flag) = state.job_manager.create_job("auto_analyze", None);
-    state.job_manager.mark_running(&job_id, "Auto analyze started");
+    state
+        .job_manager
+        .mark_running(&job_id, "Auto analyze started");
     emit_job_state(&app, &state.job_manager, &job_id);
 
     let clips = state.db.get_clips(&project_id).map_err(|e| e.to_string())?;
@@ -1141,7 +1426,10 @@ pub async fn auto_analyze_lookbook(
             emit_job_state(&app, &state.job_manager, &job_id);
             return Ok(job_id);
         }
-        if !recompute.unwrap_or(false) && clip.auto_motion.is_some() && clip.auto_brightness.is_some() {
+        if !recompute.unwrap_or(false)
+            && clip.auto_motion.is_some()
+            && clip.auto_brightness.is_some()
+        {
             continue;
         }
 
@@ -1195,7 +1483,9 @@ pub async fn auto_analyze_lookbook(
         emit_job_state(&app, &state.job_manager, &job_id);
     }
 
-    state.job_manager.mark_done(&job_id, "Auto analyze complete");
+    state
+        .job_manager
+        .mark_done(&job_id, "Auto analyze complete");
     emit_job_state(&app, &state.job_manager, &job_id);
     Ok(job_id)
 }
@@ -1207,17 +1497,18 @@ pub async fn generate_lut_thumbnails(
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
     let db = &state.db;
-    
-    let settings = db.get_project_settings(&project_id)
+
+    let settings = db
+        .get_project_settings(&project_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "No LUT settings found for project".to_string())?;
-        
-    let settings_val: serde_json::Value = serde_json::from_str(&settings.settings_json)
-        .map_err(|e| e.to_string())?;
-        
+
+    let settings_val: serde_json::Value =
+        serde_json::from_str(&settings.settings_json).map_err(|e| e.to_string())?;
+
     let lut_path = settings_val["lut_path"].as_str().unwrap_or("");
     let lut_hash = settings_val["lut_hash"].as_str().unwrap_or("");
-    
+
     if lut_path.is_empty() || lut_hash.is_empty() {
         return Err("Invalid LUT settings".to_string());
     }
@@ -1225,7 +1516,9 @@ pub async fn generate_lut_thumbnails(
     let lut_content = std::fs::read_to_string(lut_path).map_err(|e| e.to_string())?;
     let lut = crate::lut::Lut3D::parse_cube(&lut_content).map_err(|e| e.to_string())?;
 
-    let _perf_id = state.perf_log.start("generate_lut_thumbnails", Some(project_id.clone()));
+    let _perf_id = state
+        .perf_log
+        .start("generate_lut_thumbnails", Some(project_id.clone()));
     let cache_dir = state.cache_dir.clone();
     let (job_id, cancel_flag) = state.job_manager.create_job("lut_thumbnails", None);
     state
@@ -1246,26 +1539,37 @@ pub async fn generate_lut_thumbnails(
             emit_job_state(&app, &state.job_manager, &job_id);
             break;
         }
-        
+
         // Skip clips without LUT enabled unless we want to cache all of them.
         // Caching all makes sense so if they toggle it later, it's instant.
-        
+
         let thumbnails = db.get_thumbnails(&clip.id).unwrap_or_default();
         if thumbnails.is_empty() {
-             let _ = app.emit("lut-thumbnail-progress", ThumbnailProgress {
-                project_id: project_id.clone(),
-                clip_id: clip.id.clone(),
-                clip_index: clip_idx,
-                total_clips,
-                status: "skipped".to_string(),
-                thumbnails: vec![],
-            });
+            let _ = app.emit(
+                "lut-thumbnail-progress",
+                ThumbnailProgress {
+                    project_id: project_id.clone(),
+                    clip_id: clip.id.clone(),
+                    clip_index: clip_idx,
+                    total_clips,
+                    status: "skipped".to_string(),
+                    thumbnails: vec![],
+                },
+            );
             continue;
         }
 
-        let permit = semaphore.clone().acquire_owned().await.map_err(|e| e.to_string())?;
+        let permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|e| e.to_string())?;
         let clip_cache_dir = format!("{}/{}", cache_dir, clip.id);
-        
+        if let Err(e) = std::fs::create_dir_all(&clip_cache_dir) {
+            eprintln!("Failed to create clip cache dir: {}", e);
+            continue;
+        }
+
         let mut processed_thumbs = Vec::new();
 
         for thumb in &thumbnails {
@@ -1274,7 +1578,7 @@ pub async fn generate_lut_thumbnails(
                 .and_then(|n| n.to_str())
                 .unwrap_or("thumb.jpg");
             let output_path = format!("{}/lut_{}_{}", clip_cache_dir, lut_hash, original_name);
-            
+
             if std::path::Path::new(&output_path).exists() {
                 // already applied
                 let mut new_thumb = thumb.clone();
@@ -1295,18 +1599,23 @@ pub async fn generate_lut_thumbnails(
             }
         }
 
-        let _ = app.emit("lut-thumbnail-progress", ThumbnailProgress {
-            project_id: project_id.clone(),
-            clip_id: clip.id.clone(),
-            clip_index: clip_idx,
-            total_clips,
-            status: "done".to_string(),
-            thumbnails: processed_thumbs,
-        });
+        let _ = app.emit(
+            "lut-thumbnail-progress",
+            ThumbnailProgress {
+                project_id: project_id.clone(),
+                clip_id: clip.id.clone(),
+                clip_index: clip_idx,
+                total_clips,
+                status: "done".to_string(),
+                thumbnails: processed_thumbs,
+            },
+        );
         drop(permit);
     }
-    
-    state.job_manager.mark_done(&job_id, "LUT thumbnails processing complete");
+
+    state
+        .job_manager
+        .mark_done(&job_id, "LUT thumbnails processing complete");
     emit_job_state(&app, &state.job_manager, &job_id);
 
     Ok(job_id)
@@ -1325,8 +1634,17 @@ pub async fn update_clip_metadata(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let db = &state.db;
-    db.update_clip_metadata(&clip_id, rating, flag, notes, shot_size, movement, manual_order, lut_enabled)
-        .map_err(|e| format!("Failed to update clip metadata: {}", e))
+    db.update_clip_metadata(
+        &clip_id,
+        rating,
+        flag,
+        notes,
+        shot_size,
+        movement,
+        manual_order,
+        lut_enabled,
+    )
+    .map_err(|e| format!("Failed to update clip metadata: {}", e))
 }
 
 #[tauri::command]
@@ -1340,31 +1658,33 @@ pub async fn export_to_fcpxml(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    let perf_id = state.perf_log.start("export_to_fcpxml", Some(project_id.clone()));
+    let perf_id = state
+        .perf_log
+        .start("export_to_fcpxml", Some(project_id.clone()));
     let (job_id, _cancel_flag) = state.job_manager.create_job("resolve_export", None);
-    state.job_manager.mark_running(&job_id, "Resolve export started");
+    state
+        .job_manager
+        .mark_running(&job_id, "Resolve export started");
     emit_job_state(&app, &state.job_manager, &job_id);
 
     let db = &state.db;
 
-    let filtered_clips =
-        resolve_clips_for_scope(db, &project_id, &scope, min_rating, block_ids)?;
+    let filtered_clips = resolve_clips_for_scope(db, &project_id, &scope, min_rating, block_ids)?;
 
     if filtered_clips.is_empty() {
         return Err("No clips found matching the export criteria.".into());
     }
 
     // Get Project Info
-    let project = db.get_project(&project_id).map_err(|e| e.to_string())?
+    let project = db
+        .get_project(&project_id)
+        .map_err(|e| e.to_string())?
         .ok_or("Project not found")?;
 
     // Generate XML
     let include_master = include_master_timeline.unwrap_or(true);
-    let xml_content = crate::export::generate_fcpxml_structured(
-        &filtered_clips,
-        &project.name,
-        include_master,
-    );
+    let xml_content =
+        crate::export::generate_fcpxml_structured(&filtered_clips, &project.name, include_master);
 
     // Write to file
     std::fs::write(&output_path, xml_content).map_err(|e| e.to_string())?;
@@ -1380,7 +1700,9 @@ pub async fn export_to_fcpxml(
         }),
     );
 
-    state.job_manager.mark_done(&job_id, "Resolve export complete");
+    state
+        .job_manager
+        .mark_done(&job_id, "Resolve export complete");
     emit_job_state(&app, &state.job_manager, &job_id);
     state.perf_log.end(&perf_id, "ok", Some(output_path));
     Ok(())
@@ -1395,9 +1717,13 @@ pub async fn build_scene_blocks(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<SceneBlockWithClips>, String> {
-    let perf_id = state.perf_log.start("build_scene_blocks", Some(project_id.clone()));
+    let perf_id = state
+        .perf_log
+        .start("build_scene_blocks", Some(project_id.clone()));
     let (job_id, cancel_flag) = state.job_manager.create_job("clustering", None);
-    state.job_manager.mark_running(&job_id, "Block clustering started");
+    state
+        .job_manager
+        .mark_running(&job_id, "Block clustering started");
     emit_job_state(&app, &state.job_manager, &job_id);
     if cancel_flag.load(Ordering::Relaxed) {
         let _ = state.job_manager.cancel_job(&job_id);
@@ -1436,10 +1762,14 @@ pub async fn build_scene_blocks(
     );
     db.replace_scene_blocks(&project_id, &built.blocks, &built.memberships)
         .map_err(|e| format!("Failed to persist scene blocks: {}", e))?;
-    state.job_manager.mark_done(&job_id, "Block clustering complete");
+    state
+        .job_manager
+        .mark_done(&job_id, "Block clustering complete");
     emit_job_state(&app, &state.job_manager, &job_id);
     let blocks = get_scene_blocks(project_id, state.clone()).await;
-    state.perf_log.end(&perf_id, if blocks.is_ok() { "ok" } else { "error" }, None);
+    state
+        .perf_log
+        .end(&perf_id, if blocks.is_ok() { "ok" } else { "error" }, None);
     blocks
 }
 
@@ -1460,7 +1790,9 @@ pub async fn get_scene_blocks(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<SceneBlockWithClips>, String> {
     let db = &state.db;
-    let blocks = db.get_scene_blocks(&project_id).map_err(|e| e.to_string())?;
+    let blocks = db
+        .get_scene_blocks(&project_id)
+        .map_err(|e| e.to_string())?;
     let mut result = Vec::new();
     for block in blocks {
         let clips = db
@@ -1477,16 +1809,15 @@ pub async fn set_project_lut(
     lut_path: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    use crate::lut::Lut3D;
-    use serde_json::json;
-    use blake3;
     use crate::db::ProjectSettings;
+    use crate::lut::Lut3D;
+    use blake3;
+    use serde_json::json;
 
     let content = std::fs::read_to_string(&lut_path)
         .map_err(|e| format!("Failed to read LUT file: {}", e))?;
-        
-    let _parsed = Lut3D::parse_cube(&content)
-        .map_err(|e| format!("Invalid LUT format: {}", e))?;
+
+    let _parsed = Lut3D::parse_cube(&content).map_err(|e| format!("Invalid LUT format: {}", e))?;
 
     let mut hasher = blake3::Hasher::new();
     hasher.update(content.as_bytes());
@@ -1563,8 +1894,12 @@ pub async fn merge_scene_blocks(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let db = &state.db;
-    let mut primary_ids = db.get_block_clip_ids(&primary_block_id).map_err(|e| e.to_string())?;
-    let secondary_ids = db.get_block_clip_ids(&secondary_block_id).map_err(|e| e.to_string())?;
+    let mut primary_ids = db
+        .get_block_clip_ids(&primary_block_id)
+        .map_err(|e| e.to_string())?;
+    let secondary_ids = db
+        .get_block_clip_ids(&secondary_block_id)
+        .map_err(|e| e.to_string())?;
 
     for clip_id in secondary_ids {
         if !primary_ids.contains(&clip_id) {
@@ -1576,7 +1911,8 @@ pub async fn merge_scene_blocks(
         .map_err(|e| e.to_string())?;
     db.refresh_scene_block_stats(&primary_block_id)
         .map_err(|e| e.to_string())?;
-    db.delete_scene_block(&secondary_block_id).map_err(|e| e.to_string())?;
+    db.delete_scene_block(&secondary_block_id)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1587,7 +1923,9 @@ pub async fn split_scene_block(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let db = &state.db;
-    let clip_ids = db.get_block_clip_ids(&block_id).map_err(|e| e.to_string())?;
+    let clip_ids = db
+        .get_block_clip_ids(&block_id)
+        .map_err(|e| e.to_string())?;
     if clip_ids.len() < 2 {
         return Err("Block is too small to split.".into());
     }
@@ -1628,10 +1966,12 @@ pub async fn split_scene_block(
         camera_list: original.camera_list.clone(),
         confidence: original.confidence,
     };
-    db.create_scene_block(&new_block).map_err(|e| e.to_string())?;
+    db.create_scene_block(&new_block)
+        .map_err(|e| e.to_string())?;
     db.replace_block_memberships(&new_block_id, &second_half)
         .map_err(|e| e.to_string())?;
-    db.refresh_scene_block_stats(&block_id).map_err(|e| e.to_string())?;
+    db.refresh_scene_block_stats(&block_id)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1693,9 +2033,13 @@ pub async fn export_director_pack(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<DirectorPackResult, String> {
-    let perf_id = state.perf_log.start("export_director_pack", Some(project_id.clone()));
+    let perf_id = state
+        .perf_log
+        .start("export_director_pack", Some(project_id.clone()));
     let (job_id, _cancel_flag) = state.job_manager.create_job("director_pack", None);
-    state.job_manager.mark_running(&job_id, "Director Pack export started");
+    state
+        .job_manager
+        .mark_running(&job_id, "Director Pack export started");
     emit_job_state(&app, &state.job_manager, &job_id);
 
     let db = &state.db;
@@ -1703,6 +2047,14 @@ pub async fn export_director_pack(
         .get_project(&project_id)
         .map_err(|e| e.to_string())?
         .ok_or("Project not found")?;
+
+    let brand_name = match load_brand_profile(project.root_path.clone()).await {
+        Ok(profile) => profile["name"]
+            .as_str()
+            .unwrap_or("Wrap Preview")
+            .to_string(),
+        Err(_) => "Wrap Preview".to_string(),
+    };
 
     let pack_root = format!("{}/DirectorPack", output_root);
     let contact_dir = format!("{}/01_Contact_Sheet", pack_root);
@@ -1712,13 +2064,23 @@ pub async fn export_director_pack(
     std::fs::create_dir_all(&resolve_dir).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&reports_dir).map_err(|e| e.to_string())?;
 
-    let filtered_clips = resolve_clips_for_scope(db, &project_id, &filter.mode, filter.min_rating, filter.block_ids)
-        .map_err(|e| e.to_string())?;
+    let filtered_clips = resolve_clips_for_scope(
+        db,
+        &project_id,
+        &filter.mode,
+        filter.min_rating,
+        filter.block_ids,
+    )
+    .map_err(|e| e.to_string())?;
     if filtered_clips.is_empty() {
         return Err("No clips available for current filter scope.".into());
     }
 
-    let fcpxml_path = format!("{}/{}_director.fcpxml", resolve_dir, sanitize_filename(&project.name));
+    let fcpxml_path = format!(
+        "{}/{}_director.fcpxml",
+        resolve_dir,
+        sanitize_filename(&project.name)
+    );
     let fcpxml = crate::export::generate_fcpxml_structured(
         &filtered_clips,
         &project.name,
@@ -1726,7 +2088,11 @@ pub async fn export_director_pack(
     );
     std::fs::write(&fcpxml_path, fcpxml).map_err(|e| e.to_string())?;
 
-    let report_path = format!("{}/{}_summary.json", reports_dir, sanitize_filename(&project.name));
+    let report_path = format!(
+        "{}/{}_summary.json",
+        reports_dir,
+        sanitize_filename(&project.name)
+    );
     let report = serde_json::json!({
         "app_version": env!("CARGO_PKG_VERSION"),
         "project": project,
@@ -1738,8 +2104,12 @@ pub async fn export_director_pack(
     let report_content = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
     std::fs::write(&report_path, report_content).map_err(|e| e.to_string())?;
 
-    let pdf_path = format!("{}/{}_contact_sheet.pdf", contact_dir, sanitize_filename(&project.name));
-    write_simple_contact_sheet_pdf(&pdf_path, &project.name, &filtered_clips)
+    let pdf_path = format!(
+        "{}/{}_contact_sheet.pdf",
+        contact_dir,
+        sanitize_filename(&project.name)
+    );
+    write_simple_contact_sheet_pdf(&pdf_path, &project.name, &filtered_clips, &brand_name)
         .map_err(|e| format!("Failed generating contact sheet PDF: {}", e))?;
 
     let _ = write_last_export_metadata(
@@ -1755,7 +2125,9 @@ pub async fn export_director_pack(
         }),
     );
 
-    state.job_manager.mark_done(&job_id, "Director Pack export complete");
+    state
+        .job_manager
+        .mark_done(&job_id, "Director Pack export complete");
     emit_job_state(&app, &state.job_manager, &job_id);
 
     let result = DirectorPackResult {
@@ -1764,7 +2136,9 @@ pub async fn export_director_pack(
         resolve_fcpxml: fcpxml_path,
         json_summary: report_path,
     };
-    state.perf_log.end(&perf_id, "ok", Some(result.root.clone()));
+    state
+        .perf_log
+        .end(&perf_id, "ok", Some(result.root.clone()));
     Ok(result)
 }
 
@@ -1772,12 +2146,13 @@ pub async fn export_director_pack(
 pub async fn get_app_info() -> Result<AppInfo, String> {
     Ok(AppInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        build_date: option_env!("BUILD_DATE")
-            .unwrap_or("unknown")
-            .to_string(),
-        ffmpeg_version: command_first_line("ffmpeg", &["-version"]).unwrap_or_else(|| "Unavailable".to_string()),
-        ffprobe_version: command_first_line("ffprobe", &["-version"]).unwrap_or_else(|| "Unavailable".to_string()),
-        macos_version: command_first_line("sw_vers", &["-productVersion"]).unwrap_or_else(|| "Unknown".to_string()),
+        build_date: option_env!("BUILD_DATE").unwrap_or("unknown").to_string(),
+        ffmpeg_version: command_first_line("ffmpeg", &["-version"])
+            .unwrap_or_else(|| "Unavailable".to_string()),
+        ffprobe_version: command_first_line("ffprobe", &["-version"])
+            .unwrap_or_else(|| "Unavailable".to_string()),
+        macos_version: command_first_line("sw_vers", &["-productVersion"])
+            .unwrap_or_else(|| "Unknown".to_string()),
         arch: std::env::consts::ARCH.to_string(),
         braw_bridge_active: command_exists("braw-decode"),
     })
@@ -1802,7 +2177,8 @@ pub async fn export_feedback_bundle(
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
 
-    zip.start_file("app_info.json", options).map_err(|e| e.to_string())?;
+    zip.start_file("app_info.json", options)
+        .map_err(|e| e.to_string())?;
     zip.write_all(
         serde_json::to_string_pretty(&app_info)
             .map_err(|e| e.to_string())?
@@ -1810,7 +2186,8 @@ pub async fn export_feedback_bundle(
     )
     .map_err(|e| e.to_string())?;
 
-    zip.start_file("jobs.json", options).map_err(|e| e.to_string())?;
+    zip.start_file("jobs.json", options)
+        .map_err(|e| e.to_string())?;
     zip.write_all(
         serde_json::to_string_pretty(&jobs)
             .map_err(|e| e.to_string())?
@@ -1819,7 +2196,8 @@ pub async fn export_feedback_bundle(
     .map_err(|e| e.to_string())?;
 
     if let Some(last_export) = read_last_export_metadata(&state.cache_dir) {
-        zip.start_file("last_export.json", options).map_err(|e| e.to_string())?;
+        zip.start_file("last_export.json", options)
+            .map_err(|e| e.to_string())?;
         zip.write_all(
             serde_json::to_string_pretty(&last_export)
                 .map_err(|e| e.to_string())?
@@ -1850,7 +2228,9 @@ pub async fn export_feedback_bundle(
 }
 
 #[tauri::command]
-pub async fn list_perf_events(state: State<'_, Arc<AppState>>) -> Result<Vec<crate::perf::PerfEvent>, String> {
+pub async fn list_perf_events(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::perf::PerfEvent>, String> {
     Ok(state.perf_log.list())
 }
 
@@ -1881,8 +2261,14 @@ pub async fn export_perf_report(
 
     let mut md = String::new();
     md.push_str("# Wrap Preview Performance Report\n\n");
-    md.push_str(&format!("- Exported: {}\n", chrono::Utc::now().to_rfc3339()));
-    md.push_str(&format!("- Events: {}\n\n", json["events"].as_array().map(|a| a.len()).unwrap_or(0)));
+    md.push_str(&format!(
+        "- Exported: {}\n",
+        chrono::Utc::now().to_rfc3339()
+    ));
+    md.push_str(&format!(
+        "- Events: {}\n\n",
+        json["events"].as_array().map(|a| a.len()).unwrap_or(0)
+    ));
     md.push_str("| Name | Status | Duration (ms) | Started |\n");
     md.push_str("|---|---:|---:|---|\n");
     if let Some(arr) = json["events"].as_array() {
@@ -1891,7 +2277,10 @@ pub async fn export_perf_report(
                 "| {} | {} | {} | {} |\n",
                 ev["name"].as_str().unwrap_or(""),
                 ev["status"].as_str().unwrap_or(""),
-                ev["duration_ms"].as_u64().map(|v| v.to_string()).unwrap_or_else(|| "-".to_string()),
+                ev["duration_ms"]
+                    .as_u64()
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
                 ev["started_at"].as_str().unwrap_or("")
             ));
         }
@@ -1952,7 +2341,9 @@ fn rescan_project_internal(db: &Database, project_id: &str) -> Result<Vec<Clip>,
                 .strip_prefix(&root.root_path)
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| file_path.clone());
-            let clip = build_clip_from_file(db, project_id, &root, &file_path, &rel_path);
+            let clip_id = generate_clip_id(&root.id, &rel_path);
+            let existing = db.get_clip(&clip_id).ok().flatten();
+            let clip = build_clip_from_file(db, project_id, &root, &file_path, &rel_path, existing);
             seen_ids.push(clip.id.clone());
             if let Err(e) = db.upsert_clip(&clip) {
                 eprintln!("scan: failed to upsert clip {}: {}", clip.id, e);
@@ -1974,6 +2365,7 @@ fn build_clip_from_file(
     root: &ProjectRoot,
     file_path: &str,
     rel_path: &str,
+    existing: Option<Clip>,
 ) -> Clip {
     let meta = ffprobe::probe_file(file_path);
     let clip_id = generate_clip_id(&root.id, rel_path);
@@ -2004,21 +2396,26 @@ fn build_clip_from_file(
                 audio_summary: m.audio_summary,
                 timecode: m.timecode,
                 status: status.to_string(),
-                rating: 0,
-                flag: "none".to_string(),
-                notes: None,
-                shot_size: None,
-                movement: None,
-                manual_order: 0,
-                auto_motion: None,
-                auto_brightness: None,
-                auto_contrast: None,
-                auto_temp: None,
-                auto_tags_json: None,
-                auto_analyzed_at: None,
-                auto_analyzer_version: None,
-                audio_envelope: None,
-                lut_enabled: 0,
+                rating: existing.as_ref().map(|c| c.rating).unwrap_or(0),
+                flag: existing
+                    .as_ref()
+                    .map(|c| c.flag.clone())
+                    .unwrap_or_else(|| "none".to_string()),
+                notes: existing.as_ref().and_then(|c| c.notes.clone()),
+                shot_size: existing.as_ref().and_then(|c| c.shot_size.clone()),
+                movement: existing.as_ref().and_then(|c| c.movement.clone()),
+                manual_order: existing.as_ref().map(|c| c.manual_order).unwrap_or(0),
+                auto_motion: existing.as_ref().and_then(|c| c.auto_motion.clone()),
+                auto_brightness: existing.as_ref().and_then(|c| c.auto_brightness.clone()),
+                auto_contrast: existing.as_ref().and_then(|c| c.auto_contrast.clone()),
+                auto_temp: existing.as_ref().and_then(|c| c.auto_temp.clone()),
+                auto_tags_json: existing.as_ref().and_then(|c| c.auto_tags_json.clone()),
+                auto_analyzed_at: existing.as_ref().and_then(|c| c.auto_analyzed_at.clone()),
+                auto_analyzer_version: existing
+                    .as_ref()
+                    .and_then(|c| c.auto_analyzer_version.clone()),
+                audio_envelope: existing.as_ref().and_then(|c| c.audio_envelope.clone()),
+                lut_enabled: existing.as_ref().map(|c| c.lut_enabled).unwrap_or(0),
             }
         }
         Err(e) => {
@@ -2050,21 +2447,26 @@ fn build_clip_from_file(
                 audio_summary: format!("Error: {}", e),
                 timecode: None,
                 status: "fail".to_string(),
-                rating: 0,
-                flag: "none".to_string(),
-                notes: None,
-                shot_size: None,
-                movement: None,
-                manual_order: 0,
-                auto_motion: None,
-                auto_brightness: None,
-                auto_contrast: None,
-                auto_temp: None,
-                auto_tags_json: None,
-                auto_analyzed_at: None,
-                auto_analyzer_version: None,
-                audio_envelope: None,
-                lut_enabled: 0,
+                rating: existing.as_ref().map(|c| c.rating).unwrap_or(0),
+                flag: existing
+                    .as_ref()
+                    .map(|c| c.flag.clone())
+                    .unwrap_or_else(|| "none".to_string()),
+                notes: existing.as_ref().and_then(|c| c.notes.clone()),
+                shot_size: existing.as_ref().and_then(|c| c.shot_size.clone()),
+                movement: existing.as_ref().and_then(|c| c.movement.clone()),
+                manual_order: existing.as_ref().map(|c| c.manual_order).unwrap_or(0),
+                auto_motion: existing.as_ref().and_then(|c| c.auto_motion.clone()),
+                auto_brightness: existing.as_ref().and_then(|c| c.auto_brightness.clone()),
+                auto_contrast: existing.as_ref().and_then(|c| c.auto_contrast.clone()),
+                auto_temp: existing.as_ref().and_then(|c| c.auto_temp.clone()),
+                auto_tags_json: existing.as_ref().and_then(|c| c.auto_tags_json.clone()),
+                auto_analyzed_at: existing.as_ref().and_then(|c| c.auto_analyzed_at.clone()),
+                auto_analyzer_version: existing
+                    .as_ref()
+                    .and_then(|c| c.auto_analyzer_version.clone()),
+                audio_envelope: existing.as_ref().and_then(|c| c.audio_envelope.clone()),
+                lut_enabled: existing.as_ref().map(|c| c.lut_enabled).unwrap_or(0),
             }
         }
     }
@@ -2093,7 +2495,9 @@ fn resolve_clips_for_scope(
         if selected_blocks.is_empty() {
             return Ok(vec![]);
         }
-        let clip_ids = db.get_clip_ids_for_blocks(&selected_blocks).map_err(|e| e.to_string())?;
+        let clip_ids = db
+            .get_clip_ids_for_blocks(&selected_blocks)
+            .map_err(|e| e.to_string())?;
         if clip_ids.is_empty() {
             vec![]
         } else {
@@ -2118,7 +2522,13 @@ fn resolve_clips_for_scope(
 
 fn sanitize_filename(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -2126,6 +2536,7 @@ fn write_simple_contact_sheet_pdf(
     output_path: &str,
     project_name: &str,
     clips: &[Clip],
+    brand_name: &str,
 ) -> Result<(), String> {
     use printpdf::{BuiltinFont, Mm, PdfDocument};
 
@@ -2140,13 +2551,7 @@ fn write_simple_contact_sheet_pdf(
         .add_builtin_font(BuiltinFont::Helvetica)
         .map_err(|e| e.to_string())?;
 
-    layer.use_text(
-        "Wrap Preview",
-        16.0,
-        Mm(10.0),
-        Mm(198.0),
-        &font,
-    );
+    layer.use_text(brand_name, 16.0, Mm(10.0), Mm(198.0), &font);
     layer.use_text(
         format!("Project: {}", project_name),
         16.0,
@@ -2155,7 +2560,10 @@ fn write_simple_contact_sheet_pdf(
         &font,
     );
     layer.use_text(
-        format!("Date created: {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")),
+        format!(
+            "Date created: {}",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        ),
         12.0,
         Mm(10.0),
         Mm(182.0),
@@ -2169,7 +2577,11 @@ fn write_simple_contact_sheet_pdf(
         &font,
     );
     layer.use_text(
-        format!("This report was created with Wrap Preview v{}.", env!("CARGO_PKG_VERSION")),
+        format!(
+            "This report was created with {} v{}.",
+            brand_name,
+            env!("CARGO_PKG_VERSION")
+        ),
         10.0,
         Mm(10.0),
         Mm(170.0),
@@ -2189,11 +2601,16 @@ fn write_simple_contact_sheet_pdf(
         }
     }
 
-    layer.use_text("© Alan Alves. All rights reserved.", 9.0, Mm(10.0), Mm(8.0), &font);
-
-    let mut writer = std::io::BufWriter::new(
-        std::fs::File::create(output_path).map_err(|e| e.to_string())?,
+    layer.use_text(
+        format!("© {}. All rights reserved.", brand_name),
+        9.0,
+        Mm(10.0),
+        Mm(8.0),
+        &font,
     );
+
+    let mut writer =
+        std::io::BufWriter::new(std::fs::File::create(output_path).map_err(|e| e.to_string())?);
     doc.save(&mut writer).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -2373,12 +2790,14 @@ mod tests {
             auto_analyzed_at: None,
             auto_analyzer_version: None,
             audio_envelope: None,
+            lut_enabled: 0,
         }
     }
 
     #[test]
     fn scope_mapping_filters_correctly() {
-        let db_path = std::env::temp_dir().join(format!("wrap-preview-test-{}.db", uuid::Uuid::new_v4()));
+        let db_path =
+            std::env::temp_dir().join(format!("wrap-preview-test-{}.db", uuid::Uuid::new_v4()));
         let db = Database::new(db_path.to_str().unwrap()).unwrap();
         let project_id = "p1";
         db.upsert_project(&Project {
@@ -2386,14 +2805,19 @@ mod tests {
             root_path: "/tmp".to_string(),
             name: "P".to_string(),
             created_at: "2026-01-01".to_string(),
-        }).unwrap();
-        db.upsert_clip(&sample_clip(project_id, "c1", 5, "pick")).unwrap();
-        db.upsert_clip(&sample_clip(project_id, "c2", 2, "none")).unwrap();
-        db.upsert_clip(&sample_clip(project_id, "c3", 5, "reject")).unwrap();
+        })
+        .unwrap();
+        db.upsert_clip(&sample_clip(project_id, "c1", 5, "pick"))
+            .unwrap();
+        db.upsert_clip(&sample_clip(project_id, "c2", 2, "none"))
+            .unwrap();
+        db.upsert_clip(&sample_clip(project_id, "c3", 5, "reject"))
+            .unwrap();
 
         let picks = resolve_clips_for_scope(&db, project_id, "picks", None, None).unwrap();
         assert_eq!(picks.len(), 1);
-        let rated_min = resolve_clips_for_scope(&db, project_id, "rated_min", Some(3), None).unwrap();
+        let rated_min =
+            resolve_clips_for_scope(&db, project_id, "rated_min", Some(3), None).unwrap();
         assert_eq!(rated_min.len(), 1);
         let all = resolve_clips_for_scope(&db, project_id, "all", None, None).unwrap();
         assert_eq!(all.len(), 2);

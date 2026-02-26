@@ -712,7 +712,11 @@ impl Database {
         Ok(())
     }
 
-    pub fn keep_only_project_root_path(&self, project_id: &str, keep_root_path: &str) -> SqlResult<()> {
+    pub fn keep_only_project_root_path(
+        &self,
+        project_id: &str,
+        keep_root_path: &str,
+    ) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "DELETE FROM project_roots WHERE project_id = ?1 AND root_path <> ?2",
@@ -832,6 +836,64 @@ impl Database {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn get_clip(&self, id: &str) -> SqlResult<Option<Clip>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, root_id, rel_path, filename, file_path, size_bytes, created_at, duration_ms, fps, width, height,
+                    video_codec, video_bitrate, format_name, audio_codec, audio_channels, audio_sample_rate,
+                    camera_iso, camera_white_balance, audio_summary, timecode, status, rating, flag, notes,
+                    shot_size, movement, manual_order, auto_motion, auto_brightness, auto_contrast, auto_temp,
+                    auto_tags_json, auto_analyzed_at, auto_analyzer_version, audio_envelope, lut_enabled
+             FROM clips WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![id], |row| {
+            Ok(Clip {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                root_id: row.get(2)?,
+                rel_path: row.get(3)?,
+                filename: row.get(4)?,
+                file_path: row.get(5)?,
+                size_bytes: row.get::<_, i64>(6)? as u64,
+                created_at: row.get(7)?,
+                duration_ms: row.get::<_, i64>(8)? as u64,
+                fps: row.get(9)?,
+                width: row.get::<_, u32>(10)?,
+                height: row.get::<_, u32>(11)?,
+                video_codec: row.get(12)?,
+                video_bitrate: row.get::<_, i64>(13)? as u64,
+                format_name: row.get(14)?,
+                audio_codec: row.get(15)?,
+                audio_channels: row.get::<_, u32>(16)?,
+                audio_sample_rate: row.get::<_, u32>(17)?,
+                camera_iso: row.get(18)?,
+                camera_white_balance: row.get(19)?,
+                audio_summary: row.get(20)?,
+                timecode: row.get(21)?,
+                status: row.get(22)?,
+                rating: row.get(23)?,
+                flag: row.get(24)?,
+                notes: row.get(25)?,
+                shot_size: row.get(26)?,
+                movement: row.get(27)?,
+                manual_order: row.get(28)?,
+                auto_motion: row.get(29)?,
+                auto_brightness: row.get(30)?,
+                auto_contrast: row.get(31)?,
+                auto_temp: row.get(32)?,
+                auto_tags_json: row.get(33)?,
+                auto_analyzed_at: row.get(34)?,
+                auto_analyzer_version: row.get(35)?,
+                audio_envelope: row.get(36)?,
+                lut_enabled: row.get(37)?,
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(clip)) => Ok(Some(clip)),
+            _ => Ok(None),
+        }
     }
 
     pub fn get_clips(&self, project_id: &str) -> SqlResult<Vec<Clip>> {
@@ -1066,7 +1128,10 @@ impl Database {
 
     pub fn delete_thumbnails_for_clip(&self, clip_id: &str) -> SqlResult<usize> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM thumbnails WHERE clip_id = ?1", params![clip_id])
+        conn.execute(
+            "DELETE FROM thumbnails WHERE clip_id = ?1",
+            params![clip_id],
+        )
     }
 
     pub fn get_thumbnails(&self, clip_id: &str) -> SqlResult<Vec<Thumbnail>> {

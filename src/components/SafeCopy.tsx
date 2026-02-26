@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, Play, XCircle, CheckCircle, AlertTriangle, Search, FileText, ListChecks, Plus, Trash2 } from "lucide-react";
+import { FolderOpen, Play, XCircle, CheckCircle, AlertTriangle, Search, FileText, ListChecks, Plus, Trash2, ShieldCheck } from "lucide-react";
 
 interface VerificationProgress {
   job_id: string;
@@ -65,10 +65,19 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
   const persistTimers = useRef<Record<number, number>>({});
   const queueRef = useRef<QueueCheck[]>([]);
 
-  const loadQueue = async () => {
+  const loadQueue = async (initial = false) => {
     try {
       const rows = await invoke<QueueCheck[]>("list_verification_queue", { projectId });
       setQueue(rows.sort((a, b) => a.idx - b.idx));
+
+      if (initial) {
+        // Try to find an existing running job for verification queue
+        const jobs = await invoke<any[]>("list_jobs");
+        const running = jobs.find(j => j.kind === "verification_queue" && (j.status === "running" || j.status === "queued"));
+        if (running) {
+          setQueueRunId(running.id);
+        }
+      }
     } catch (e) {
       console.error(e);
       onError?.({ title: "Failed to load verification queue", hint: "Retry. If this persists, export diagnostics." });
@@ -76,7 +85,7 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
   };
 
   useEffect(() => {
-    loadQueue();
+    loadQueue(true);
     setProgress(null);
     setResults([]);
     setQueueRunId(null);
@@ -205,16 +214,6 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
     }
   };
 
-  const clearQueue = async () => {
-    if (isRunningQueue) return;
-    const confirm = window.confirm("Clear all queue rows?");
-    if (!confirm) return;
-    await invoke("clear_verification_queue", { projectId });
-    setQueue([]);
-    setProgress(null);
-    setResults([]);
-    setActiveJobId(null);
-  };
 
   const choosePath = async (title: string): Promise<string | null> => {
     const selected = await open({ directory: true, multiple: false, title });
@@ -312,97 +311,165 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
     <div className="safe-copy-view">
       <div className="safecopy-featured-wrapper">
         <div className="safe-copy-config card premium-card">
-          <div className="dashboard-header">
-            <h3>Safe Copy Queue</h3>
-            <div className="toolbar-right" style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-secondary btn-sm" onClick={ensureRow} disabled={queue.length >= MAX_QUEUE || isRunningQueue}>
-                <Plus size={14} /> Add Row
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={clearQueue} disabled={queue.length === 0 || isRunningQueue}>
-                <Trash2 size={14} /> Clear Queue
+          <div className="dashboard-header" style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="module-icon" style={{ background: 'var(--color-accent-soft)', color: 'var(--color-accent)' }}>
+                <ShieldCheck size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0 }}>Safe Copy</h3>
+                <p style={{ margin: 0, fontSize: 12, opacity: 0.6 }}>Bit-accurate verification & checksums</p>
+              </div>
+            </div>
+            <div className="toolbar-right">
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={ensureRow}
+                disabled={queue.length >= MAX_QUEUE || isRunningQueue}
+                style={{ height: 32, padding: '0 12px', gap: 6 }}
+                data-tooltip="Add another verification pair"
+              >
+                <Plus size={14} /> Add Source
               </button>
             </div>
           </div>
 
-          <div style={{ display: "grid", gap: 10 }}>
-            {queue.map((row) => {
-              const counts = row.counts_json ? JSON.parse(row.counts_json) : null;
+          <div className="verification-rows-list">
+            {queue.map((row, idx) => {
               const status = row.status?.toLowerCase() || "queued";
+              const counts = row.counts_json ? JSON.parse(row.counts_json) : null;
+
               return (
-                <div key={row.id} className="workspace-root-item" style={{ gridTemplateColumns: "46px 180px 1fr 1fr auto auto", alignItems: "start" }}>
-                  <strong style={{ paddingTop: 7 }}>{String(row.idx).padStart(2, "0")}</strong>
-                  <input
-                    className="input-text"
-                    value={row.label ?? ""}
-                    onChange={(e) => updateRow(row.idx, { label: e.target.value })}
-                    placeholder={`Check ${String(row.idx).padStart(2, "0")}`}
-                    disabled={isRunningQueue}
-                  />
-                  <div className="path-picker">
-                    <input type="text" readOnly value={row.source_path} placeholder="Select source..." />
-                    <button className="btn btn-secondary btn-sm" onClick={async () => {
-                      const p = await choosePath(`Select Source for Check ${String(row.idx).padStart(2, "0")}`);
-                      if (p) updateRow(row.idx, { source_path: p });
-                    }} disabled={isRunningQueue}>
-                      <FolderOpen size={14} />
-                    </button>
+                <div key={row.id} className="verification-row-container">
+                  <div className="row-number-badge">
+                    {idx + 1}
                   </div>
-                  <div className="path-picker">
-                    <input type="text" readOnly value={row.dest_path} placeholder="Select destination..." />
-                    <button className="btn btn-secondary btn-sm" onClick={async () => {
-                      const p = await choosePath(`Select Destination for Check ${String(row.idx).padStart(2, "0")}`);
-                      if (p) updateRow(row.idx, { dest_path: p });
-                    }} disabled={isRunningQueue}>
-                      <FolderOpen size={14} />
-                    </button>
+
+                  <div className="verification-row-inputs">
+                    <div className="input-field-group">
+                      <label>SOURCE {queue.length > 1 ? `(${idx + 1})` : ''}</label>
+                      <div className="path-entry">
+                        <input
+                          type="text"
+                          readOnly
+                          value={row.source_path}
+                          placeholder="Choose source card or folder..."
+                          className="premium-input-dark"
+                        />
+                        <button className="btn-icon-square" onClick={async () => {
+                          const p = await choosePath(`Select Source`);
+                          if (p) updateRow(row.idx, { source_path: p });
+                        }} disabled={isRunningQueue}>
+                          <FolderOpen size={16} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="input-field-group">
+                      <label>DESTINATION {queue.length > 1 ? `(${idx + 1})` : ''}</label>
+                      <div className="path-entry">
+                        <input
+                          type="text"
+                          readOnly
+                          value={row.dest_path}
+                          placeholder="Choose destination folder..."
+                          className="premium-input-dark"
+                        />
+                        <button className="btn-icon-square" onClick={async () => {
+                          const p = await choosePath(`Select Destination`);
+                          if (p) updateRow(row.idx, { dest_path: p });
+                        }} disabled={isRunningQueue}>
+                          <FolderOpen size={16} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <span className={`status-pill ${status}`}>{status.toUpperCase()}</span>
-                    {counts && (
-                      <span className="workspace-root-path">
-                        Verified {counts.verified ?? 0} / Missing {counts.missing ?? 0}
-                      </span>
-                    )}
-                    {row.duration_ms != null && <span className="workspace-root-path">{row.duration_ms} ms</span>}
-                  </div>
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => removeRow(row.idx)} disabled={isRunningQueue}>
-                      <Trash2 size={14} />
-                    </button>
-                    <button className="btn btn-secondary btn-sm" onClick={() => row.last_job_id && exportJobMarkdown(row.last_job_id)} disabled={!row.last_job_id}>
-                      <FileText size={14} /> MD
-                    </button>
-                    <button className="btn btn-secondary btn-sm" onClick={() => row.last_job_id && exportJobPdf(row.last_job_id)} disabled={!row.last_job_id}>
-                      <FileText size={14} /> PDF
-                    </button>
+
+                  <div className="row-actions-area">
+                    <div className="row-status-info">
+                      <span className={`status-pill ${status}`}>{status.toUpperCase()}</span>
+                      {counts && (
+                        <div className="row-stats-summary">
+                          <CheckCircle size={10} className="ok" /> {counts.verified ?? 0}
+                          <XCircle size={10} className="fail" style={{ marginLeft: 6 }} /> {counts.missing ?? 0}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {row.last_job_id && (
+                        <>
+                          <button className="btn-mini-action" onClick={() => exportJobMarkdown(row.last_job_id!)} title="Markdown Report">
+                            <FileText size={12} />
+                          </button>
+                          <button className="btn-mini-action" onClick={() => exportJobPdf(row.last_job_id!)} title="PDF Report">
+                            <FileText size={12} />
+                          </button>
+                        </>
+                      )}
+                      <button
+                        className="btn-mini-action btn-mini-danger"
+                        onClick={() => removeRow(row.idx)}
+                        disabled={isRunningQueue || queue.length === 1}
+                        title="Remove pair"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
             })}
-            {queue.length === 0 && <div className="workspace-root-path">No checks in queue yet.</div>}
           </div>
 
-          <div className="config-actions" style={{ gap: 10, flexWrap: "wrap", marginTop: 16 }}>
-            <div className="mode-toggle">
-              <button className={`btn-toggle ${mode === "SOLID" ? "active" : ""}`} onClick={() => setMode("SOLID")} disabled={isRunningQueue}>
-                SOLID (Bit-Accurate)
-              </button>
-              <button className={`btn-toggle ${mode === "FAST" ? "active" : ""}`} onClick={() => setMode("FAST")} disabled={isRunningQueue}>
-                FAST (Metadata)
-              </button>
+          <div className="safecopy-bottom-controls">
+            <div className="mode-selection-group">
+              <label>MODE</label>
+              <div className="mode-toggle-pill">
+                <button
+                  className={`mode-toggle-btn ${mode === "SOLID" ? "active" : ""}`}
+                  onClick={() => setMode("SOLID")}
+                  disabled={isRunningQueue}
+                >
+                  SOLID (Bit-Accurate)
+                </button>
+                <button
+                  className={`mode-toggle-btn ${mode === "FAST" ? "active" : ""}`}
+                  onClick={() => setMode("FAST")}
+                  disabled={isRunningQueue}
+                >
+                  FAST (Metadata)
+                </button>
+              </div>
             </div>
-            <button className="btn btn-primary btn-lg" onClick={runQueue} disabled={isRunningQueue || queue.length === 0 || queue.some((q) => !q.source_path || !q.dest_path)}>
-              <Play size={18} /> Start Verification
-            </button>
-            <button className="btn btn-danger btn-lg" onClick={cancelQueue} disabled={!isRunningQueue || !queueRunId}>
-              <XCircle size={18} /> Cancel Queue
-            </button>
-            <button className="btn btn-secondary btn-lg" onClick={exportQueueMarkdown} disabled={queue.length === 0}>
-              <ListChecks size={18} /> Export Combined Markdown
-            </button>
-            <button className="btn btn-secondary btn-lg" onClick={exportQueuePdf} disabled={queue.length === 0}>
-              <ListChecks size={18} /> Export Combined PDF
-            </button>
+
+            <div className="verification-primary-actions">
+              <button
+                className="btn btn-primary btn-verification-start"
+                onClick={runQueue}
+                disabled={isRunningQueue || queue.length === 0 || queue.some((q) => !q.source_path || !q.dest_path)}
+              >
+                {isRunningQueue ? <div className="spinner" style={{ width: 16, height: 16 }} /> : <Play size={18} fill="currentColor" />}
+                <span>{isRunningQueue ? "Verifying..." : "Start Verification"}</span>
+              </button>
+
+              {isRunningQueue && (
+                <button className="btn btn-danger btn-lg-circle" onClick={cancelQueue}>
+                  <XCircle size={20} />
+                </button>
+              )}
+            </div>
+
+            {queue.length > 0 && (
+              <div className="batch-export-row">
+                <button className="btn-text-action" onClick={exportQueueMarkdown} disabled={queue.length === 0}>
+                  <ListChecks size={14} /> Export Combined MD
+                </button>
+                <button className="btn-text-action" onClick={exportQueuePdf} disabled={queue.length === 0}>
+                  <ListChecks size={14} /> Export Combined PDF
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -487,7 +554,7 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
                         {item.status === "OK" ? <CheckCircle size={14} className="ok" /> :
                           item.status === "MISSING" ? <XCircle size={14} className="fail" /> :
                             <AlertTriangle size={14} className="warn" />}
-                        <span className="status-label">{item.status === "OK" ? "Verified" : item.status}</span>
+                        <span className={`status-label ${item.status === "OK" ? "ok" : "fail"}`}>{item.status === "OK" ? "VERIFIED" : item.status}</span>
                       </td>
                       <td className="path-cell">{item.rel_path}</td>
                       <td className="size-cell">{formatFileSize(item.source_size)}</td>

@@ -9,7 +9,7 @@ export function PdfFooter({ brandName, page, totalPages }: PdfFooterProps) {
     <div className="print-footer">
       <span>{brandName}</span>
       <span>Page {page} of {totalPages}</span>
-      <span>© Alan Alves. All rights reserved.</span>
+      <span>&copy; {new Date().getFullYear()} {brandName}</span>
     </div>
   );
 }
