@@ -2,26 +2,25 @@
 @import "tailwindcss";
 
 :root {
-  /* Brand tokens (Premium B&W with Electric Highlights) */
+  /* Brand tokens (Premium Greyscale with Electric Highlights) */
   --color-primary: #ffffff;
   --color-primary-hover: #f4f4f5;
   --color-accent: #00d1ff;
-  /* Electric Blue */
-  --color-accent-soft: rgba(0, 209, 255, 0.15);
-  --color-accent-glow: rgba(0, 209, 255, 0.4);
+  /* Electric Blue Accent */
+  --color-accent-soft: rgba(255, 255, 255, 0.05);
+  --color-accent-glow: rgba(0, 209, 255, 0.2);
   --color-electric-teal: #00d1ff;
-  /* Replaced green with blue */
-  --color-accent-orange: #f59e0b;
-  --color-accent-orange-soft: rgba(245, 158, 11, 0.1);
-  --color-accent-ruby: #00d1ff;
-  /* Ruby globally becomes blue */
-  --color-accent-ruby-soft: rgba(0, 209, 255, 0.1);
-  /* Removed amethyst tokens */
-  --color-accent-forest: #059669;
-  --color-accent-forest-soft: rgba(5, 150, 105, 0.12);
+
+  /* Neutralized Status Colors (mostly greyscale or subtle) */
+  --color-accent-orange: #a1a1aa;
+  --color-accent-orange-soft: rgba(161, 161, 170, 0.05);
+  --color-accent-ruby: #a1a1aa;
+  --color-accent-ruby-soft: rgba(161, 161, 170, 0.05);
+  --color-accent-forest: #a1a1aa;
+  --color-accent-forest-soft: rgba(161, 161, 170, 0.05);
   --color-status-red: #ef4444;
-  /* Reserved for Reject only */
-  --color-neutral: #52525b;
+  /* Keep for errors but make subtle */
+  --color-neutral: #1c1c1f;
 
   /* Deep Charcoal Numora Palette */
   --bg-app: #08080a;
@@ -35,10 +34,10 @@
   --text-secondary: #a1a1aa;
   --text-muted: #71717a;
 
-  /* Status colors */
+  /* Status colors - Electric for OK, Mono for Warn, Red for Fail */
   --status-ok: var(--color-accent);
-  --status-warn: #f59e0b;
-  --status-fail: var(--color-status-red);
+  --status-warn: var(--text-muted);
+  --status-fail: #991b1b;
 
   /* Spacing */
   --space-xs: 4px;
@@ -70,11 +69,12 @@
   --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* Shadows */
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 20px var(--color-accent-glow);
+  /* Shadows - Tight and crisp */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 32px rgba(0, 0, 0, 0.6);
+  --shadow-glow: none;
+  /* Removed harsh glows */
 }
 
 * {
@@ -132,37 +132,7 @@ body {
   }
 }
 
-@keyframes pulse-glow {
-  0% {
-    box-shadow: 0 0 5px var(--color-accent-glow);
-    opacity: 0.8;
-  }
 
-  50% {
-    box-shadow: 0 0 20px var(--color-accent-glow);
-    opacity: 1;
-  }
-
-  100% {
-    box-shadow: 0 0 5px var(--color-accent-glow);
-    opacity: 0.8;
-  }
-}
-
-@keyframes shimmer-text {
-  0% {
-    opacity: 0.6;
-  }
-
-  50% {
-    opacity: 1;
-    color: var(--color-accent);
-  }
-
-  100% {
-    opacity: 0.6;
-  }
-}
 
 @keyframes float {
   0% {
@@ -178,20 +148,23 @@ body {
   }
 }
 
-.shimmer-text {
-  animation: shimmer-text 2s infinite ease-in-out;
-}
-
-.pulse-glow {
-  animation: pulse-glow 3s infinite ease-in-out;
-}
-
 /* Main App Layout */
 .app-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: var(--color-bg-deep);
+  background-color: var(--bg-app);
+}
+
+.jobs-active-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  background-color: var(--color-accent);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--color-accent-glow);
 }
 
 .app-header {
@@ -1164,22 +1137,18 @@ body {
   border-radius: 50%;
   flex-shrink: 0;
   transition: all 0.3s ease;
-  animation: pulse-glow 3s infinite ease-in-out;
 }
 
 .clip-status-dot.ok {
   background: var(--color-accent);
-  box-shadow: 0 0 6px var(--color-accent);
 }
 
 .clip-status-dot.warn {
-  background: #fbbf24;
-  box-shadow: 0 0 6px #fbbf24;
+  background: var(--text-muted);
 }
 
 .clip-status-dot.fail {
-  background: var(--color-status-red);
-  box-shadow: 0 0 6px var(--color-status-red);
+  background: #991b1b;
 }
 
 .meta-item {
@@ -1368,7 +1337,7 @@ body {
 .empty-state-icon {
   width: 80px;
   height: 80px;
-  background: linear-gradient(135deg, var(--bg-card), var(--bg-elevated));
+  background: var(--bg-card);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1629,8 +1598,8 @@ body {
   right: 0;
   width: 150px;
   height: 150px;
-  background: radial-gradient(circle at top right, var(--corner-color, rgba(255, 255, 255, 0.03)) 0%, transparent 70%);
-  opacity: 0.8;
+  background: radial-gradient(circle at top right, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
+  opacity: 0.4;
   pointer-events: none;
   transition: opacity 0.4s ease;
 }
@@ -1649,10 +1618,10 @@ body {
 }
 
 .premium-card:hover .module-icon {
-  background: var(--card-accent, var(--color-accent));
+  background: var(--color-primary);
   color: #000;
-  border-color: var(--card-accent, var(--color-accent));
-  box-shadow: 0 0 20px var(--card-accent-soft, var(--color-accent-glow));
+  border-color: var(--color-primary);
+  box-shadow: none;
 }
 
 .module-action {
@@ -1813,23 +1782,12 @@ body {
 
 /* ─── Export Button Animation ─── */
 
-@keyframes pulse-glow {
 
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 var(--color-accent-glow);
-  }
-
-  50% {
-    box-shadow: 0 0 0 8px transparent;
-  }
-}
 
 .btn-export {
-  background: #1f9d55;
-  border-color: #1f9d55;
-  color: #ffffff;
-  animation: pulse-glow 2s ease-in-out infinite;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #000;
 }
 
 .btn-export:hover {
@@ -2057,9 +2015,9 @@ body {
 }
 
 .segmented-control .btn-toggle.active {
-  background: rgba(45, 212, 191, 0.2);
-  color: #d7fff8;
-  box-shadow: 0 2px 8px rgba(45, 212, 191, 0.24);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent-glow);
 }
 
 .toolbar-actions,
@@ -2102,9 +2060,9 @@ body {
 
 .input-text,
 .input-select {
-  background: linear-gradient(135deg, rgba(38, 38, 38, 0.55), rgba(22, 22, 22, 0.72));
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #e2e8f0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 13px;
@@ -2152,10 +2110,9 @@ body {
 }
 
 .btn-toggle.active {
-  background: rgba(45, 212, 191, 0.2);
-  color: #d7fff8;
-  border-color: rgba(45, 212, 191, 0.55);
-  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.25);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-color: var(--color-accent-glow);
 }
 
 .sort-dir {
@@ -2219,8 +2176,7 @@ body {
 
 .clip-card.selected {
   border-color: var(--color-accent);
-  background: rgba(204, 255, 0, 0.03);
-  box-shadow: 0 0 20px rgba(204, 255, 0, 0.05);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .clip-card-header {
@@ -2328,9 +2284,7 @@ body {
   width: 100%;
   height: 100%;
   background: var(--color-accent);
-  /* Electric Blue */
   border-radius: 2px;
-  animation: jobs-shimmer 2s infinite linear;
 }
 
 @keyframes jobs-shimmer {
@@ -2562,6 +2516,217 @@ body {
   margin-top: 4px;
 }
 
+/* ─── Jobs Live Section ─── */
+
+.jobs-live-section {
+  margin-bottom: 16px;
+}
+
+.jobs-live-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(0, 209, 255, 0.06), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(0, 209, 255, 0.12);
+}
+
+.jobs-live-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.jobs-live-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.jobs-live-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.jobs-live-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Jobs Summary Bar ─── */
+
+.jobs-summary-bar {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.jobs-summary-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 8px;
+}
+
+.jobs-summary-count {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.jobs-summary-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.jobs-summary-fail .jobs-summary-count {
+  color: #ef4444;
+}
+
+/* ─── Status Icons ─── */
+
+.status-icon-done {
+  color: #3dffac;
+}
+
+.status-icon-failed {
+  color: #ef4444;
+}
+
+.status-icon-running {
+  animation: spin 1s linear infinite;
+}
+
+.status-icon-queued {
+  color: var(--text-muted);
+}
+
+.status-icon-cancelled {
+  color: #f59e0b;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Status Badges ─── */
+
+.job-status-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+}
+
+.badge-running {
+  background: rgba(204, 255, 0, 0.12);
+  color: var(--color-accent);
+}
+
+.badge-done {
+  background: rgba(61, 255, 172, 0.1);
+  color: #3dffac;
+}
+
+.badge-failed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+.badge-cancelled {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+}
+
+/* ─── Job Error Banner ─── */
+
+.job-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+  font-size: 0.72rem;
+}
+
+/* ─── Purge Section ─── */
+
+.jobs-purge-section {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.jobs-purge-header {
+  margin-bottom: 4px;
+}
+
+.jobs-purge-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.jobs-purge-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.jobs-purge-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(61, 255, 172, 0.06);
+  border: 1px solid rgba(61, 255, 172, 0.12);
+  color: #3dffac;
+  font-size: 0.75rem;
+  margin-bottom: 10px;
+}
+
+.jobs-purge-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* jobs drawer layout: make purge stick to bottom */
+.jobs-drawer {
+  display: flex;
+  flex-direction: column;
+}
+
 .tour-overlay {
   position: fixed;
   inset: 0;
@@ -2649,6 +2814,8 @@ body {
   top: calc(100% + 8px);
   right: 0;
   width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border-default);
   border-radius: 12px;
@@ -2669,6 +2836,8 @@ body {
   border-radius: 12px;
   padding: 6px;
   min-width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
   z-index: 100;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
   animation: dropdown-in 0.15s ease-out;
@@ -3509,4 +3678,316 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ─── Subtle Navigation ─── */
+.subtle-back-button {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 14px;
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  opacity: 0.6;
+}
+
+.subtle-back-button:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+.subtle-back-button:active {
+  transform: translateY(0);
+}
+
+.subtle-back-button svg {
+  opacity: 0.5;
+  transition: transform 0.3s ease;
+}
+
+.subtle-back-button:hover svg {
+  opacity: 1;
+  transform: translateX(-2px);
+}
+
+/* ─── Extraction Progress ─── */
+.extraction-progress-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 100px;
+  margin-left: 8px;
+}
+
+.progress-bar-bg {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 0.3s ease;
+}
+
+.spinner-progress {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── Toolbar Controls ─── */
+
+.toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border-default);
+  margin: 0 4px;
+  opacity: 0.5;
+}
+
+.thumb-range-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.btn-xs {
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  border-radius: 6px;
+  min-height: 24px;
+}
+
+.btn-ghost.active {
+  background: var(--color-accent);
+  color: var(--bg-primary);
+  font-weight: 700;
+}
+
+.toolbar-select {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.toolbar-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+/* ─── Inline Loading State ─── */
+
+.inline-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 64px 24px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.extraction-progress-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ─── Global Progress Bar ─── */
+
+.global-progress-bar {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  z-index: 50;
+  flex-shrink: 0;
+}
+
+.global-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg,
+      var(--color-accent) 0%,
+      #00e5ff 35%,
+      #00ffcc 70%,
+      var(--color-accent) 100%);
+  background-size: 300% 100%;
+  animation: progress-shimmer 2s ease infinite;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 12px var(--color-accent), 0 0 4px rgba(0, 209, 255, 0.3);
+}
+
+@keyframes progress-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes progress-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ─── Extraction Live Widget ─── */
+
+.extraction-live-widget {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(0, 209, 255, 0.08), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(0, 209, 255, 0.15);
+  animation: widget-fade-in 0.3s ease-out;
+}
+
+@keyframes widget-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.extraction-live-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.extraction-live-icon {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.extraction-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 6px var(--color-accent);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.extraction-pulse-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-accent);
+  opacity: 0;
+  animation: pulse-ring 1.5s ease-out infinite;
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.6;
+  }
+
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.extraction-live-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.extraction-live-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-accent);
+}
+
+.extraction-live-count {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }

@@ -694,6 +694,37 @@ impl Database {
                 id, project_id, root_id, rel_path, filename, file_path, size_bytes, created_at, duration_ms, fps, width, height,
                 video_codec, video_bitrate, format_name, audio_codec, audio_channels, audio_sample_rate,
                 camera_iso, camera_white_balance, audio_summary, timecode, status, rating, flag, notes,
+                shot_size, movement, manual_order, audio_envelope, lut_enabled
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31)
+            ON CONFLICT(id) DO UPDATE SET
+                project_id = excluded.project_id,
+                root_id = excluded.root_id,
+                rel_path = excluded.rel_path,
+                filename = excluded.filename,
+                file_path = excluded.file_path,
+                size_bytes = excluded.size_bytes,
+                created_at = excluded.created_at,
+                duration_ms = excluded.duration_ms,
+                fps = excluded.fps,
+                width = excluded.width,
+                height = excluded.height,
+                video_codec = excluded.video_codec,
+                video_bitrate = excluded.video_bitrate,
+                format_name = excluded.format_name,
+                audio_codec = excluded.audio_codec,
+                audio_channels = excluded.audio_channels,
+                audio_sample_rate = excluded.audio_sample_rate,
+                camera_iso = excluded.camera_iso,
+                camera_white_balance = excluded.camera_white_balance,
+                audio_summary = excluded.audio_summary,
+                timecode = excluded.timecode,
+                status = excluded.status,
+                rating = excluded.rating,
+                flag = excluded.flag,
+                notes = excluded.notes,
+                shot_size = excluded.shot_size,
+                movement = excluded.movement,
+                manual_order = excluded.manual_order,
                 audio_envelope = excluded.audio_envelope
                 -- intentionally excluding lut_enabled from UPDATE to prevent rescans from overwriting it",
             params![
@@ -962,13 +993,13 @@ impl Database {
         Ok(())
     }
 
-    pub fn delete_thumbnails_for_clip(&self, clip_id: &str) -> SqlResult<usize> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "DELETE FROM thumbnails WHERE clip_id = ?1",
-            params![clip_id],
-        )
-    }
+    // pub fn delete_thumbnails_for_clip(&self, clip_id: &str) -> SqlResult<usize> {
+    //     let conn = self.conn.lock().unwrap();
+    //     conn.execute(
+    //         "DELETE FROM thumbnails WHERE clip_id = ?1",
+    //         params![clip_id],
+    //     )
+    // }
 
     pub fn get_thumbnails(&self, clip_id: &str) -> SqlResult<Vec<Thumbnail>> {
         let conn = self.conn.lock().unwrap();
@@ -1805,5 +1836,12 @@ impl Database {
             "DELETE FROM scene_detection_cache WHERE clip_id IN (SELECT id FROM clips WHERE project_id = ?1)",
             params![project_id],
         )
+    }
+
+    pub fn purge_caches(&self) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM scene_detection_cache", [])?;
+        conn.execute("DELETE FROM file_hash_cache", [])?;
+        Ok(())
     }
 }

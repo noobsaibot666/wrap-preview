@@ -11,7 +11,8 @@ pub fn extract_envelope(file_path: &str, points: usize) -> Result<AudioEnvelope,
     // -ac 1: mono
     // -ar 8000: 8kHz sampling rate (plenty for envelope)
 
-    let mut child = Command::new("ffmpeg")
+    let ffmpeg = crate::tools::find_executable("ffmpeg");
+    let mut child = Command::new(ffmpeg)
         .args(&[
             "-i", file_path, "-f", "s16le", "-ac", "1", "-ar", "8000", "-",
         ])

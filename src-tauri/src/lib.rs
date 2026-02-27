@@ -4,11 +4,13 @@ mod commands;
 mod db;
 mod export;
 mod ffprobe;
+mod folders;
 mod jobs;
 mod lut;
 mod perf;
 mod scanner;
 mod thumbnail;
+mod tools;
 mod verification;
 
 use commands::AppState;
@@ -92,6 +94,8 @@ pub fn run() {
             commands::set_clip_lut_enabled,
             commands::generate_lut_thumbnails,
             commands::get_project_settings,
+            commands::create_folder_zip,
+            commands::purge_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

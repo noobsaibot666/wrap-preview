@@ -1,5 +1,5 @@
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 /// Minimum skip time in seconds (skip first 0.5s)
 const SKIP_SECONDS: f64 = 0.5;
@@ -35,7 +35,7 @@ pub fn calculate_timestamps(duration_ms: u64, count: u32) -> Vec<u64> {
         let ts = usable_start + (usable_duration * pos);
         timestamps.push((ts * 1000.0) as u64);
     }
-    
+
     timestamps
 }
 
@@ -57,14 +57,21 @@ pub fn extract_thumbnail(
     let status = if is_braw(input_path) {
         extract_braw_thumbnail(input_path, output_path, timestamp_ms)?
     } else {
-        Command::new("ffmpeg")
+        let ffmpeg = crate::tools::find_executable("ffmpeg");
+        Command::new(ffmpeg)
             .args([
-                "-ss", &ts_str,
-                "-i", input_path,
-                "-vframes", "1",
-                "-vf", &format!("scale={}:-1", MAX_WIDTH),
-                "-pix_fmt", "yuv420p",
-                "-q:v", "6",
+                "-ss",
+                &ts_str,
+                "-i",
+                input_path,
+                "-vframes",
+                "1",
+                "-vf",
+                &format!("scale={}:-1", MAX_WIDTH),
+                "-pix_fmt",
+                "yuv420p",
+                "-q:v",
+                "6",
                 "-y",
                 output_path,
             ])
@@ -100,7 +107,8 @@ fn shell_quote(value: &str) -> String {
 }
 
 fn probe_fps(input_path: &str) -> Option<f64> {
-    let out = Command::new("ffprobe")
+    let ffprobe = crate::tools::find_executable("ffprobe");
+    let out = Command::new(ffprobe)
         .args([
             "-v",
             "error",
@@ -132,7 +140,11 @@ fn probe_fps(input_path: &str) -> Option<f64> {
     rate.parse::<f64>().ok()
 }
 
-fn extract_braw_thumbnail(input_path: &str, output_path: &str, timestamp_ms: u64) -> Result<std::process::Output, String> {
+fn extract_braw_thumbnail(
+    input_path: &str,
+    output_path: &str,
+    timestamp_ms: u64,
+) -> Result<std::process::Output, String> {
     let ff_fmt = Command::new("braw-decode")
         .args(["-f", input_path])
         .output()
@@ -170,13 +182,26 @@ fn extract_braw_thumbnail(input_path: &str, output_path: &str, timestamp_ms: u64
 
 /// Check if a thumbnail image is mostly black by sampling its mean luminance
 fn is_black_frame(image_path: &str) -> bool {
-    let output = Command::new("ffprobe")
+    let ffprobe = crate::tools::find_executable("ffprobe");
+    // Escape path for lavfi filter: ' -> \', , -> \, : -> \:
+    let escaped_path = image_path
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace(",", "\\,")
+        .replace(":", "\\:");
+
+    let output = Command::new(ffprobe)
         .args([
-            "-v", "quiet",
-            "-f", "lavfi",
-            "-i", &format!("movie={},signalstats", image_path),
-            "-show_entries", "frame_tags=lavfi.signalstats.YAVG",
-            "-of", "csv=p=0",
+            "-v",
+            "quiet",
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("movie='{}',signalstats", escaped_path),
+            "-show_entries",
+            "frame_tags=lavfi.signalstats.YAVG",
+            "-of",
+            "csv=p=0",
         ])
         .output();
 
@@ -222,6 +247,5 @@ pub fn extract_with_fallback(
     }
 
     // Last resort: use the target anyway (even if black)
-    extract_thumbnail(input_path, output_path, target_ms)
-        .map(|_| target_ms)
+    extract_thumbnail(input_path, output_path, target_ms).map(|_| target_ms)
 }

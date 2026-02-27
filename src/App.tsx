@@ -15,11 +15,11 @@ import {
   BadgeInfo,
   CircleHelp,
   MoreHorizontal,
-  ImageIcon,
   FileDown,
-  FileText,
   LayoutGrid,
   Settings2,
+  FolderTree,
+  ArrowLeft,
 } from "lucide-react";
 import { ClipList } from "./components/ClipList";
 import { PrintLayout } from "./components/PrintLayout";
@@ -29,8 +29,9 @@ import { BlocksView } from "./components/BlocksView";
 import { JobsPanel } from "./components/JobsPanel";
 import { AboutPanel } from "./components/AboutPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { FolderCreator } from "./components/FolderCreator";
 import { TourGuide, TourStep } from "./components/TourGuide";
-import { exportElementAsImage, exportElementsAsPdf } from "./utils/ExportUtils";
+import { exportPdf, exportImage, ExportClip } from "./utils/ExportUtils";
 import appLogo from "./assets/Icon_square_rounded.svg";
 import { AppInfo, Clip, ClipWithThumbnails, JobInfo, ScanResult, ThumbnailProgress, RecentProject } from "./types";
 import {
@@ -78,28 +79,19 @@ function AppContent() {
   const [scanning, setScanning] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [extractProgress, setExtractProgress] = useState({ done: 0, total: 0 });
-  const [recentProjects, setRecentProjects] = useState<RecentProject[]>(() => {
-    const saved = localStorage.getItem("wp_recent_projects");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return [];
-      }
-    }
-    return [];
-  });
   const [showPrint, setShowPrint] = useState(false);
-  const [printingForImage, setPrintingForImage] = useState(false);
+
   const [preparingExport, setPreparingExport] = useState<{ kind: "pdf" | "image"; message: string } | null>(null);
   const [thumbnailCache, setThumbnailCache] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<"home" | "shot-planner" | "media-workspace" | "contact" | "blocks" | "safe-copy" | "all">(() => {
+  const [activeTab, setActiveTab] = useState<"home" | "preproduction" | "shot-planner" | "media-workspace" | "contact" | "blocks" | "safe-copy" | "all">(() => {
     const saved = localStorage.getItem("wp_active_tab");
-    if (saved === "home" || saved === "shot-planner" || saved === "media-workspace" || saved === "contact" || saved === "blocks" || saved === "safe-copy" || saved === "all") {
-      return saved;
+    if (saved === "home" || saved === "preproduction" || saved === "shot-planner" || saved === "media-workspace" || saved === "contact" || saved === "blocks" || saved === "safe-copy" || saved === "all") {
+      return saved as any;
     }
     return "home";
   });
+  const [activePreproductionApp, setActivePreproductionApp] = useState<"shot-planner" | "folder-creator" | null>(null);
+  const [activeMediaWorkspaceApp, setActiveMediaWorkspaceApp] = useState<"safe-copy" | "clip-review" | "scene-blocks" | "handoff" | null>(null);
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
   const [viewFilter, setViewFilter] = useState<"all" | "picks" | "rated_min">("all");
@@ -113,9 +105,8 @@ function AppContent() {
   const [tourRun, setTourRun] = useState(false);
   const [brandProfile, setBrandProfile] = useState<any>(null);
   const [helpMenuOpen, setHelpMenuOpen] = useState(false);
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [openExportAfterScan, setOpenExportAfterScan] = useState(false);
-  const [lookbookSortMode, setLookbookSortMode] = useState<LookbookSortMode>(() => {
+  const [lookbookSortMode] = useState<LookbookSortMode>(() => {
     const saved = localStorage.getItem("wp_lookbook_sort_mode");
     return saved === "canonical" ? "canonical" : "custom";
   });
@@ -128,7 +119,7 @@ function AppContent() {
   const [sequenceMovementFilter] = useState<string>(() => {
     return localStorage.getItem("wp_sequence_movement_filter") || "all";
   });
-  const [shotSizeFilter, setShotSizeFilter] = useState<string>(() => localStorage.getItem("wp_shot_size_filter") || "all");
+  const [shotSizeFilter] = useState<string>(() => localStorage.getItem("wp_shot_size_filter") || "all");
   const [playingClipId, setPlayingClipId] = useState<string | null>(null);
   const [playingProgress, setPlayingProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -189,7 +180,7 @@ function AppContent() {
     if (projectId) {
       const loadBrand = async () => {
         try {
-          const p = await invoke<any>("get_project", { id: projectId });
+          const p = await invoke<any>("get_project", { projectId: projectId });
           if (p && p.root_path) {
             const profile = await invoke<any>("load_brand_profile", { projectPath: p.root_path });
             setBrandProfile(profile);
@@ -227,11 +218,26 @@ function AppContent() {
     return () => clearInterval(t);
   }, [refreshJobs]);
 
+  // Job System Synchronization
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
-    listen<JobInfo>("job-progress", () => refreshJobs()).then((u) => { unlisten = u; }).catch(console.error);
+    let refreshTimeout: any = null;
+
+    const throttledRefresh = () => {
+      if (refreshTimeout) return;
+      refreshTimeout = setTimeout(() => {
+        refreshJobs();
+        refreshTimeout = null;
+      }, 1000); // Max once per second
+    };
+
+    listen<JobInfo>("job-progress", () => throttledRefresh())
+      .then((u) => { unlisten = u; })
+      .catch(console.error);
+
     return () => {
       if (unlisten) unlisten();
+      if (refreshTimeout) clearTimeout(refreshTimeout);
     };
   }, [refreshJobs]);
 
@@ -246,7 +252,7 @@ function AppContent() {
   }, []);
 
   // State for delayed actions
-  const [postScanTab, setPostScanTab] = useState<"shot-planner" | "media-workspace" | "contact" | "blocks" | "all" | null>(null);
+  const [postScanTab, setPostScanTab] = useState<"preproduction" | "shot-planner" | "media-workspace" | "contact" | "blocks" | "all" | null>(null);
 
   const [projectLut, setProjectLut] = useState<{ path: string; name: string; hash: string } | null>(null);
   const [lutRenderNonce, setLutRenderNonce] = useState(0);
@@ -278,36 +284,6 @@ function AppContent() {
       setProjectLut(null);
     }
   }, []);
-
-  const handleLoadLut = async () => {
-    if (!projectId) return;
-    try {
-      const selected = await open({
-        multiple: false,
-        filters: [{ name: 'LUT Files', extensions: ['cube'] }]
-      });
-      if (selected && typeof selected === 'string') {
-        await invoke("set_project_lut", { projectId, lutPath: selected });
-        await fetchProjectSettings(projectId);
-        await invoke("generate_lut_thumbnails", { projectId });
-        setLutRenderNonce((n) => n + 1);
-      }
-    } catch (e) {
-      console.error(e);
-      setUiError({ title: "LUT Load Failed", hint: String(e) });
-    }
-  };
-
-  const handleRemoveLut = async () => {
-    if (!projectId) return;
-    try {
-      await invoke("remove_project_lut", { projectId });
-      await fetchProjectSettings(projectId);
-      setLutRenderNonce((n) => n + 1);
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   const [hoveredClipId, setHoveredClipId] = useState<string | null>(null);
 
@@ -416,7 +392,7 @@ function AppContent() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (tourRun) return;
-      const inReview = activeTab === "contact" || activeTab === "shot-planner";
+      const inReview = activeTab === "contact" || activeTab === "preproduction";
       if (!inReview) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.target instanceof HTMLElement && e.target.closest("[data-tour-tooltip]")) return;
@@ -466,7 +442,15 @@ function AppContent() {
 
   useEffect(() => {
     if (projectId && postScanTab) {
-      setActiveTab(postScanTab);
+      if (postScanTab === "preproduction" || postScanTab === "shot-planner") {
+        setActiveTab("preproduction");
+        setActivePreproductionApp("shot-planner");
+      } else if (postScanTab === "media-workspace") {
+        setActiveTab("media-workspace");
+        setActiveMediaWorkspaceApp("clip-review");
+      } else {
+        setActiveTab(postScanTab as any);
+      }
       setPostScanTab(null);
     }
   }, [projectId, postScanTab]);
@@ -502,10 +486,9 @@ function AppContent() {
         path: thumb.file_path
       }))
     );
-    if (thumbEntries.length === 0) {
-      setThumbnailCache({});
-      return;
-    }
+    if (thumbEntries.length === 0) return;
+
+    console.log(`[Thumbnail] Hydrating cache with ${thumbEntries.length} entries`);
 
     const results = thumbEntries.map(({ key, path }) => {
       try {
@@ -517,11 +500,13 @@ function AppContent() {
       }
     });
 
-    const nextCache: Record<string, string> = {};
-    for (const item of results) {
-      if (item) nextCache[item.key] = item.url;
-    }
-    setThumbnailCache(nextCache);
+    setThumbnailCache(prev => {
+      const next = { ...prev };
+      for (const item of results) {
+        if (item) next[item.key] = item.url;
+      }
+      return next;
+    });
   }, []);
 
   const refreshProjectClips = useCallback(async (nextProjectId: string) => {
@@ -538,7 +523,7 @@ function AppContent() {
   }, [hydrateThumbnailCache]);
 
 
-  // Listen for thumbnail progress events
+  // Persistent Thumbnail Listeners
   useEffect(() => {
     let unlistenProgress: UnlistenFn | null = null;
     let unlistenComplete: UnlistenFn | null = null;
@@ -546,7 +531,10 @@ function AppContent() {
     async function setupListeners() {
       unlistenProgress = await listen<ThumbnailProgress>("thumbnail-progress", (event) => {
         const { project_id, clip_id, clip_index, total_clips, thumbnails } = event.payload;
-        if (!projectId || project_id !== projectId) return;
+
+        // Use Ref for latest project ID to avoid stale closure issues
+        if (activeProjectRef.current !== project_id) return;
+
         setExtractProgress({ done: clip_index + 1, total: total_clips });
 
         if (thumbnails.length > 0) {
@@ -556,29 +544,29 @@ function AppContent() {
             )
           );
 
-          const results = thumbnails.map((thumb) => {
+          const newEntries: Record<string, string> = {};
+          thumbnails.forEach(thumb => {
             try {
               const url = convertFileSrc(thumb.file_path);
-              return { key: `${thumb.clip_id}_${thumb.index}`, url };
+              newEntries[`${thumb.clip_id}_${thumb.index}`] = url;
             } catch (e) {
-              console.warn("Failed to load thumbnail:", e);
-              return null;
+              console.warn("Failed to convert thumbnail path:", e);
             }
           });
-          const newEntries: Record<string, string> = {};
-          results.forEach(res => {
-            if (res) newEntries[res.key] = res.url;
-          });
+
           if (Object.keys(newEntries).length > 0) {
             setThumbnailCache(prev => ({ ...prev, ...newEntries }));
           }
         }
       });
 
-      unlistenComplete = await listen("thumbnail-complete", async () => {
-        setExtracting(false);
-        if (projectId) {
-          await refreshProjectClips(projectId);
+      unlistenComplete = await listen("thumbnail-complete", async (event) => {
+        const payload = event.payload as { project_id: string };
+        console.log("[Thumbnail] Extraction complete for project:", payload.project_id);
+
+        if (activeProjectRef.current === payload.project_id) {
+          setExtracting(false);
+          await refreshProjectClips(payload.project_id);
         }
       });
     }
@@ -589,7 +577,7 @@ function AppContent() {
       if (unlistenProgress) unlistenProgress();
       if (unlistenComplete) unlistenComplete();
     };
-  }, [projectId, refreshProjectClips]);
+  }, [refreshProjectClips]); // Only depends on refreshProjectClips which is stable-ish
 
   const handleCloseProject = useCallback(() => {
     setProjectId(null);
@@ -601,53 +589,21 @@ function AppContent() {
   }, []);
 
   const addRecentProject = useCallback((id: string, name: string, path: string) => {
-    setRecentProjects(prev => {
-      const filtered = prev.filter(p => p.path !== path);
-      const next = [{ id, name, path, lastOpened: Date.now() }, ...filtered].slice(0, 5);
-      localStorage.setItem("wp_recent_projects", JSON.stringify(next));
-      return next;
-    });
+    const saved = localStorage.getItem("wp_recent_projects");
+    let prev: RecentProject[] = [];
+    if (saved) {
+      try {
+        prev = JSON.parse(saved);
+      } catch (e) {
+        // ignore
+      }
+    }
+    const filtered = prev.filter((p) => p.path !== path);
+    const next = [{ id, name, path, lastOpened: Date.now() }, ...filtered].slice(0, 5);
+    localStorage.setItem("wp_recent_projects", JSON.stringify(next));
   }, []);
 
-  const handleOpenRecentProject = useCallback(async (path: string, targetTab?: "shot-planner" | "media-workspace" | "contact" | "blocks" | "all") => {
-    setScanning(true);
-    handleCloseProject();
-    if (targetTab) setPostScanTab(targetTab);
-
-    try {
-      const result = await invoke<ScanResult>("scan_folder", {
-        folderPath: path,
-      });
-
-      setProjectId(result.project_id);
-      setProjectName(result.project_name);
-      setClips(result.clips.map((clip) => ({ clip, thumbnails: [] })));
-      addRecentProject(result.project_id, result.project_name, path);
-
-      /* 
-      setExtracting(true);
-      setExtractProgress({ done: 0, total: result.clip_count });
-      invoke("extract_thumbnails", { projectId: result.project_id }).catch(
-        (e) => {
-          setExtracting(false);
-          console.error("Failed executing thumbnail extraction", e);
-        }
-      );
-      */
-    } catch (error) {
-      console.error("Failed to open recent project", error);
-      setUiError({ title: "Failed to open recent project", hint: "The folder may have moved or been deleted." });
-      // Remove it from the list if it fails
-      setRecentProjects(prev => {
-        const next = prev.filter(p => p.path !== path);
-        localStorage.setItem("wp_recent_projects", JSON.stringify(next));
-        return next;
-      });
-      setScanning(false);
-    }
-  }, [handleCloseProject, addRecentProject]);
-
-  const handleSelectFolder = useCallback(async (targetTab?: "shot-planner" | "media-workspace" | "contact" | "blocks" | "all") => {
+  const handleSelectFolder = useCallback(async (targetTab?: "preproduction" | "shot-planner" | "media-workspace" | "contact" | "blocks" | "all") => {
     const selected = await open({
       directory: true,
       multiple: false,
@@ -670,7 +626,6 @@ function AppContent() {
       setClips(result.clips.map((clip) => ({ clip, thumbnails: [] })));
       addRecentProject(result.project_id, result.project_name, selected as string);
 
-      /* 
       setExtracting(true);
       setExtractProgress({ done: 0, total: result.clip_count });
       invoke("extract_thumbnails", { projectId: result.project_id }).catch(
@@ -680,7 +635,6 @@ function AppContent() {
           setExtracting(false);
         }
       );
-      */
 
       refreshProjectClips(result.project_id).catch((err) => {
         console.warn("Initial clip refresh failed", err);
@@ -767,71 +721,48 @@ function AppContent() {
   }, []);
 
 
-  const getExportFilename = () => {
-    const date = new Date().toISOString().split('T')[0];
-    return namingTemplate
-      .replace("{PROJECT}", projectName || "ContactSheet")
-      .replace("{DATE}", date)
-      .replace("{COUNT}", selectedClipIds.size.toString());
-  };
 
-  const waitForPrintAssets = useCallback(async () => {
-    const waitForMount = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-    await waitForMount(120);
-    const printArea = document.getElementById("print-area");
-    if (!printArea) {
-      throw new Error("Print layout not ready.");
-    }
-
-    const clipRows = Array.from(printArea.querySelectorAll(".print-clip-row"));
-    if (clipRows.length === 0) {
-      throw new Error("No clip rows are available for export.");
-    }
-
-    const thumbImages = Array.from(printArea.querySelectorAll(".print-thumb img")) as HTMLImageElement[];
-    const waitForImage = (img: HTMLImageElement) =>
-      new Promise<void>((resolve) => {
-        if (img.complete) {
-          resolve();
-          return;
-        }
-        const done = () => {
-          img.removeEventListener("load", done);
-          img.removeEventListener("error", done);
-          resolve();
-        };
-        img.addEventListener("load", done);
-        img.addEventListener("error", done);
-      });
-
-    await Promise.all(thumbImages.map(waitForImage));
-    const loadedThumbs = thumbImages.filter((img) => img.naturalWidth > 0).length;
-    if (loadedThumbs === 0) {
-      throw new Error("No thumbnails were available for export.");
-    }
-  }, []);
+  const getExportClips = useCallback((): ExportClip[] => {
+    return clips
+      .filter((c) => selectedClipIds.has(c.clip.id))
+      .map((c) => ({
+        id: c.clip.id,
+        filename: c.clip.filename,
+        duration_ms: c.clip.duration_ms,
+        fps: c.clip.fps,
+        width: c.clip.width,
+        height: c.clip.height,
+        video_codec: c.clip.video_codec,
+        audio_codec: c.clip.audio_codec,
+        rating: c.clip.rating,
+        flag: c.clip.flag,
+        shot_size: c.clip.shot_size,
+        movement: c.clip.movement,
+        lut_enabled: c.clip.lut_enabled,
+      }));
+  }, [clips, selectedClipIds]);
 
   const handleExportImage = async () => {
     if (selectedClipIds.size === 0) return;
-    setPrintingForImage(true);
-    setPreparingExport({ kind: "image", message: "Preparing image export..." });
+    setPreparingExport({ kind: "image", message: "Generating contact sheet image..." });
     try {
-      await waitForPrintAssets();
-      const element = document.getElementById("print-area");
-      if (!element) {
-        throw new Error("Export layout unavailable.");
-      }
-      await exportElementAsImage(element, getExportFilename());
+      await exportImage({
+        projectName: projectName || "ContactSheet",
+        clips: getExportClips(),
+        thumbnailCache,
+        thumbCount,
+        projectLutHash: projectLut?.hash || null,
+        brandName: brandProfile?.name,
+      });
       setUiError(null);
     } catch (err) {
       console.error(err);
       setUiError({
         title: "Image export failed",
-        hint: "Retry after thumbnails load. If it persists, export diagnostics and check folder permissions.",
+        hint: "Retry after thumbnails load. If it persists, check folder permissions.",
       });
     } finally {
       setPreparingExport(null);
-      setPrintingForImage(false);
     }
   };
 
@@ -847,50 +778,55 @@ function AppContent() {
     }
   };
 
-
   const handleExport = useCallback(() => {
     if (selectedClipIds.size === 0) {
       alert("Please select at least one clip to export.");
       return;
     }
     const run = async () => {
-      setShowPrint(true);
-      setPreparingExport({ kind: "pdf", message: "Preparing PDF export..." });
-      document.body.classList.add("printing-contact-sheet");
+      setPreparingExport({ kind: "pdf", message: "Generating PDF contact sheet..." });
       try {
-        await waitForPrintAssets();
-        const pages = Array.from(document.querySelectorAll(".print-page")) as HTMLElement[];
-        if (pages.length === 0) {
-          throw new Error("No pages found for export.");
-        }
-        await exportElementsAsPdf(pages, getExportFilename());
+        await exportPdf({
+          projectName: projectName || "ContactSheet",
+          clips: getExportClips(),
+          thumbnailCache,
+          thumbCount,
+          projectLutHash: projectLut?.hash || null,
+          brandName: brandProfile?.name,
+        });
         setUiError(null);
       } catch (err) {
         console.error(err);
         setUiError({
           title: "PDF export failed",
-          hint: "Retry after thumbnails load. If it persists, ensure all pages are visible.",
+          hint: "Retry after thumbnails load.",
         });
       } finally {
-        document.body.classList.remove("printing-contact-sheet");
         setPreparingExport(null);
-        setTimeout(() => setShowPrint(false), 350);
       }
     };
     run().catch((err) => {
       console.error(err);
       setPreparingExport(null);
-      setShowPrint(false);
     });
-  }, [selectedClipIds, waitForPrintAssets]);
+  }, [selectedClipIds, getExportClips, thumbnailCache, thumbCount, projectLut, brandProfile, projectName]);
 
   const totalClips = clips.length;
   const okClips = clips.filter((c) => c.clip.status === "ok").length;
   const warnClips = clips.filter((c) => c.clip.status === "warn").length;
   const runningJobs = jobs.filter((j) => j.status === "running" || j.status === "queued").length;
-  const failedJobs = jobs.filter((j) => j.status === "failed").length;
   const totalSize = clips.reduce((acc, c) => acc + c.clip.size_bytes, 0);
   const totalDuration = clips.reduce((acc, c) => acc + c.clip.duration_ms, 0);
+
+  // Advanced stats for pre-production
+  const avgDuration = totalClips > 0 ? totalDuration / totalClips : 0;
+  const clipsWithAudio = clips.filter((c) => c.clip.audio_codec && c.clip.audio_codec !== "none" && c.clip.audio_codec !== "").length;
+  const fpsSet = new Set(clips.map((c) => c.clip.fps).filter(Boolean));
+  const topFps = clips.length > 0 ? [...fpsSet].sort((a, b) => b - a)[0] : 0;
+  const resolutions = new Set(clips.map((c) => `${c.clip.width}×${c.clip.height}`).filter(r => r !== "0×0"));
+  const topRes = resolutions.size > 0 ? [...resolutions][0] : "—";
+  const picksCount = clips.filter((c) => c.clip.flag === "pick").length;
+  const ratedCount = clips.filter((c) => c.clip.rating > 0).length;
 
   const visibleClips = clips.filter(({ clip }) => {
     const viewMatch =
@@ -922,8 +858,8 @@ function AppContent() {
 
   return (
     <div className="app-container">
-      {(showPrint || printingForImage) && (
-        <div id="print-area" style={printingForImage ? { position: 'absolute', left: '-9999px', width: '297mm' } : {}}>
+      {showPrint && (
+        <div id="print-area">
           <PrintLayout
             projectName={projectName}
             clips={sortedClips.filter(c => selectedClipIds.has(c.clip.id) && c.clip.flag !== "reject")}
@@ -933,10 +869,10 @@ function AppContent() {
             appVersion={appInfo?.version || "unknown"}
             thumbCount={thumbCount}
             onClose={() => {
-              if (!printingForImage) setShowPrint(false);
+              setShowPrint(false);
             }}
             projectLutHash={projectLut?.hash || null}
-            printingForImage={printingForImage}
+
           />
         </div>
       )}
@@ -1022,446 +958,443 @@ function AppContent() {
             <button className="btn btn-jobs" onClick={() => setJobsOpen(true)}>
               <div className="jobs-indicator-content">
                 <BriefcaseBusiness size={16} />
-                <span className={runningJobs > 0 ? "shimmer-text" : ""}>
-                  Jobs {runningJobs > 0 ? `(${runningJobs})` : ""}
+                <span className="jobs-label">
+                  {(scanning || extracting) ? (scanning ? "Scanning…" : `Extracting ${extractProgress.done}/${extractProgress.total}`) : `Jobs${runningJobs > 0 ? ` (${runningJobs})` : ""}`}
                 </span>
               </div>
-              {runningJobs > 0 && (
-                <div className="jobs-progress-bar">
-                  <div className="jobs-progress-fill pulse-glow" />
-                </div>
+              {(scanning || extracting || runningJobs > 0) && (
+                <div className="jobs-active-dot" />
               )}
-              {runningJobs === 0 && failedJobs > 0 && <span className="clip-status-dot fail" />}
-              {runningJobs === 0 && failedJobs === 0 && <span className="clip-status-dot ok" />}
             </button>
           </>
         </div>
       </header>
 
+      {(scanning || extracting) && (
+        <div className="global-progress-bar">
+          <div
+            className="global-progress-fill"
+            style={{
+              width: scanning ? '100%' : `${(extractProgress.done / (extractProgress.total || 1)) * 100}%`,
+              animationName: scanning ? 'progress-indeterminate' : 'none'
+            }}
+          />
+        </div>
+      )}
+
       <div className="app-content">
-        {activeTab !== 'home' && (
-          <nav className="app-tabs-nav">
-            <button className="nav-tab" onClick={() => setActiveTab('home')}>
-              <LayoutGrid size={14} /> Modules
-            </button>
-            <button className={`nav-tab ${activeTab === 'shot-planner' ? 'active' : ''}`} onClick={() => setActiveTab('shot-planner')}>
-              <ImageIcon size={14} /> Shot Planner
-            </button>
-            <button className={`nav-tab ${activeTab === 'media-workspace' ? 'active' : ''}`} onClick={() => setActiveTab('media-workspace')}>
-              <BriefcaseBusiness size={14} /> Media Workspace
-            </button>
-            <button className={`nav-tab ${activeTab === 'contact' ? 'active' : ''}`} onClick={() => setActiveTab('contact')}>
-              <Camera size={14} /> Clip Review
-            </button>
-            <button className={`nav-tab ${activeTab === 'blocks' ? 'active' : ''}`} onClick={() => setActiveTab('blocks')}>
-              <Boxes size={14} /> Blocks
-            </button>
-            <button className={`nav-tab ${activeTab === 'safe-copy' ? 'active' : ''}`} onClick={() => setActiveTab('safe-copy')}>
-              <ShieldCheck size={14} /> Safe Copy
-            </button>
-            <button
-              className={`nav-tab ${showExportPanel ? 'active' : ''}`}
-              onClick={() => {
-                if (!projectId) {
-                  setUiError({ title: "No Project Loaded", hint: "Please initialize a workspace by checking clips first." });
-                  return;
-                }
-                setShowExportPanel(true);
-              }}
-            >
-              <FileDown size={14} /> Handoff
-            </button>
-          </nav>
-        )}
+        <nav className="app-tabs-nav">
+          <button className="nav-tab" onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
+            <LayoutGrid size={14} /> Home
+          </button>
+          <button
+            className={`nav-tab ${activeTab === 'preproduction' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('preproduction'); setActivePreproductionApp(null); }}
+          >
+            <Boxes size={14} /> Pre-production
+          </button>
+          <button
+            className={`nav-tab ${activeTab === 'media-workspace' ? 'active' : ''}`}
+            onClick={() => { setActiveTab('media-workspace'); setActiveMediaWorkspaceApp(null); }}
+          >
+            <BriefcaseBusiness size={14} /> Media Workspace
+          </button>
+        </nav>
         {uiError && (
           <div className="error-banner">
             <strong>{uiError.title}</strong> {uiError.hint}
           </div>
         )}
-        {activeTab === 'contact' || activeTab === 'all' || activeTab === 'shot-planner' ? (
-          projectId ? (
-            <div className="media-workspace">
-              <div className="stats-bar">
-                <div className={`stat-card ${selectedClipIds.size > 0 ? 'stat-card-highlight' : ''}`}>
-                  <div className="stat-header">
-                    <span className="stat-label">Selection</span>
+        {activeTab === 'preproduction' ? (
+          activePreproductionApp === 'shot-planner' ? (
+            projectId ? (
+              <div className="media-workspace">
+                <div className="stats-bar">
+                  <div className={`stat-card ${selectedClipIds.size > 0 ? 'stat-card-highlight' : ''}`}>
+                    <div className="stat-header">
+                      <span className="stat-label">Selection</span>
+                    </div>
+                    <span className="stat-value stat-value-xl">{selectedClipIds.size}<span className="stat-value-total"> / {totalClips}</span></span>
+                    <span className="stat-sub">Selected for Export</span>
                   </div>
-                  <span className="stat-value stat-value-xl">{selectedClipIds.size}<span className="stat-value-total"> / {totalClips}</span></span>
-                  <span className="stat-sub">Selected for Export</span>
+                  <div className="stat-card">
+                    <div className="stat-header">
+                      <span className="stat-label">Assets</span>
+                      <Info size={12} className="info-icon" />
+                    </div>
+                    <span className="stat-value">{totalClips}</span>
+                    <span className="stat-sub">{formatFileSize(totalSize)} • {okClips} OK / {warnClips} Warn</span>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-header">
+                      <span className="stat-label">Duration</span>
+                    </div>
+                    <span className="stat-value">{formatDuration(totalDuration)}</span>
+                    <span className="stat-sub">Avg {formatDuration(avgDuration)}/clip</span>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-header">
+                      <span className="stat-label">Resolution</span>
+                    </div>
+                    <span className="stat-value" style={{ fontSize: '0.85rem' }}>{topRes}</span>
+                    <span className="stat-sub">{resolutions.size} format{resolutions.size !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-header">
+                      <span className="stat-label">FPS</span>
+                    </div>
+                    <span className="stat-value">{topFps || '—'}</span>
+                    <span className="stat-sub">{fpsSet.size} rate{fpsSet.size !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-header">
+                      <span className="stat-label">Audio</span>
+                    </div>
+                    <span className="stat-value">{clipsWithAudio}</span>
+                    <span className="stat-sub">{totalClips > 0 ? Math.round((clipsWithAudio / totalClips) * 100) : 0}% with audio</span>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-header">
+                      <span className="stat-label">Picks</span>
+                    </div>
+                    <span className="stat-value">{picksCount}</span>
+                    <span className="stat-sub">{ratedCount} rated</span>
+                  </div>
                 </div>
-                <div className="stat-card">
-                  <div className="stat-header">
-                    <span className="stat-label">Assets</span>
-                    <Info size={12} className="info-icon" data-tooltip="Total video files discovered." />
+
+                <div className="toolbar premium-toolbar">
+                  <div className="toolbar-left-group">
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleSelectFolder("shot-planner")} disabled={scanning || extracting}>
+                      {scanning ? <div className="spinner" /> : extracting ? <span className="spinner-progress" /> : <FolderOpen size={14} />}
+                      <span>{scanning ? "Scanning..." : extracting ? `Extracting (${extractProgress.done}/${extractProgress.total})` : "Load Footage"}</span>
+                    </button>
+                    {extracting && (
+                      <div className="extraction-progress-mini">
+                        <div className="progress-bar-bg">
+                          <div className="progress-bar-fill" style={{ width: `${(extractProgress.done / (extractProgress.total || 1)) * 100}%` }} />
+                        </div>
+                      </div>
+                    )}
+                    <div className="toolbar-separator" />
+                    <div className="thumb-range-selector">
+                      <span className="toolbar-label">Thumbs</span>
+                      {[3, 5, 7].map((n) => (
+                        <button
+                          key={n}
+                          className={`btn btn-ghost btn-xs ${thumbCount === n ? 'active' : ''}`}
+                          onClick={() => { setThumbCount(n); localStorage.setItem('wp_thumbCount', n.toString()); }}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="toolbar-separator" />
+                    <select
+                      className="toolbar-select"
+                      value={viewFilter}
+                      onChange={(e) => setViewFilter(e.target.value as any)}
+                    >
+                      <option value="all">All Clips</option>
+                      <option value="picks">Picks Only</option>
+                      <option value="rated_min">Rated ≥</option>
+                    </select>
+                    {viewFilter === 'rated_min' && (
+                      <select
+                        className="toolbar-select"
+                        value={viewMinRating}
+                        onChange={(e) => setViewMinRating(Number(e.target.value))}
+                        style={{ width: 60 }}
+                      >
+                        {[1, 2, 3, 4, 5].map((r) => (
+                          <option key={r} value={r}>★{r}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
-                  <span className="stat-value">{totalClips}</span>
-                  <div className="stat-sub-group">
-                    <span className="stat-sub-item ok">{okClips} OK</span>
-                    <span className="stat-sub-item warn">{warnClips} WARN</span>
+                  <div className="toolbar-right-group">
+                    <button className="btn btn-ghost btn-sm" onClick={toggleSelectAll}>
+                      {selectedSelectableCount === selectableClipIds.length ? "Deselect All" : "Select All"}
+                    </button>
                   </div>
                 </div>
-                <div className="stat-card">
-                  <div className="stat-header">
-                    <span className="stat-label">Warnings</span>
-                    <Info size={12} className="info-icon" data-tooltip="No embedded timecode found in these files." />
+
+                {scanning && (
+                  <div className="inline-loading-state">
+                    <div className="spinner" />
+                    <span>Scanning folder for media files…</span>
                   </div>
-                  <span className="stat-value">{warnClips}</span>
-                  <span className="stat-sub">Missing Timecode</span>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-header">
-                    <span className="stat-label">Total Duration</span>
-                    <Info size={12} className="info-icon" data-tooltip="Cumulative runtime of all discovered clips." />
-                  </div>
-                  <span className="stat-value">{formatDuration(totalDuration)}</span>
-                  <span className="stat-sub">{formatFileSize(totalSize)} total volume</span>
-                </div>
-                <div className={`stat-card ${projectLut ? 'stat-card-lut-loaded' : ''}`}>
-                  <div className="stat-header">
-                    <span className="stat-label">Color Profile</span>
-                    <Info size={12} className="info-icon" />
-                  </div>
-                  <span className="stat-value" style={{ fontSize: '1.2rem', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '100px' }}>
-                    {projectLut ? projectLut.name : 'None'}
-                  </span>
-                  <div className="stat-sub-group">
-                    <span className="stat-sub-item ok" style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={handleLoadLut}>
-                      Load LUT
-                    </span>
-                    {projectLut && (
-                      <span className="stat-sub-item warn" style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={handleRemoveLut}>
-                        Clear
-                      </span>
+                )}
+
+                <ClipList
+                  clips={sortedClips}
+                  thumbnailCache={thumbnailCache}
+                  isExtracting={extracting}
+                  selectedIds={selectedClipIds}
+                  onToggleSelection={toggleClipSelection}
+                  thumbCount={thumbCount}
+                  onUpdateMetadata={handleUpdateMetadata}
+                  onHoverClip={setHoveredClipId}
+                  shotSizeOptions={[...SHOT_SIZE_CANONICAL, ...(enableOptionalShotTags ? SHOT_SIZE_OPTIONAL : []), ...customShotSizes]}
+                  movementOptions={[...MOVEMENT_CANONICAL, ...customMovements]}
+                  lookbookSortMode={lookbookSortMode}
+                  groupByShotSize={true}
+                  onPromoteClip={handlePromoteClip}
+                  onPlayClip={handlePlayClip}
+                  playingClipId={playingClipId}
+                  playingProgress={playingProgress}
+                  focusedClipId={hoveredClipId}
+                  projectLutHash={projectLut?.hash || null}
+                  lutRenderNonce={lutRenderNonce}
+                  hideLutControls={true}
+                  onExportPDF={handleExport}
+                  onExportImage={handleExportImage}
+                />
+              </div>
+            ) : (scanning || extracting) ? (
+              <div className="media-workspace">
+                <div className="toolbar premium-toolbar">
+                  <div className="toolbar-left-group">
+                    <button className="btn btn-secondary btn-sm" disabled>
+                      {scanning ? <div className="spinner" /> : <span className="spinner-progress" />}
+                      <span>{scanning ? "Scanning…" : `Extracting (${extractProgress.done}/${extractProgress.total})`}</span>
+                    </button>
+                    {extracting && (
+                      <div className="extraction-progress-mini">
+                        <div className="progress-bar-bg">
+                          <div className="progress-bar-fill" style={{ width: `${(extractProgress.done / (extractProgress.total || 1)) * 100}%` }} />
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
-              </div>
-
-              {extracting && (
-                <div className="progress-container">
-                  <div className="progress-bar-wrapper">
-                    <div className="progress-bar-fill" style={{ width: `${extractProgress.total > 0 ? (extractProgress.done / extractProgress.total) * 100 : 0}% ` }} />
-                  </div>
-                  <div className="progress-label">
-                    <span>Extracting thumbnails…</span>
-                    <span>{extractProgress.done} / {extractProgress.total}</span>
-                  </div>
-                </div>
-              )}
-
-              <div className="toolbar premium-toolbar">
-                <div className="toolbar-left-group">
-                  <div className="toolbar-segment">
-                    <span className="toolbar-label">Sort</span>
-                    <div className="sort-group">
-                      <select className="input-select" value={lookbookSortMode} onChange={(e) => setLookbookSortMode(e.target.value as LookbookSortMode)}>
-                        <option value="custom">Custom Manual</option>
-                        <option value="canonical">Canonical</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="toolbar-divider" />
-
-                  <div className="toolbar-segment">
-                    <span className="toolbar-label">Filter</span>
-                    <div className="sort-group">
-                      <select className="input-select" value={viewFilter} onChange={(e) => setViewFilter(e.target.value as "all" | "picks" | "rated_min")}>
-                        <option value="all">Show All</option>
-                        <option value="picks">Picks Only</option>
-                        <option value="rated_min">Rating &gt;= N</option>
-                      </select>
-                      {viewFilter === "rated_min" && (
-                        <select className="input-select" value={viewMinRating} onChange={(e) => setViewMinRating(Number(e.target.value))}>
-                          {[1, 2, 3, 4, 5].map((n) => (
-                            <option key={n} value={n}>{n}+</option>
-                          ))}
-                        </select>
-                      )}
-                      <select className="input-select" value={shotSizeFilter} onChange={(e) => setShotSizeFilter(e.target.value)}>
-                        <option value="all">All Shot Sizes</option>
-                        {[...SHOT_SIZE_CANONICAL, ...(enableOptionalShotTags ? SHOT_SIZE_OPTIONAL : []), ...customShotSizes].map((size) => (
-                          <option key={size} value={size}>{size}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="toolbar-divider" />
-
-                  <div className="toolbar-segment">
-                    <span className="toolbar-label">Layout</span>
-                    <div className="segmented-control">
-                      {[3, 5, 7].map((n) => (
-                        <button key={n} className={`btn-toggle ${thumbCount === n ? 'active' : ''}`} onClick={() => setThumbCount(n)}>{n}</button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="toolbar-divider" />
-
-                  <div className="toolbar-segment">
-                    <span className="toolbar-label">Selection</span>
-                    <div className="toolbar-actions">
-                      <button className="btn-link" onClick={toggleSelectAll}>{selectableClipIds.length > 0 && selectedSelectableCount === selectableClipIds.length ? "Clear" : "All"}</button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="toolbar-right-group">
-                  {projectId && clips.length > 0 && !extracting && (
-                    <div className="export-dropdown-wrapper">
-                      <button
-                        className="btn btn-primary btn-export tour-open-export"
-                        onClick={() => setExportMenuOpen(!exportMenuOpen)}
-                        disabled={selectedClipIds.size === 0}
-                      >
-                        <FileDown size={16} /> Export ▾
-                      </button>
-                      {exportMenuOpen && (
-                        <>
-                          <div className="dropdown-backdrop" onClick={() => setExportMenuOpen(false)} />
-                          <div className="export-dropdown">
-                            <button className="dropdown-item" onClick={() => { handleExport(); setExportMenuOpen(false); }}>
-                              <FileText size={15} /> Export as PDF
-                            </button>
-                            <button className="dropdown-item" onClick={() => { handleExportImage(); setExportMenuOpen(false); }}>
-                              <ImageIcon size={15} /> Export as Image
-                            </button>
-                          </div>
-                        </>
-                      )}
+                <div className="inline-loading-state">
+                  <div className="spinner" style={{ width: 28, height: 28 }} />
+                  <span style={{ fontSize: '1rem' }}>{scanning ? "Scanning folder for media files…" : "Extracting thumbnails and analyzing footage…"}</span>
+                  {extracting && (
+                    <div className="extraction-progress-inline">
+                      <div className="progress-bar-bg" style={{ width: 300, height: 6 }}>
+                        <div className="progress-bar-fill" style={{ width: `${(extractProgress.done / (extractProgress.total || 1)) * 100}%` }} />
+                      </div>
+                      <span className="stat-sub">{extractProgress.done} / {extractProgress.total} clips</span>
                     </div>
                   )}
                 </div>
               </div>
-
-              <ClipList
-                clips={sortedClips}
-                thumbnailCache={thumbnailCache}
-                isExtracting={extracting}
-                selectedIds={selectedClipIds}
-                onToggleSelection={toggleClipSelection}
-                thumbCount={thumbCount}
-                onUpdateMetadata={handleUpdateMetadata}
-                onHoverClip={setHoveredClipId}
-                shotSizeOptions={[...SHOT_SIZE_CANONICAL, ...(enableOptionalShotTags ? SHOT_SIZE_OPTIONAL : []), ...customShotSizes]}
-                movementOptions={[...MOVEMENT_CANONICAL, ...customMovements]}
-                lookbookSortMode={lookbookSortMode}
-                groupByShotSize={activeTab === 'shot-planner'}
-                onPromoteClip={handlePromoteClip}
-                onPlayClip={handlePlayClip}
-                playingClipId={playingClipId}
-                playingProgress={playingProgress}
-                focusedClipId={hoveredClipId}
-                projectLutHash={projectLut?.hash || null}
-                lutRenderNonce={lutRenderNonce}
-                hideLutControls={activeTab === 'shot-planner'}
-              />
-            </div>
-          ) : (
-            <div className="onboarding-container" style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div className="empty-state-card premium-card" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
-                <div className="module-icon" style={{ marginBottom: 24, transform: 'scale(1.5)' }}>
-                  {activeTab === 'shot-planner' ? <ImageIcon size={48} strokeWidth={1} /> : <Camera size={48} strokeWidth={1} />}
+            ) : (
+              <div className="onboarding-container">
+                <div className="empty-state-card premium-card">
+                  <div className="module-icon"><Camera size={48} strokeWidth={1} /></div>
+                  <h2>Shot Index</h2>
+                  <p>Browse reference footage and generate vertical shot plans.</p>
+                  <button className="btn btn-primary btn-lg" onClick={() => handleSelectFolder("shot-planner")} disabled={scanning}>
+                    <FolderOpen size={18} />
+                    <span>Select Reference Folder</span>
+                  </button>
                 </div>
-                <h2>{activeTab === 'shot-planner' ? 'Shot Planner' : 'Ready to Review?'}</h2>
-                <p style={{ opacity: 0.6, marginBottom: 32 }}>
-                  {activeTab === 'shot-planner'
-                    ? 'References, sequencing, vertical plans. Load clips to begin.'
-                    : 'Select a media folder to analyze thumbnails, metadata, and shot sequencing.'}
-                </p>
-                <button className="btn btn-primary btn-lg" onClick={() => handleSelectFolder(activeTab)} disabled={scanning}>
-                  {scanning ? <div className="spinner" /> : <FolderOpen size={18} />}
-                  <span>{scanning ? "Scanning..." : "Open Media Folder"}</span>
-                </button>
-
-                {recentProjects.length > 0 && (
-                  <div className="recent-projects-list">
-                    <h3 className="recent-projects-title">Recent Projects</h3>
-                    {recentProjects.map((p) => (
-                      <button
-                        key={p.id}
-                        className="recent-project-btn"
-                        onClick={() => handleOpenRecentProject(p.path, activeTab)}
-                        disabled={scanning}
-                      >
-                        <FolderOpen size={14} />
-                        <span className="recent-project-name">{p.name || "Untitled"}</span>
-                        <span className="recent-project-path">{p.path}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
-            </div>
-          )
-        ) : activeTab === 'blocks' ? (
-          projectId ? (
+            )
+          ) : activePreproductionApp === 'folder-creator' ? (
             <div className="media-workspace">
-              <BlocksView
-                projectId={projectId}
-                thumbnailCache={thumbnailCache}
-                thumbnailsByClipId={thumbnailsByClipId}
-                onSelectedBlockIdsChange={setSelectedBlockIds}
-              />
+
+              <FolderCreator />
             </div>
           ) : (
-            <div className="onboarding-container" style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div className="empty-state-card premium-card" style={{ maxWidth: 400, padding: 40, textAlign: 'center' }}>
-                <div className="module-icon" style={{ marginBottom: 24, transform: 'scale(1.5)' }}><Boxes size={48} strokeWidth={1} /></div>
-                <h2>Scene Blocks</h2>
-                <p style={{ opacity: 0.6, marginBottom: 32 }}>Organize your clips into meaningful editorial groups. Select a folder to start.</p>
-                <button className="btn btn-primary btn-lg" onClick={() => handleSelectFolder("blocks")} disabled={scanning}>
-                  {scanning ? <div className="spinner" /> : <FolderOpen size={18} />}
-                  <span>{scanning ? "Scanning..." : "Open Media Folder"}</span>
-                </button>
-
-                {recentProjects.length > 0 && (
-                  <div className="recent-projects-list">
-                    <h3 className="recent-projects-title">Recent Projects</h3>
-                    {recentProjects.map((p) => (
-                      <button
-                        key={p.id}
-                        className="recent-project-btn"
-                        onClick={() => handleOpenRecentProject(p.path, "blocks")}
-                        disabled={scanning}
-                      >
-                        <FolderOpen size={14} />
-                        <span className="recent-project-name">{p.name || "Untitled"}</span>
-                        <span className="recent-project-path">{p.path}</span>
-                      </button>
-                    ))}
+            <div className="onboarding-container">
+              <div className="onboarding-header">
+                <h1>Pre-production</h1>
+                <p>Plan your shoot and organize your project structure.</p>
+              </div>
+              <div className="onboarding-grid">
+                <div
+                  className="module-card premium-card"
+                  onClick={() => setActivePreproductionApp('shot-planner')}
+                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
+                >
+                  <div className="module-icon"><Camera size={32} strokeWidth={1.5} /></div>
+                  <div className="module-info">
+                    <h3>Shot Index</h3>
+                    <p>Analyze reference footage and create visual shot lists.</p>
+                    <span className="module-action">Open App <ArrowRight size={14} /></span>
                   </div>
-                )}
+                </div>
+                <div
+                  className="module-card premium-card"
+                  onClick={() => setActivePreproductionApp('folder-creator')}
+                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
+                >
+                  <div className="module-icon"><FolderTree size={32} strokeWidth={1.5} /></div>
+                  <div className="module-info">
+                    <h3>Folder Creator</h3>
+                    <p>Generate sophisticated folder structures for multi-platform use.</p>
+                    <span className="module-action">Open App <ArrowRight size={14} /></span>
+                  </div>
+                </div>
               </div>
             </div>
           )
-        ) : activeTab === 'safe-copy' ? (
-          <SafeCopy projectId={projectId ?? "__global__"} onJobCreated={setLastVerificationJobId} onError={setUiError} />
         ) : activeTab === 'media-workspace' ? (
-          <div className="onboarding-container">
-            <div className="onboarding-header">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                <div>
-                  <h1>Media Workspace</h1>
-                  <p>Verify, review, organize, export.</p>
-                </div>
-                {projectId && (
-                  <div />
-                )}
-              </div>
+          activeMediaWorkspaceApp === 'safe-copy' ? (
+            <div className="media-workspace">
+
+              <SafeCopy projectId={projectId ?? "__global__"} onJobCreated={setLastVerificationJobId} onError={setUiError} />
             </div>
-            <div className="onboarding-grid workspace-apps-grid">
-              <div
-                className="module-card premium-card"
-                onClick={() => setActiveTab("safe-copy")}
-                style={{ "--corner-color": "rgba(255, 255, 255, 0.05)", "--card-accent": "#ffffff", "--card-accent-soft": "rgba(255, 255, 255, 0.1)" } as any}
-              >
-                <div className="module-icon"><ShieldCheck size={32} strokeWidth={1.5} /></div>
-                <div className="module-info">
-                  <h3>Safe Copy</h3>
-                  <p>Validate media integrity with bit-accurate verification.</p>
-                  <span className="module-action">Execute Check <ArrowRight size={14} /></span>
+          ) : activeMediaWorkspaceApp === 'clip-review' ? (
+            projectId ? (
+              <div className="media-workspace">
+                {/* Statistics and Toolbar as before, but maybe streamlined */}
+                <ClipList
+                  clips={sortedClips}
+                  thumbnailCache={thumbnailCache}
+                  isExtracting={extracting}
+                  selectedIds={selectedClipIds}
+                  onToggleSelection={toggleClipSelection}
+                  thumbCount={thumbCount}
+                  onUpdateMetadata={handleUpdateMetadata}
+                  onHoverClip={setHoveredClipId}
+                  shotSizeOptions={[...SHOT_SIZE_CANONICAL, ...customShotSizes]}
+                  movementOptions={[...MOVEMENT_CANONICAL, ...customMovements]}
+                  lookbookSortMode={lookbookSortMode}
+                  groupByShotSize={false}
+                  onPromoteClip={handlePromoteClip}
+                  onPlayClip={handlePlayClip}
+                  playingClipId={playingClipId}
+                  playingProgress={playingProgress}
+                  focusedClipId={hoveredClipId}
+                  projectLutHash={projectLut?.hash || null}
+                  lutRenderNonce={lutRenderNonce}
+                  onExportPDF={handleExport}
+                  onExportImage={handleExportImage}
+                />
+              </div>
+            ) : (
+              <div className="onboarding-container">
+                <div className="empty-state-card premium-card">
+                  <div className="module-icon"><Camera size={48} strokeWidth={1} /></div>
+                  <h2>Clip Review</h2>
+                  <p>Initialize a media workspace to start reviewing footage.</p>
+                  <button className="btn btn-primary btn-lg" onClick={() => handleSelectFolder("media-workspace")} disabled={scanning}>
+                    {scanning ? <div className="spinner" /> : <FolderOpen size={18} />}
+                    <span>Open Media Folder</span>
+                  </button>
                 </div>
               </div>
-              <div
-                className={`module-card premium-card`}
-                onClick={() => {
-                  if (projectId) setActiveTab("contact");
-                  else handleSelectFolder("contact");
-                }}
-                style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
-              >
-                <div className="module-icon"><Camera size={32} strokeWidth={1.5} /></div>
-                <div className="module-info">
-                  <h3>Clip Review</h3>
-                  <p>Analyze thumbnails, metadata, and shot sequencing.</p>
-                  <span className="module-action">Enter Review <ArrowRight size={14} /></span>
-                </div>
+            )
+          ) : activeMediaWorkspaceApp === 'scene-blocks' ? (
+            projectId ? (
+              <div className="media-workspace">
+                <BlocksView
+                  projectId={projectId}
+                  thumbnailCache={thumbnailCache}
+                  thumbnailsByClipId={thumbnailsByClipId}
+                  onSelectedBlockIdsChange={setSelectedBlockIds}
+                />
               </div>
-              <div
-                className={`module-card premium-card`}
-                onClick={() => {
-                  if (projectId) setActiveTab("blocks");
-                  else handleSelectFolder("blocks");
-                }}
-                style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
-              >
-                <div className="module-icon"><Boxes size={32} strokeWidth={1.5} /></div>
-                <div className="module-info">
-                  <h3>Scene Blocks</h3>
+            ) : (
+              <div className="onboarding-container">
+                <div className="empty-state-card premium-card">
+                  <div className="module-icon"><Boxes size={48} strokeWidth={1} /></div>
+                  <h2>Scene Blocks</h2>
                   <p>Organize clips into meaningful editorial groups.</p>
-                  <span className="module-action">Manage Blocks <ArrowRight size={14} /></span>
+                  <button className="btn btn-primary btn-lg" onClick={() => handleSelectFolder("media-workspace")} disabled={scanning}>
+                    {scanning ? <div className="spinner" /> : <FolderOpen size={18} />}
+                    <span>Initialize Workspace</span>
+                  </button>
                 </div>
               </div>
-              <div
-                className={`module-card premium-card ${!projectId ? "disabled" : ""}`}
-                onClick={() => {
-                  if (projectId) {
-                    setShowExportPanel(true);
-                  }
-                }}
-                style={{ "--corner-color": "var(--color-accent-forest-soft)", "--card-accent": "var(--color-accent-forest)", "--card-accent-soft": "var(--color-accent-forest-soft)" } as any}
-              >
-                <div className="module-icon"><FileDown size={32} strokeWidth={1.5} /></div>
-                <div className="module-info">
-                  <h3>Handoff</h3>
-                  <p>Generate PDF contact sheets and DaVinci exports.</p>
-                  <span className="module-action">{projectId ? <>Prepare Delivery <ArrowRight size={14} /></> : "Load workspace first"}</span>
+            )
+          ) : (
+            <div className="onboarding-container">
+              <div className="onboarding-header">
+                <h1>Media Workspace</h1>
+                <p>Post-production suite for media verification and organization.</p>
+              </div>
+              <div className="onboarding-grid">
+                <div
+                  className="module-card premium-card"
+                  onClick={() => setActiveMediaWorkspaceApp('safe-copy')}
+                  style={{ "--corner-color": "rgba(255, 255, 255, 0.05)", "--card-accent": "#ffffff", "--card-accent-soft": "rgba(255, 255, 255, 0.1)" } as any}
+                >
+                  <div className="module-icon"><ShieldCheck size={32} strokeWidth={1.5} /></div>
+                  <div className="module-info">
+                    <h3>Safe Copy</h3>
+                    <p>Validate media integrity with bit-accurate verification.</p>
+                    <span className="module-action">Access App <ArrowRight size={14} /></span>
+                  </div>
+                </div>
+                <div
+                  className="module-card premium-card"
+                  onClick={() => {
+                    if (projectId) setActiveMediaWorkspaceApp('clip-review');
+                    else handleSelectFolder("media-workspace"); // This would set app to clip-review after scan
+                  }}
+                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
+                >
+                  <div className="module-icon"><Camera size={32} strokeWidth={1.5} /></div>
+                  <div className="module-info">
+                    <h3>Clip Review</h3>
+                    <p>Analyze thumbnails, metadata, and shot sequencing.</p>
+                    <span className="module-action">Access App <ArrowRight size={14} /></span>
+                  </div>
+                </div>
+                <div
+                  className="module-card premium-card"
+                  onClick={() => {
+                    if (projectId) setActiveMediaWorkspaceApp('scene-blocks');
+                    else handleSelectFolder("media-workspace");
+                  }}
+                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
+                >
+                  <div className="module-icon"><Boxes size={32} strokeWidth={1.5} /></div>
+                  <div className="module-info">
+                    <h3>Scene Blocks</h3>
+                    <p>Organize clips into meaningful editorial groups.</p>
+                    <span className="module-action">Access App <ArrowRight size={14} /></span>
+                  </div>
+                </div>
+                <div
+                  className={`module-card premium-card ${!projectId ? "disabled" : ""}`}
+                  onClick={() => { if (projectId) setShowExportPanel(true); }}
+                  style={{ "--corner-color": "var(--color-accent-forest-soft)", "--card-accent": "var(--color-accent-forest)", "--card-accent-soft": "var(--color-accent-forest-soft)" } as any}
+                >
+                  <div className="module-icon"><FileDown size={32} strokeWidth={1.5} /></div>
+                  <div className="module-info">
+                    <h3>Handoff</h3>
+                    <p>Generate PDF contact sheets and DaVinci exports.</p>
+                    <span className="module-action">{projectId ? "Generate Exports" : "Workspace required"}</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )
         ) : (
           <div className="onboarding-container">
             <div className="onboarding-header">
               <h1>Wrap Preview Suite</h1>
+              <p>State-of-the-art production management tools.</p>
             </div>
-            <div className="onboarding-phases-wrapper">
-              <div className="onboarding-phase">
-                <div className="onboarding-grid">
-                  <div
-                    className={`module-card tour-contact-module ${scanning ? 'disabled' : ''} premium-card`}
-                    onClick={scanning ? undefined : () => {
-                      if (projectId) setActiveTab("shot-planner");
-                      else handleSelectFolder("shot-planner");
-                    }}
-                    style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
-                  >
-                    <div className="module-icon">
-                      {scanning ? <div className="spinner" /> : <ImageIcon size={32} strokeWidth={1.5} />}
-                    </div>
-                    <div className="module-info">
-                      <h3>Shot Planner</h3>
-                      <p>References, sequencing, vertical plans.</p>
-                      <span className="module-action">
-                        Open <ArrowRight size={14} />
-                      </span>
-                    </div>
-                  </div>
+            <div className="onboarding-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', maxWidth: 800 }}>
+              <div
+                className="module-card premium-card"
+                onClick={() => setActiveTab("preproduction")}
+                style={{ height: 320, "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
+              >
+                <div className="module-icon"><Boxes size={48} strokeWidth={1.2} /></div>
+                <div className="module-info">
+                  <h2 style={{ fontSize: '1.8rem', marginBottom: 12 }}>Pre-production</h2>
+                  <p style={{ fontSize: '1.1rem', opacity: 0.7 }}>Shot Planning, Reference Sequencing, and Project Infrastructure.</p>
+                  <span className="module-action" style={{ marginTop: 'auto' }}>Enter Module <ArrowRight size={18} /></span>
                 </div>
               </div>
-
-
-              <div className="onboarding-phase">
-                <div className="onboarding-grid">
-                  <div
-                    className={`module-card tour-safe-copy-module ${scanning ? 'disabled' : ''} premium-card`}
-                    onClick={scanning ? undefined : () => setActiveTab("media-workspace")}
-                    style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
-                  >
-                    <div className="module-icon">
-                      {scanning ? <div className="spinner" /> : <BriefcaseBusiness size={32} strokeWidth={1.5} />}
-                    </div>
-                    <div className="module-info">
-                      <h3>Media Workspace</h3>
-                      <p>Verify, review, organize, export.</p>
-                      <span className="module-action">
-                        Open <ArrowRight size={14} />
-                      </span>
-                    </div>
-                  </div>
+              <div
+                className="module-card premium-card"
+                onClick={() => setActiveTab("media-workspace")}
+                style={{ height: 320, "--corner-color": "rgba(255, 255, 255, 0.05)", "--card-accent": "#ffffff", "--card-accent-soft": "rgba(255, 255, 255, 0.1)" } as any}
+              >
+                <div className="module-icon"><BriefcaseBusiness size={48} strokeWidth={1.2} /></div>
+                <div className="module-info">
+                  <h2 style={{ fontSize: '1.8rem', marginBottom: 12 }}>Media Workspace</h2>
+                  <p style={{ fontSize: '1.1rem', opacity: 0.7 }}>Post-production Review, Media Verification, and Handoff.</p>
+                  <span className="module-action" style={{ marginTop: 'auto' }}>Enter Module <ArrowRight size={18} /></span>
                 </div>
               </div>
             </div>
@@ -1486,7 +1419,7 @@ function AppContent() {
         onClose={() => setSettingsOpen(false)}
         onSettingsSaved={loadCustomTaxonomy}
       />
-      <JobsPanel open={jobsOpen} jobs={jobs} onClose={() => setJobsOpen(false)} onRefresh={refreshJobs} />
+      <JobsPanel open={jobsOpen} jobs={jobs} onClose={() => setJobsOpen(false)} onRefresh={refreshJobs} extracting={extracting} extractProgress={extractProgress} scanning={scanning} />
       <AboutPanel open={aboutOpen} info={appInfo} onResetTour={resetTour} onClose={() => setAboutOpen(false)} />
 
 
@@ -1496,6 +1429,21 @@ function AppContent() {
         onComplete={completeTour}
         onClose={completeTour}
       />
+
+      {(activeTab !== 'home' || activePreproductionApp || activeMediaWorkspaceApp) && (
+        <button
+          className="subtle-back-button"
+          onClick={() => {
+            if (activeMediaWorkspaceApp) setActiveMediaWorkspaceApp(null);
+            else if (activePreproductionApp) setActivePreproductionApp(null);
+            else setActiveTab('home');
+          }}
+          title="Back to Dashboard"
+        >
+          <ArrowLeft size={14} />
+          <span>Back</span>
+        </button>
+      )}
     </div>
   );
 }

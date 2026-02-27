@@ -13,10 +13,10 @@ interface PrintLayoutProps {
   thumbCount: number;
   onClose: () => void;
   projectLutHash?: string | null;
-  printingForImage?: boolean;
+
 }
 
-export function PrintLayout({ projectName, clips, thumbnailCache, brandProfile, logoSrc, appVersion = "unknown", thumbCount, onClose, projectLutHash, printingForImage }: PrintLayoutProps) {
+export function PrintLayout({ projectName, clips, thumbnailCache, brandProfile, logoSrc, appVersion = "unknown", thumbCount, onClose, projectLutHash }: PrintLayoutProps) {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-GB", {
     day: "2-digit",
@@ -32,7 +32,7 @@ export function PrintLayout({ projectName, clips, thumbnailCache, brandProfile, 
     ` : "";
 
   return (
-    <div className={`print-layout ${printingForImage ? "printing-offscreen" : ""}`} onClick={onClose}>
+    <div className="print-layout" onClick={onClose}>
       <style>{printStyles + dynamicStyles}</style>
 
       {/* Split clips into pages (roughly 3 clips per A4 landscape page) */}
@@ -151,10 +151,9 @@ const printStyles = `
 
   .print-page {
     width: 297mm;
-    height: 210mm;
-    overflow: hidden;
+    min-height: 210mm;
     margin: 20px auto;
-    padding: 12mm;
+    padding: 15mm 18mm;
     background: white;
     color: #1a1a1a;
     font-family: 'Inter', system-ui, sans-serif;
@@ -275,6 +274,7 @@ const printStyles = `
     aspect-ratio: 16 / 9;
     overflow: hidden;
     position: relative;
+    background: #000;
   }
   
   .lut-badge-label {
@@ -295,7 +295,7 @@ const printStyles = `
   .print-thumb img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
   }
 

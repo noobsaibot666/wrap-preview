@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Clip, ClipWithThumbnails } from "../types";
 import { FilmStrip } from "./FilmStrip";
-import { Film, CheckCircle2, XCircle, Star } from "lucide-react";
+import { Film, CheckCircle2, XCircle, Star, FileDown, Image } from "lucide-react";
 import { Waveform } from "./Waveform";
 import { LookbookSortMode } from "../lookbook";
 import { buildClipMetadataTags, getAudioBadge } from "../utils/clipMetadata";
@@ -27,6 +27,8 @@ interface ClipListProps {
     projectLutHash: string | null;
     lutRenderNonce: number;
     hideLutControls?: boolean;
+    onExportPDF: () => void;
+    onExportImage: () => void;
 }
 
 export function ClipList({
@@ -49,15 +51,37 @@ export function ClipList({
     focusedClipId,
     projectLutHash,
     lutRenderNonce,
-    hideLutControls = false
+    hideLutControls = false,
+    onExportPDF,
+    onExportImage
 }: ClipListProps) {
     if (clips.length === 0) return null;
 
     return (
         <div>
             <div className="section-header">
-                <span className="section-title">Clips</span>
-                <span className="section-count highlight">{clips.length}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                    <span className="section-title">Clips</span>
+                    <span className="section-count highlight">{clips.length}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                    <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={(e) => { e.stopPropagation(); onExportPDF(); }}
+                        title="Export Multi-page PDF"
+                    >
+                        <FileDown size={14} />
+                        <span>PDF</span>
+                    </button>
+                    <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={(e) => { e.stopPropagation(); onExportImage(); }}
+                        title="Export as Image"
+                    >
+                        <Image size={14} />
+                        <span>Image</span>
+                    </button>
+                </div>
             </div>
             <div className="clip-list">
                 {clips.map((item, idx) => {
@@ -92,6 +116,24 @@ export function ClipList({
                         </div>
                     );
                 })}
+            </div>
+            <div className="clip-list-footer" style={{ marginTop: 'var(--space-xl)', display: 'flex', gap: 'var(--space-md)', justifyContent: 'center', padding: 'var(--space-lg) 0' }}>
+                <button
+                    className="btn btn-accent btn-lg"
+                    onClick={onExportPDF}
+                    style={{ minWidth: 200 }}
+                >
+                    <FileDown size={18} />
+                    <span>Export PDF Contact Sheet</span>
+                </button>
+                <button
+                    className="btn btn-secondary btn-lg"
+                    onClick={onExportImage}
+                    style={{ minWidth: 200 }}
+                >
+                    <Image size={18} />
+                    <span>Export Image</span>
+                </button>
             </div>
             <datalist id="shot-size-options">
                 {shotSizeOptions.map((option) => <option key={option} value={option} />)}
