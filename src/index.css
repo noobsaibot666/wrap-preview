@@ -199,7 +199,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 8px 16px;
-  margin: 0 auto 12px;
+  margin: 0 auto 24px;
   backdrop-filter: blur(12px);
   -webkit-app-region: no-drag;
   width: fit-content;
@@ -654,10 +654,9 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.app-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--space-lg);
+flex: 1;
+overflow-y: auto;
+padding: 40px var(--space-lg) var(--space-lg);
 }
 
 /* ─── Buttons ─── */
