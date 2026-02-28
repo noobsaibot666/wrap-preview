@@ -1,5 +1,5 @@
-use image::ImageReader;
-use rayon::prelude::*;
+use image::io::Reader as ImageReader;
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -154,7 +154,7 @@ pub fn apply_lut_to_image(
 
     let mut rgba_img = img.into_rgba8();
 
-    rgba_img.par_pixels_mut().for_each(|pixel| {
+    rgba_img.pixels_mut().for_each(|pixel| {
         let r = pixel[0] as f32 / 255.0;
         let g = pixel[1] as f32 / 255.0;
         let b = pixel[2] as f32 / 255.0;

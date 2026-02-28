@@ -73,7 +73,7 @@ pub async fn scan_folder(
     db.keep_only_project_root_path(&project_id, &folder_path)
         .map_err(|e| format!("Failed to sync project root set: {}", e))?;
 
-    let clips = rescan_project_internal(db, &project_id)?;
+    let clips = rescan_project_internal(db, &project_id, None)?;
 
     let result = ScanResult {
         project_id,
@@ -150,7 +150,7 @@ pub async fn rescan_project(
         .get_project(&project_id)
         .map_err(|e| e.to_string())?
         .ok_or("Project not found")?;
-    let clips = rescan_project_internal(&state.db, &project_id)?;
+    let clips = rescan_project_internal(&state.db, &project_id, None)?;
     Ok(ScanResult {
         project_id,
         project_name: project.name,
@@ -232,6 +232,7 @@ pub async fn extract_thumbnails(
         let semaphore_clone = semaphore.clone();
         let job_id_clone = job_id.clone();
         let cache_dir_clone = state.cache_dir.clone();
+        let cancel_flag_clone = cancel_flag.clone();
 
         let handle = tokio::spawn(async move {
             if clip.status == "fail" || clip.duration_ms == 0 {
@@ -291,12 +292,14 @@ pub async fn extract_thumbnails(
                 let output_path_clone = output_path.clone();
                 let duration_ms = clip.duration_ms;
 
+                let cancel_flag_inner = cancel_flag_clone.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     thumbnail::extract_with_fallback(
                         &file_path,
                         &output_path_clone,
                         ts,
                         duration_ms,
+                        Some(&cancel_flag_inner),
                     )
                 })
                 .await;
@@ -1645,8 +1648,12 @@ pub async fn export_to_fcpxml(
 
     // Generate XML
     let include_master = include_master_timeline.unwrap_or(true);
-    let xml_content =
-        crate::export::generate_fcpxml_structured(&filtered_clips, &project.name, include_master);
+    let xml_content = crate::export::generate_fcpxml_structured(
+        &filtered_clips,
+        &project.name,
+        include_master,
+        Some(&project.root_path),
+    );
 
     // Write to file
     std::fs::write(&output_path, xml_content).map_err(|e| e.to_string())?;
@@ -2047,6 +2054,7 @@ pub async fn export_director_pack(
         &filtered_clips,
         &project.name,
         include_master_timeline.unwrap_or(true),
+        Some(&project.root_path),
     );
     std::fs::write(&fcpxml_path, fcpxml).map_err(|e| e.to_string())?;
 
@@ -2071,8 +2079,14 @@ pub async fn export_director_pack(
         contact_dir,
         sanitize_filename(&project.name)
     );
-    write_simple_contact_sheet_pdf(&pdf_path, &project.name, &filtered_clips, &brand_name)
-        .map_err(|e| format!("Failed generating contact sheet PDF: {}", e))?;
+    write_simple_contact_sheet_pdf(
+        &pdf_path,
+        &project.name,
+        &filtered_clips,
+        &brand_name,
+        &state.cache_dir,
+    )
+    .map_err(|e| format!("Failed generating contact sheet PDF: {}", e))?;
 
     let _ = write_last_export_metadata(
         &state.cache_dir,
@@ -2289,7 +2303,11 @@ pub struct ThumbnailProgress {
 
 // ─── Helpers ───
 
-fn rescan_project_internal(db: &Database, project_id: &str) -> Result<Vec<Clip>, String> {
+fn rescan_project_internal(
+    db: &Database,
+    project_id: &str,
+    cancel_flag: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<Vec<Clip>, String> {
     let roots = db
         .list_project_roots(project_id)
         .map_err(|e| format!("Failed listing project roots: {}", e))?;
@@ -2300,7 +2318,7 @@ fn rescan_project_internal(db: &Database, project_id: &str) -> Result<Vec<Clip>,
     let mut clips: Vec<Clip> = Vec::new();
     let mut seen_ids: Vec<String> = Vec::new();
     for root in roots {
-        let files = scanner::scan_folder(&root.root_path);
+        let files = scanner::scan_folder(&root.root_path, cancel_flag);
         for file_path in files {
             let rel_path = std::path::Path::new(&file_path)
                 .strip_prefix(&root.root_path)
@@ -2462,7 +2480,7 @@ fn resolve_clips_for_scope(
         db.get_clips(project_id).map_err(|e| e.to_string())?
     };
 
-    Ok(clips
+    let mut result: Vec<Clip> = clips
         .into_iter()
         .filter(|c| c.flag != "reject")
         .filter(|c| match scope {
@@ -2472,7 +2490,10 @@ fn resolve_clips_for_scope(
             "selected_blocks" => true,
             _ => true,
         })
-        .collect())
+        .collect();
+
+    result.sort_by_key(|c| c.manual_order);
+    Ok(result)
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -2492,80 +2513,172 @@ fn write_simple_contact_sheet_pdf(
     project_name: &str,
     clips: &[Clip],
     brand_name: &str,
+    cache_dir: &str,
 ) -> Result<(), String> {
-    use printpdf::{BuiltinFont, Mm, PdfDocument};
+    use printpdf::*;
+    use std::fs::File;
+    use std::io::BufWriter;
 
     let (doc, page1, layer1) = PdfDocument::new(
         &format!("{} Contact Sheet", project_name),
+        Mm(210.0), // A4 Portrait
         Mm(297.0),
-        Mm(210.0),
-        "Layer 1",
+        "Main",
     );
-    let layer = doc.get_page(page1).get_layer(layer1);
-    let font = doc
+
+    let font_bold = doc
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| e.to_string())?;
+    let font_regular = doc
         .add_builtin_font(BuiltinFont::Helvetica)
         .map_err(|e| e.to_string())?;
 
-    layer.use_text(brand_name, 16.0, Mm(10.0), Mm(198.0), &font);
-    layer.use_text(
+    let mut current_page = page1;
+    let mut current_layer = doc.get_page(current_page).get_layer(layer1);
+
+    let margin_x = 15.0f32;
+    let margin_top = 25.0f32;
+    let grid_cols = 3;
+    let cell_width = (210.0f32 - (margin_x * 2.0f32)) / grid_cols as f32;
+    let thumb_w = cell_width - 4.0f32;
+    let thumb_h = thumb_w * 9.0f32 / 16.0f32;
+    let cell_height = thumb_h + 20.0f32;
+
+    let mut x_idx = 0;
+    let mut y_pos = 297.0f32 - margin_top;
+
+    // Header on first page
+    current_layer.use_text(brand_name, 12.0f32, Mm(margin_x), Mm(285.0f32), &font_bold);
+    current_layer.use_text(
         format!("Project: {}", project_name),
-        16.0,
-        Mm(10.0),
-        Mm(190.0),
-        &font,
+        10.0f32,
+        Mm(margin_x),
+        Mm(280.0f32),
+        &font_regular,
     );
-    layer.use_text(
-        format!(
-            "Date created: {}",
-            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-        ),
-        12.0,
-        Mm(10.0),
-        Mm(182.0),
-        &font,
-    );
-    layer.use_text(
-        format!("Clips: {}", clips.len()),
-        12.0,
-        Mm(10.0),
-        Mm(176.0),
-        &font,
-    );
-    layer.use_text(
-        format!(
-            "This report was created with {} v{}.",
-            brand_name,
-            env!("CARGO_PKG_VERSION")
-        ),
-        10.0,
-        Mm(10.0),
-        Mm(170.0),
-        &font,
+    current_layer.use_text(
+        format!("Total Clips: {}", clips.len()),
+        8.0f32,
+        Mm(160.0f32),
+        Mm(280.0f32),
+        &font_regular,
     );
 
-    let mut y = 162.0;
-    for clip in clips.iter().take(40) {
-        let line = format!(
-            "{} | {} | rating:{} | flag:{}",
-            clip.filename, clip.audio_summary, clip.rating, clip.flag
+    y_pos -= 15.0;
+
+    for (idx, clip) in clips.iter().enumerate() {
+        if idx > 0 && idx % (grid_cols * 5) == 0 {
+            // New Page every 15 clips (5 rows of 3)
+            let (p, l) = doc.add_page(Mm(210.0), Mm(297.0), format!("Page {}", idx / 15 + 1));
+            current_page = p;
+            current_layer = doc.get_page(current_page).get_layer(l);
+            x_idx = 0;
+            y_pos = 297.0f32 - margin_top;
+
+            // Re-apply header on new page
+            current_layer.use_text(
+                brand_name,
+                9.0f32,
+                Mm(margin_x as f32),
+                Mm(288.0f32),
+                &font_bold,
+            );
+        }
+
+        let x = margin_x + (x_idx as f32 * cell_width);
+        let y = y_pos - thumb_h;
+
+        // Try to load thumbnail
+        let thumb_path = format!("{}/{}/thumb_0.jpg", cache_dir, clip.id);
+        let thumb_path_png = format!("{}/{}/thumb_0.png", cache_dir, clip.id);
+
+        let final_thumb = if Path::new(&thumb_path).exists() {
+            Some(thumb_path)
+        } else if Path::new(&thumb_path_png).exists() {
+            Some(thumb_path_png)
+        } else {
+            None
+        };
+
+        if let Some(tp) = final_thumb {
+            if let Ok(file) = File::open(&tp) {
+                let img_result: Result<printpdf::Image, String> = {
+                    let format = if tp.ends_with(".png") {
+                        ::image::ImageFormat::Png
+                    } else {
+                        ::image::ImageFormat::Jpeg
+                    };
+                    let dynamic_image = ::image::load(std::io::BufReader::new(file), format)
+                        .map_err(|e| e.to_string())?;
+                    Ok(printpdf::Image::from_dynamic_image(&dynamic_image))
+                };
+
+                if let Ok(image) = img_result {
+                    let w = image.image.width.0 as f32;
+                    image.add_to_layer(
+                        current_layer.clone(),
+                        ImageTransform {
+                            translate_x: Some(Mm(x + 2.0f32)),
+                            translate_y: Some(Mm(y)),
+                            scale_x: Some(((thumb_w / w) * 0.264583f32 * 2.8f32) as f32),
+                            scale_y: Some(((thumb_w / w) * 0.264583f32 * 2.8f32) as f32),
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+        }
+
+        // Clip Info
+        current_layer.use_text(
+            &clip.filename,
+            7.0f32,
+            Mm(x + 2.0f32),
+            Mm(y - 4.0f32),
+            &font_bold,
         );
-        layer.use_text(line, 9.0, Mm(10.0), Mm(y), &font);
-        y -= 4.0;
-        if y < 10.0 {
-            break;
+
+        let meta = format!(
+            "{} | {:.2} fps | Rating: {}",
+            clip.audio_summary.chars().take(15).collect::<String>(),
+            clip.fps,
+            "★".repeat(clip.rating as usize)
+        );
+        current_layer.use_text(meta, 6.0f32, Mm(x + 2.0f32), Mm(y - 7.0f32), &font_regular);
+
+        if let Some(notes) = &clip.notes {
+            if !notes.is_empty() {
+                let note_preview = if notes.len() > 30 {
+                    format!("{}...", &notes[0..27])
+                } else {
+                    notes.clone()
+                };
+                current_layer.use_text(
+                    format!("Note: {}", note_preview),
+                    5.0f32,
+                    Mm(x + 2.0f32),
+                    Mm(y - 10.0f32),
+                    &font_regular,
+                );
+            }
+        }
+
+        x_idx += 1;
+        if x_idx >= grid_cols {
+            x_idx = 0;
+            y_pos -= cell_height;
         }
     }
 
-    layer.use_text(
+    current_layer.use_text(
         format!("© {}. All rights reserved.", brand_name),
-        9.0,
-        Mm(10.0),
-        Mm(8.0),
-        &font,
+        8.0f32,
+        Mm(margin_x),
+        Mm(10.0f32),
+        &font_regular,
     );
 
-    let mut writer =
-        std::io::BufWriter::new(std::fs::File::create(output_path).map_err(|e| e.to_string())?);
+    let mut writer = BufWriter::new(File::create(output_path).map_err(|e| e.to_string())?);
     doc.save(&mut writer).map_err(|e| e.to_string())?;
     Ok(())
 }
