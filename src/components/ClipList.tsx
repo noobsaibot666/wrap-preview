@@ -85,7 +85,8 @@ export function ClipList({
                 {clips.map((item, idx) => {
                     const prev = idx > 0 ? clips[idx - 1].clip.shot_size : null;
                     const cur = item.clip.shot_size ?? "Unspecified Shot Size";
-                    const showGroup = groupByShotSize && (idx === 0 || (prev ?? "Unspecified Shot Size") !== cur);
+                    const isManual = lookbookSortMode === "custom" || lookbookSortMode === "hook_first";
+                    const showGroup = !isManual && groupByShotSize && (idx === 0 || (prev ?? "Unspecified Shot Size") !== cur);
                     return (
                         <div key={item.clip.id}>
                             {showGroup && <div className="clip-shot-group-header">{cur}</div>}
@@ -406,7 +407,7 @@ function ClipCard({
                         <div className="stepper-controls">
                             <button
                                 className="stepper-btn"
-                                onClick={() => { const val = localManualOrder + 1; setLocalManualOrder(val); onUpdateMetadata(clip.id, { manual_order: val }); }}
+                                onClick={() => { const val = Math.max(1, localManualOrder + 1); setLocalManualOrder(val); onUpdateMetadata(clip.id, { manual_order: val }); }}
                                 disabled={lookbookSortMode !== "custom"}
                             >
                                 <ChevronUp size={12} />

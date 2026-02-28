@@ -146,9 +146,9 @@ function AppContent() {
   const [brandProfile, setBrandProfile] = useState<any>(null);
   const [helpMenuOpen, setHelpMenuOpen] = useState(false);
   const [openExportAfterScan, setOpenExportAfterScan] = useState(false);
-  const [lookbookSortMode] = useState<LookbookSortMode>(() => {
+  const [lookbookSortMode, setLookbookSortMode] = useState<LookbookSortMode>(() => {
     const saved = localStorage.getItem("wp_lookbook_sort_mode");
-    return saved === "canonical" ? "canonical" : "custom";
+    return (saved === "canonical" || saved === "custom" || saved === "hook_first") ? (saved as LookbookSortMode) : "canonical";
   });
   const [groupByShotSize] = useState<boolean>(() => {
     return localStorage.getItem("wp_group_shot_size") !== "false";
@@ -1123,6 +1123,17 @@ function AppContent() {
                         </button>
                       ))}
                     </div>
+                    <div className="toolbar-separator" />
+                    <select
+                      className="toolbar-select"
+                      value={lookbookSortMode}
+                      onChange={(e) => setLookbookSortMode(e.target.value as LookbookSortMode)}
+                      title="Sort Mode"
+                    >
+                      <option value="canonical">Canonical Sort</option>
+                      <option value="custom">Manual Order</option>
+                      <option value="hook_first">Hook First</option>
+                    </select>
                     <div className="toolbar-separator" />
                     <select
                       className="toolbar-select"

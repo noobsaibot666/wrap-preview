@@ -11,7 +11,15 @@ export function sortLookbookClips(clips: any[], mode: LookbookSortMode) {
         return ordered.sort((a, b) => {
             const aClip = a.clip ?? a;
             const bClip = b.clip ?? b;
-            return (aClip.manual_order || 0) - (bClip.manual_order || 0) || aClip.filename.localeCompare(bClip.filename);
+            const aVal = aClip.manual_order || 0;
+            const bVal = bClip.manual_order || 0;
+            // 0 means unassigned, should go to the end
+            if (aVal !== bVal) {
+                if (aVal === 0) return 1;
+                if (bVal === 0) return -1;
+                return aVal - bVal;
+            }
+            return aClip.filename.localeCompare(bClip.filename);
         });
     }
     const shotOrder = mode === "hook_first" ? SHOT_SIZE_HOOK_FIRST : SHOT_SIZE_CANONICAL;
