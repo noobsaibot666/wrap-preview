@@ -788,14 +788,11 @@ body {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: var(--space-lg);
-  padding: 0 0 24px;
+  gap: var(--space-md);
+  padding: 0 0 16px;
   margin-top: var(--space-md);
-  overflow-x: auto;
+  overflow-x: hidden;
   flex-wrap: nowrap;
-  /* Prevent stacking */
-  scrollbar-width: none;
-  /* Hide scrollbar for clean stats look */
 }
 
 .stats-bar::-webkit-scrollbar {
@@ -805,14 +802,14 @@ body {
 .stat-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 20px 24px;
+  gap: 4px;
+  padding: 16px 20px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   flex: 1;
-  min-width: 200px;
-  min-height: 110px;
+  min-width: 0;
+  min-height: 100px;
   position: relative;
   overflow: hidden;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -848,7 +845,7 @@ body {
 }
 
 .stat-value-xl {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 800;
   line-height: 1;
 }
@@ -900,7 +897,7 @@ body {
 }
 
 .stat-value {
-  font-size: var(--font-size-xl);
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--text-primary);
 }
