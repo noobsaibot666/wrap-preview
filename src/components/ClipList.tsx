@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Clip, ClipWithThumbnails } from "../types";
 import { FilmStrip } from "./FilmStrip";
-import { Film, CheckCircle2, XCircle, Star, FileDown, Image } from "lucide-react";
+import { Film, CheckCircle2, XCircle, Star, FileDown, Image, ChevronUp, ChevronDown } from "lucide-react";
 import { Waveform } from "./Waveform";
 import { LookbookSortMode } from "../lookbook";
 import { buildClipMetadataTags, getAudioBadge } from "../utils/clipMetadata";
@@ -392,30 +392,64 @@ function ClipCard({
                 </label>
                 <label className="clip-taxonomy-field clip-taxonomy-order">
                     <span className="meta-label">Manual Order</span>
-                    <input
-                        type="number"
-                        className={`input-text ${localManualOrder !== 0 ? 'is-picked' : ''}`}
-                        value={localManualOrder}
-                        onChange={(e) => setLocalManualOrder(Number(e.target.value || 0))}
-                        onBlur={handleManualOrderBlur}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleManualOrderBlur(); }}
-                        min={0}
-                        disabled={lookbookSortMode !== "custom"}
-                    />
+                    <div className="custom-stepper">
+                        <input
+                            type="number"
+                            className={`input-text ${localManualOrder !== 0 ? 'is-picked' : ''}`}
+                            value={localManualOrder}
+                            onChange={(e) => setLocalManualOrder(Number(e.target.value || 0))}
+                            onBlur={handleManualOrderBlur}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleManualOrderBlur(); }}
+                            min={0}
+                            disabled={lookbookSortMode !== "custom"}
+                        />
+                        <div className="stepper-controls">
+                            <button
+                                className="stepper-btn"
+                                onClick={() => { const val = localManualOrder + 1; setLocalManualOrder(val); onUpdateMetadata(clip.id, { manual_order: val }); }}
+                                disabled={lookbookSortMode !== "custom"}
+                            >
+                                <ChevronUp size={12} />
+                            </button>
+                            <button
+                                className="stepper-btn"
+                                onClick={() => { const val = Math.max(0, localManualOrder - 1); setLocalManualOrder(val); onUpdateMetadata(clip.id, { manual_order: val }); }}
+                                disabled={lookbookSortMode !== "custom"}
+                            >
+                                <ChevronDown size={12} />
+                            </button>
+                        </div>
+                    </div>
                 </label>
                 <label className="clip-taxonomy-field clip-taxonomy-order">
                     <span className="meta-label">Thumb Range (s)</span>
-                    <input
-                        type="number"
-                        className={`input-text ${localThumbRange !== 0 ? 'is-picked' : ''}`}
-                        value={localThumbRange}
-                        onChange={(e) => setLocalThumbRange(Number(e.target.value || 0))}
-                        onBlur={handleThumbRangeBlur}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleThumbRangeBlur(); }}
-                        min={0}
-                        max={Math.floor(clip.duration_ms / 1000)}
-                        step={2}
-                    />
+                    <div className="custom-stepper">
+                        <input
+                            type="number"
+                            className={`input-text ${localThumbRange !== 0 ? 'is-picked' : ''}`}
+                            value={localThumbRange}
+                            onChange={(e) => setLocalThumbRange(Number(e.target.value || 0))}
+                            onBlur={handleThumbRangeBlur}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleThumbRangeBlur(); }}
+                            min={0}
+                            max={Math.floor(clip.duration_ms / 1000)}
+                            step={2}
+                        />
+                        <div className="stepper-controls">
+                            <button
+                                className="stepper-btn"
+                                onClick={() => { const val = Math.min(Math.floor(clip.duration_ms / 1000), localThumbRange + 2); setLocalThumbRange(val); onUpdateMetadata(clip.id, { thumb_range_seconds: val }); }}
+                            >
+                                <ChevronUp size={12} />
+                            </button>
+                            <button
+                                className="stepper-btn"
+                                onClick={() => { const val = Math.max(0, localThumbRange - 2); setLocalThumbRange(val); onUpdateMetadata(clip.id, { thumb_range_seconds: val }); }}
+                            >
+                                <ChevronDown size={12} />
+                            </button>
+                        </div>
+                    </div>
                 </label>
             </div>
 

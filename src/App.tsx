@@ -348,6 +348,7 @@ function AppContent() {
         shotSize: updates.shot_size ?? null,
         movement: updates.movement ?? null,
         manualOrder: updates.manual_order ?? null,
+        thumbRangeSeconds: updates.thumb_range_seconds ?? null,
         lutEnabled: updates.lut_enabled ?? null,
       });
       if (updates.lut_enabled === 1 && projectId && projectLut) {
