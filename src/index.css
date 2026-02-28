@@ -654,9 +654,10 @@ body {
   -webkit-app-region: no-drag;
 }
 
-flex: 1;
-overflow-y: auto;
-padding: 40px var(--space-lg) var(--space-lg);
+.app-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px var(--space-lg) var(--space-lg);
 }
 
 /* ─── Buttons ─── */
