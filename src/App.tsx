@@ -412,42 +412,75 @@ function AppContent() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (tourRun) return;
-      const inReview = activeTab === "contact" || activeTab === "preproduction";
+      const inReview = activeTab === "contact" || activeTab === "preproduction" || activeTab === "media-workspace";
       if (!inReview) return;
+
+      // Don't fire shortcuts if the user is typing in an input or textarea
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.target instanceof HTMLElement && e.target.closest("[data-tour-tooltip]")) return;
 
       const targetId = hoveredClipId;
       const key = e.key.toLowerCase();
+      const isCtrl = e.ctrlKey || e.metaKey;
 
-      if ((key === "arrowdown" || key === "arrowright" || key === "arrowup" || key === "arrowleft") && clips.length > 0) {
+      // Global Select All / Deselect All
+      if (isCtrl && key === 's') {
         e.preventDefault();
-        const currentIndex = targetId ? clips.findIndex((c) => c.clip.id === targetId) : -1;
-        const nextIndex = key === "arrowdown" || key === "arrowright"
-          ? Math.min(currentIndex + 1, clips.length - 1)
-          : Math.max(currentIndex - 1, 0);
-        setHoveredClipId(clips[nextIndex].clip.id);
+        toggleSelectAll();
         return;
       }
 
-      if (!targetId) return;
+      // Arrow navigation
+      if ((key === "arrowdown" || key === "arrowright" || key === "arrowup" || key === "arrowleft") && clips.length > 0) {
+        e.preventDefault();
+        const visibleClipsList = sortLookbookClips(clips.filter(({ clip }) => {
+          const viewMatch = viewFilter === "picks" ? clip.flag === "pick" : viewFilter === "rated_min" ? clip.rating >= viewMinRating : true;
+          const shotSizeMatch = shotSizeFilter === "all" ? true : clip.shot_size === shotSizeFilter;
+          return viewMatch && shotSizeMatch;
+        }), lookbookSortMode);
 
-      if (key === "p") {
+        const currentIndex = targetId ? visibleClipsList.findIndex((c) => c.clip.id === targetId) : -1;
+        const nextIndex = key === "arrowdown" || key === "arrowright"
+          ? Math.min(currentIndex + 1, visibleClipsList.length - 1)
+          : Math.max(currentIndex - 1, 0);
+
+        if (visibleClipsList[nextIndex]) {
+          setHoveredClipId(visibleClipsList[nextIndex].clip.id);
+        }
+        return;
+      }
+
+      // PDF Export
+      if (key === "p" && !isCtrl) {
         e.preventDefault();
         handleExport();
         return;
       }
-      if (key === "i") {
+
+      // Image Export
+      if (key === "i" && !isCtrl) {
         e.preventDefault();
         handleExportImage();
         return;
       }
 
-      if (key >= '0' && key <= '5') {
+      if (!targetId) return;
+
+      // Manual Order (Ctrl + 1-9)
+      if (isCtrl && key >= '0' && key <= '9') {
+        e.preventDefault();
+        let order = parseInt(key);
+        if (order === 0) order = 10;
+        handleUpdateMetadata(targetId, { manual_order: order });
+        return;
+      }
+
+      // Ratings (0-5)
+      if (!isCtrl && key >= '0' && key <= '5') {
         handleUpdateMetadata(targetId, { rating: parseInt(key) });
       } else if (key === 'r' || key === 'x') {
         handleUpdateMetadata(targetId, { flag: 'reject' });
-      } else if (key === 's') {
+      } else if (key === 's' && !isCtrl) {
         toggleClipSelection(targetId);
       } else if (key === 'u' || key === ' ') {
         e.preventDefault();
