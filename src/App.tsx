@@ -1000,18 +1000,6 @@ function AppContent() {
         </div>
       </header>
 
-      {(scanning || extracting) && (
-        <div className="global-progress-bar">
-          <div
-            className="global-progress-fill"
-            style={{
-              width: scanning ? '100%' : `${(extractProgress.done / (extractProgress.total || 1)) * 100}%`,
-              animationName: scanning ? 'progress-indeterminate' : 'none'
-            }}
-          />
-        </div>
-      )}
-
       <div className="app-content">
         <nav className="app-tabs-nav">
           <button className="nav-tab" onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
@@ -1149,12 +1137,7 @@ function AppContent() {
                   </div>
                 </div>
 
-                {scanning && (
-                  <div className="inline-loading-state">
-                    <div className="spinner" />
-                    <span>Scanning folder for media files…</span>
-                  </div>
-                )}
+
 
                 <ClipList
                   clips={sortedClips}
