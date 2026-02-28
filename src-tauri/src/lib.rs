@@ -52,6 +52,7 @@ pub fn run() {
             commands::extract_thumbnails,
             commands::get_project,
             commands::read_thumbnail,
+            commands::read_audio_preview,
             commands::save_image_data_url,
             commands::load_brand_profile,
             commands::read_brand_logo,

@@ -9,6 +9,8 @@ interface BlocksViewProps {
   thumbnailCache: Record<string, string>;
   thumbnailsByClipId: Record<string, Thumbnail[]>;
   onSelectedBlockIdsChange: (ids: string[]) => void;
+  onOpenDelivery: () => void;
+  onOpenReview: () => void;
 }
 
 type BuildMode = "time_gap" | "scene_change" | "multicam_overlap";
@@ -20,6 +22,8 @@ export function BlocksView({
   thumbnailCache,
   thumbnailsByClipId,
   onSelectedBlockIdsChange,
+  onOpenDelivery,
+  onOpenReview,
 }: BlocksViewProps) {
   const [blocks, setBlocks] = useState<SceneBlockWithClips[]>([]);
   const [loading, setLoading] = useState(false);
@@ -30,7 +34,7 @@ export function BlocksView({
   const [overlapWindowSeconds, setOverlapWindowSeconds] = useState(30);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const [cameraFilter, setCameraFilter] = useState("all");
+  const [selectedCameras, setSelectedCameras] = useState<string[]>([]);
   const [audioFilter, setAudioFilter] = useState("all");
   const [fpsFilter, setFpsFilter] = useState("all");
   const [resolutionFilter, setResolutionFilter] = useState("all");
@@ -49,13 +53,16 @@ export function BlocksView({
     const get = (k: string, fallback: string) => localStorage.getItem(keyBase + k) || fallback;
     setGroupMode(get("group", "block") as GroupMode);
     setViewMode(get("view", "list") as ViewMode);
+    const savedCameras = localStorage.getItem(keyBase + "cameras");
+    setSelectedCameras(savedCameras ? JSON.parse(savedCameras) : []);
   }, [projectId]);
 
   useEffect(() => {
     const keyBase = `wp_blocks_${projectId}_`;
     localStorage.setItem(keyBase + "group", groupMode);
     localStorage.setItem(keyBase + "view", viewMode);
-  }, [projectId, groupMode, viewMode]);
+    localStorage.setItem(keyBase + "cameras", JSON.stringify(selectedCameras));
+  }, [projectId, groupMode, viewMode, selectedCameras]);
 
   const refreshBlocks = async () => {
     setLoading(true);
@@ -121,7 +128,7 @@ export function BlocksView({
 
   const filterClip = (clip: SceneBlockWithClips["clips"][number]) => {
     const inferredCamera = inferCamera(clip.filename);
-    if (cameraFilter !== "all" && inferredCamera !== cameraFilter) return false;
+    if (selectedCameras.length > 0 && !selectedCameras.includes(inferredCamera)) return false;
     if (audioFilter !== "all" && audioState(clip) !== audioFilter) return false;
     if (fpsFilter !== "all" && fpsBucket(clip.fps) !== fpsFilter) return false;
     if (resolutionFilter !== "all" && `${clip.width}x${clip.height}` !== resolutionFilter) return false;
@@ -139,13 +146,19 @@ export function BlocksView({
     return blocks
       .map((item) => ({ ...item, clips: item.clips.filter(filterClip) }))
       .filter((item) => item.clips.length > 0);
-  }, [blocks, cameraFilter, audioFilter, fpsFilter, resolutionFilter, codecFilter, dayFilter, selectFilter]);
+  }, [blocks, selectedCameras, audioFilter, fpsFilter, resolutionFilter, codecFilter, dayFilter, selectFilter]);
 
   const cameraOptions = useMemo(() => {
     const set = new Set<string>();
     blocks.forEach((b) => b.clips.forEach((c) => set.add(inferCamera(c.filename))));
     return Array.from(set).sort();
   }, [blocks]);
+
+  const toggleCamera = (camera: string) => {
+    setSelectedCameras((prev) =>
+      prev.includes(camera) ? prev.filter((item) => item !== camera) : [...prev, camera]
+    );
+  };
   const fpsOptions = useMemo(() => Array.from(new Set(blocks.flatMap((b) => b.clips.map((c) => fpsBucket(c.fps))))).sort(), [blocks]);
   const resolutionOptions = useMemo(() => Array.from(new Set(blocks.flatMap((b) => b.clips.map((c) => `${c.width}x${c.height}`)))).sort(), [blocks]);
   const codecOptions = useMemo(() => Array.from(new Set(blocks.flatMap((b) => b.clips.map((c) => c.video_codec)))).sort(), [blocks]);
@@ -254,10 +267,23 @@ export function BlocksView({
 
       <div className="toolbar premium-toolbar" style={{ marginBottom: 12 }}>
         <div className="toolbar-left-group" style={{ flexWrap: "wrap" }}>
-          <select className="input-select" value={cameraFilter} onChange={(e) => setCameraFilter(e.target.value)}>
-            <option value="all">All Cameras</option>
-            {cameraOptions.map((v) => <option key={v} value={v}>{v}</option>)}
-          </select>
+          <div className="camera-chip-filter">
+            <button
+              className={`btn btn-ghost btn-xs ${selectedCameras.length === 0 ? "active" : ""}`}
+              onClick={() => setSelectedCameras([])}
+            >
+              All Cameras
+            </button>
+            {cameraOptions.map((camera) => (
+              <button
+                key={camera}
+                className={`btn btn-ghost btn-xs ${selectedCameras.includes(camera) ? "active" : ""}`}
+                onClick={() => toggleCamera(camera)}
+              >
+                {camera}
+              </button>
+            ))}
+          </div>
           <select className="input-select" value={audioFilter} onChange={(e) => setAudioFilter(e.target.value)}>
             <option value="all">All Audio</option>
             <option value="audio_ok">Audio OK</option>
@@ -287,6 +313,22 @@ export function BlocksView({
             <option value="reject">Rejects</option>
             <option value="rated">Rated</option>
           </select>
+        </div>
+      </div>
+
+      <div className="scene-blocks-next-step premium-card">
+        <div>
+          <span className="toolbar-label">Next Step</span>
+          <h3>Move this organization into delivery</h3>
+          <p>{selectedIds.length > 0 ? `${selectedIds.length} block${selectedIds.length === 1 ? "" : "s"} selected for downstream scope.` : "Review the grouped blocks, select the ones you want, then send that scope to Delivery."}</p>
+        </div>
+        <div className="scene-blocks-next-step-actions">
+          <button className="btn btn-secondary btn-sm" onClick={onOpenReview}>
+            Back to Review
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={onOpenDelivery}>
+            Send to Delivery
+          </button>
         </div>
       </div>
 

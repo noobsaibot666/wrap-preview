@@ -203,7 +203,7 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
                     setScope("current_filter");
                   }}
                 >
-                  Use preset
+                  Most common preset
                 </button>
               </div>
               <div className="scope-grid">
@@ -265,7 +265,9 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
           </div>
         </div>
         {(!deliveryType || !scope) && (
-          <div className="mb-4 text-xs text-amber-300">Choose one type and one scope to continue.</div>
+          <div className="mb-4 text-xs text-amber-300">
+            {!deliveryType ? "Step 1 missing: choose Resolve FCPXML or Director Pack." : "Step 2 missing: choose the export scope."}
+          </div>
         )}
 
         {result && (
@@ -302,6 +304,7 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
               onClick={handleDirectorPack}
               disabled={isExporting || !deliveryType || !scope || deliveryType !== "director_pack"}
               className={`btn btn-accent btn-glow ${deliveryType === "director_pack" ? "" : "opacity-30"}`}
+              title={!deliveryType ? "Choose a delivery format first." : !scope ? "Choose a scope first." : undefined}
             >
               Step 3: Export Director Pack
               <Package size={18} />
@@ -310,6 +313,7 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
               onClick={handleExport}
               disabled={isExporting || !deliveryType || !scope || deliveryType !== "resolve"}
               className={`btn btn-primary ${deliveryType === "resolve" ? "" : "opacity-30"}`}
+              title={!deliveryType ? "Choose a delivery format first." : !scope ? "Choose a scope first." : undefined}
             >
               <span className={isExporting ? "shimmer-text" : ""}>
                 {isExporting ? "Exporting..." : "Step 3: Export FCPXML"}

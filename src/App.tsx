@@ -391,6 +391,8 @@ function AppContent() {
     if (!id || (playingClipId === id)) {
       if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
+        audioRef.current.load();
         audioRef.current = null;
       }
       setPlayingClipId(null);
@@ -403,11 +405,13 @@ function AppContent() {
 
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.removeAttribute("src");
+      audioRef.current.load();
     }
 
     try {
-      const src = convertFileSrc(clip.file_path);
-      const audio = new Audio(src);
+      const src = await invoke<string>("read_audio_preview", { path: clip.file_path });
+      const audio = new Audio();
       audio.onended = () => {
         setPlayingClipId(null);
         setPlayingProgress(0);
@@ -422,12 +426,21 @@ function AppContent() {
         setPlayingClipId(null);
         setPlayingProgress(0);
       };
+      audio.src = src;
+      audio.load();
       audioRef.current = audio;
       setPlayingClipId(id);
-      audio.play();
+      await audio.play();
     } catch (err) {
       console.error("Failed to play audio:", err);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.removeAttribute("src");
+        audioRef.current.load();
+        audioRef.current = null;
+      }
       setPlayingClipId(null);
+      setPlayingProgress(0);
     }
   }, [playingClipId, clips]);
 
@@ -435,7 +448,9 @@ function AppContent() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (tourRun) return;
-      const inReview = activeTab === "contact" || activeTab === "preproduction" || activeTab === "media-workspace";
+      const inReview =
+        (activeTab === "preproduction" && activePreproductionApp === "shot-planner") ||
+        (activeTab === "media-workspace" && activeMediaWorkspaceApp === "clip-review");
       if (!inReview) return;
 
       // Don't fire shortcuts if the user is typing in an input or textarea
@@ -499,8 +514,13 @@ function AppContent() {
       }
 
       // Rating shortcuts (1-5)
-      if (!isCtrl && key >= '1' && key <= '5') {
+      if (!isCtrl && key >= '0' && key <= '5') {
+        if (key === '0') {
+          handleUpdateMetadata(targetId, { rating: 0 });
+          return;
+        }
         handleUpdateMetadata(targetId, { rating: Number(key) });
+        return;
       }
 
       // Ordering shortcuts (Ctrl + 1-9)
@@ -534,7 +554,7 @@ function AppContent() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [hoveredClipId, clips, handleUpdateMetadata, tourRun, toggleClipSelection, activeTab]);
+  }, [hoveredClipId, clips, handleUpdateMetadata, tourRun, toggleClipSelection, activeTab, activePreproductionApp, activeMediaWorkspaceApp]);
 
 
   useEffect(() => {
@@ -843,6 +863,8 @@ function AppContent() {
         thumbCount,
         projectLutHash: projectLut?.hash || null,
         brandName: brandProfile?.name,
+        appVersion: appInfo?.version || "unknown",
+        onWarning: (message) => setUiError({ title: "Export branding fallback", hint: message }),
       });
       setUiError(null);
     } catch (err) {
@@ -883,6 +905,8 @@ function AppContent() {
           thumbCount,
           projectLutHash: projectLut?.hash || null,
           brandName: brandProfile?.name,
+          appVersion: appInfo?.version || "unknown",
+          onWarning: (message) => setUiError({ title: "Export branding fallback", hint: message }),
         });
         setUiError(null);
       } catch (err) {
@@ -899,14 +923,17 @@ function AppContent() {
       console.error(err);
       setPreparingExport(null);
     });
-  }, [selectedClipIds, getExportClips, thumbnailCache, thumbCount, projectLut, brandProfile, projectName]);
+  }, [selectedClipIds, getExportClips, thumbnailCache, thumbCount, projectLut, brandProfile, projectName, appInfo]);
 
   const totalClips = clips.length;
   const okClips = clips.filter((c) => c.clip.status === "ok").length;
   const warnClips = clips.filter((c) => c.clip.status === "warn").length;
   const runningJobs = jobs.filter((j) => j.status === "running" || j.status === "queued").length;
+  const failedJobs = jobs.filter((j) => j.status === "failed").length;
   const totalSize = clips.reduce((acc, c) => acc + c.clip.size_bytes, 0);
   const totalDuration = clips.reduce((acc, c) => acc + c.clip.duration_ms, 0);
+  const inWorkspaceLauncher = activeTab === "media-workspace" && !activeMediaWorkspaceApp;
+  const jobHudState = failedJobs > 0 ? "error" : (scanning || extracting || runningJobs > 0) ? "running" : jobs.some((j) => j.status === "done") ? "success" : "idle";
 
   // Advanced stats for pre-production
   const avgDuration = totalClips > 0 ? totalDuration / totalClips : 0;
@@ -1002,8 +1029,8 @@ function AppContent() {
 
       <header className="app-header">
         <div className="app-header-left">
-          <div className="app-logo" onClick={() => setActiveTab('home')}>
-            <img src="/src/assets/Icon_square_rounded.svg" alt="Logo" className="app-logo-img" />
+          <div className="app-logo" onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
+            <img src={appLogo} alt="Logo" className="app-logo-img" />
             <span className="app-title">Wrap Preview</span>
           </div>
           {projectName && (
@@ -1014,31 +1041,36 @@ function AppContent() {
           )}
         </div>
 
-        <nav className="app-tabs-nav header-tabs">
-          <button className={`nav-tab ${activeTab === 'home' ? 'active' : ''}`} onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
-            <LayoutGrid size={14} /> Modules
-          </button>
-          <button
-            className={`nav-tab ${activeTab === 'preproduction' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('preproduction');
-              setActivePreproductionApp(null);
-              setActiveMediaWorkspaceApp(null);
-            }}
-          >
-            <Boxes size={14} /> Pre-production
-          </button>
-          <button
-            className={`nav-tab ${activeTab === 'media-workspace' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('media-workspace');
-              setActivePreproductionApp(null);
-              setActiveMediaWorkspaceApp(null);
-            }}
-          >
-            <BriefcaseBusiness size={14} /> Media Workspace
-          </button>
-        </nav>
+        {activeTab !== "home" && (
+          <nav className="app-tabs-nav header-tabs">
+            <button className="nav-tab" onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
+              <LayoutGrid size={14} /> Modules
+            </button>
+            {activeTab === "preproduction" ? (
+              <button
+                className="nav-tab active"
+                onClick={() => {
+                  setActiveTab('preproduction');
+                  setActivePreproductionApp(null);
+                  setActiveMediaWorkspaceApp(null);
+                }}
+              >
+                <Boxes size={14} /> Pre-production
+              </button>
+            ) : (
+              <button
+                className="nav-tab active"
+                onClick={() => {
+                  setActiveTab('media-workspace');
+                  setActivePreproductionApp(null);
+                  setActiveMediaWorkspaceApp(null);
+                }}
+              >
+                <BriefcaseBusiness size={14} /> Media Workspace
+              </button>
+            )}
+          </nav>
+        )}
         <div className="app-header-right">
           <nav className="header-nav">
           </nav>
@@ -1086,15 +1118,15 @@ function AppContent() {
             </div>
 
 
-            <button className="btn btn-jobs" onClick={() => setJobsOpen(true)}>
+            <button className={`btn btn-jobs jobs-state-${jobHudState}`} onClick={() => setJobsOpen(true)}>
               <div className="jobs-indicator-content">
                 <BriefcaseBusiness size={16} />
                 <span className="jobs-label">
                   {(scanning || extracting) ? (scanning ? "Scanning…" : `Extracting ${extractProgress.done}/${extractProgress.total}`) : (
-                    runningJobs > 0 ? `Running ${runningJobs}` : "Jobs"
+                    runningJobs > 0 ? `Running ${runningJobs}` : failedJobs > 0 ? `Errors ${failedJobs}` : "Jobs"
                   )}
                 </span>
-                {jobs.some(j => j.status === 'failed') && <AlertTriangle size={14} className="status-icon-failed" style={{ marginLeft: 4 }} />}
+                {failedJobs > 0 && <AlertTriangle size={14} className="status-icon-failed" style={{ marginLeft: 4 }} />}
               </div>
               {(scanning || extracting || runningJobs > 0) && (
                 <div className="jobs-progress-bar">
@@ -1271,7 +1303,19 @@ function AppContent() {
                   <span style={{ fontSize: '1rem' }}>{scanning ? "Scanning folder for media files…" : ""}</span>
                 </div>
               </div>
-            ) : null
+            ) : (
+              <div className="media-workspace">
+                <div className="workspace-empty-state premium-card">
+                  <div className="module-icon"><Camera size={28} strokeWidth={1.5} /></div>
+                  <h2>Shot Planner</h2>
+                  <p>Load reference clips to tag shot sizes, movement, and selections before the shoot.</p>
+                  <button className="btn btn-secondary" onClick={() => handleSelectFolder("shot-planner")}>
+                    <FolderOpen size={14} />
+                    <span>Load References</span>
+                  </button>
+                </div>
+              </div>
+            )
           ) : activePreproductionApp === 'folder-creator' ? (
             <div className="media-workspace">
 
@@ -1294,8 +1338,8 @@ function AppContent() {
                 >
                   <div className="module-icon"><Camera size={32} strokeWidth={1.5} /></div>
                   <div className="module-info">
-                    <h3>Shot Index</h3>
-                    <p>Analyze reference footage and create visual shot lists.</p>
+                    <h3>Shot Planner</h3>
+                    <p>Analyze reference footage and export selected on-set reference sheets.</p>
                     <span className="module-action">Open App <ArrowRight size={14} /></span>
                   </div>
                 </div>
@@ -1356,6 +1400,8 @@ function AppContent() {
                   thumbnailCache={thumbnailCache}
                   thumbnailsByClipId={thumbnailsByClipId}
                   onSelectedBlockIdsChange={setSelectedBlockIds}
+                  onOpenDelivery={() => setShowExportPanel(true)}
+                  onOpenReview={() => setActiveMediaWorkspaceApp("clip-review")}
                 />
               </div>
             ) : null
@@ -1365,7 +1411,7 @@ function AppContent() {
                 <h1>Media Workspace</h1>
                 <p>Post-production suite for media verification and organization.</p>
               </div>
-              <div className="onboarding-grid">
+              <div className="onboarding-grid workspace-apps-grid">
                 <div
                   className="module-card premium-card"
                   onClick={() => setActiveMediaWorkspaceApp('safe-copy')}
@@ -1374,8 +1420,8 @@ function AppContent() {
                   <div className="module-icon"><ShieldCheck size={32} strokeWidth={1.5} /></div>
                   <div className="module-info">
                     <h3>Safe Copy</h3>
-                    <p>Validate media integrity with bit-accurate verification.</p>
-                    <span className="module-action">Access App <ArrowRight size={14} /></span>
+                    <p>Verify source and destination pairs before editorial work begins.</p>
+                    <span className="module-action">Open App <ArrowRight size={14} /></span>
                   </div>
                 </div>
                 <div
@@ -1388,24 +1434,23 @@ function AppContent() {
                 >
                   <div className="module-icon"><Camera size={32} strokeWidth={1.5} /></div>
                   <div className="module-info">
-                    <h3>Clip Review</h3>
-                    <p>Analyze thumbnails, metadata, and shot sequencing.</p>
-                    <span className="module-action">Access App <ArrowRight size={14} /></span>
+                    <h3>Open Workspace / Review</h3>
+                    <p>{projectId ? "Continue reviewing thumbnails, metadata, and audio." : "Load a footage folder to unlock Review, Scene Blocks, and Delivery."}</p>
+                    <span className="module-action">{projectId ? "Open App" : "Load Workspace"} <ArrowRight size={14} /></span>
                   </div>
                 </div>
                 <div
-                  className="module-card premium-card"
+                  className={`module-card premium-card ${!projectId ? "disabled" : ""}`}
                   onClick={() => {
                     if (projectId) setActiveMediaWorkspaceApp('scene-blocks');
-                    else handleSelectFolder("scene-blocks");
                   }}
                   style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
                 >
                   <div className="module-icon"><Boxes size={32} strokeWidth={1.5} /></div>
                   <div className="module-info">
                     <h3>Scene Blocks</h3>
-                    <p>Organize clips into meaningful editorial groups.</p>
-                    <span className="module-action">Access App <ArrowRight size={14} /></span>
+                    <p>{projectId ? "Organize reviewed clips into deterministic editorial groups." : "Available after a workspace is opened in Review."}</p>
+                    <span className="module-action">{projectId ? "Open App" : "Workspace required"}</span>
                   </div>
                 </div>
                 <div
@@ -1415,12 +1460,17 @@ function AppContent() {
                 >
                   <div className="module-icon"><FileDown size={32} strokeWidth={1.5} /></div>
                   <div className="module-info">
-                    <h3>Handoff</h3>
-                    <p>Generate PDF contact sheets and DaVinci exports.</p>
-                    <span className="module-action">{projectId ? "Generate Exports" : "Workspace required"}</span>
+                    <h3>Delivery</h3>
+                    <p>{projectId ? "Export Resolve timelines and Director Packs from the current scope." : "Available after clips are loaded into the workspace."}</p>
+                    <span className="module-action">{projectId ? "Open App" : "Workspace required"}</span>
                   </div>
                 </div>
               </div>
+              {inWorkspaceLauncher && !projectId && (
+                <div className="workspace-launcher-hint">
+                  Load footage in <strong>Open Workspace / Review</strong> first. Scene Blocks and Delivery stay disabled until a workspace is active.
+                </div>
+              )}
             </div>
           )
         ) : (

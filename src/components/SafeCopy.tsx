@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, Play, XCircle, CheckCircle, AlertTriangle, Search, FileText, ListChecks, Plus, Trash2, ShieldCheck } from "lucide-react";
+import { saveSafeCopyJobPdf, saveSafeCopyQueuePdf, SafeCopyVerificationJob } from "../utils/SafeCopyPdf";
 
 interface VerificationProgress {
   job_id: string;
@@ -23,6 +24,15 @@ interface VerificationItem {
   dest_size?: number;
   status: string;
   error_message?: string;
+}
+
+interface AppInfo {
+  version: string;
+}
+
+interface ProjectInfo {
+  id: string;
+  name: string;
 }
 
 interface QueueCheck {
@@ -265,9 +275,27 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
   };
 
   const exportJobPdf = async (jobId: string) => {
-    const outDir = await choosePath("Export Verification PDF");
-    if (!outDir) return;
-    await invoke("export_verification_report_pdf", { jobId, outDir });
+    const filePath = await save({
+      filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+      defaultPath: `Verification_Report_${jobId.slice(0, 8)}.pdf`
+    });
+    if (!filePath) return;
+    const [appInfo, job, items, project] = await Promise.all([
+      invoke<AppInfo>("get_app_info"),
+      invoke<SafeCopyVerificationJob | null>("get_verification_job", { jobId }),
+      invoke<VerificationItem[]>("get_verification_items", { jobId }),
+      projectId !== "__global__" ? invoke<ProjectInfo | null>("get_project", { projectId }) : Promise.resolve(null),
+    ]);
+    if (!job) {
+      onError?.({ title: "Verification job not found", hint: "Refresh Safe Copy results and try again." });
+      return;
+    }
+    await saveSafeCopyJobPdf({
+      filePath,
+      appVersion: appInfo.version,
+      projectName: project?.name,
+      onWarning: (message) => onError?.({ title: "Export branding fallback", hint: message }),
+    }, job, items);
   };
 
   const exportQueueMarkdown = async () => {
@@ -277,9 +305,38 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
   };
 
   const exportQueuePdf = async () => {
-    const outDir = await choosePath("Export Combined Queue PDF");
-    if (!outDir) return;
-    await invoke("export_verification_queue_report_pdf", { projectId, outDir });
+    const filePath = await save({
+      filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+      defaultPath: "SafeCopy_Queue_Report.pdf"
+    });
+    if (!filePath) return;
+    const [appInfo, project] = await Promise.all([
+      invoke<AppInfo>("get_app_info"),
+      projectId !== "__global__" ? invoke<ProjectInfo | null>("get_project", { projectId }) : Promise.resolve(null),
+    ]);
+    const rows = await Promise.all(
+      queue
+        .filter((row) => row.last_job_id)
+        .map(async (row) => {
+          const jobId = row.last_job_id!;
+          const [job, items] = await Promise.all([
+            invoke<SafeCopyVerificationJob | null>("get_verification_job", { jobId }),
+            invoke<VerificationItem[]>("get_verification_items", { jobId }),
+          ]);
+          return job ? { queue: { idx: row.idx, label: row.label }, job, items } : null;
+        })
+    );
+    const validRows = rows.filter((row): row is NonNullable<typeof row> => Boolean(row));
+    if (validRows.length === 0) {
+      onError?.({ title: "No completed verification data", hint: "Run Safe Copy first, then export the combined PDF." });
+      return;
+    }
+    await saveSafeCopyQueuePdf({
+      filePath,
+      appVersion: appInfo.version,
+      projectName: project?.name,
+      onWarning: (message) => onError?.({ title: "Export branding fallback", hint: message }),
+    }, validRows);
   };
 
   const filteredResults = results.filter((item) => {
@@ -346,6 +403,17 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
                   </div>
 
                   <div className="verification-row-inputs">
+                    <div className="input-field-group input-field-group-compact">
+                      <label>LABEL</label>
+                      <input
+                        type="text"
+                        value={row.label ?? ""}
+                        placeholder={`Check ${String(row.idx).padStart(2, "0")}`}
+                        className="premium-input-dark"
+                        onChange={(e) => updateRow(row.idx, { label: e.target.value })}
+                        disabled={isRunningQueue}
+                      />
+                    </div>
                     <div className="input-field-group">
                       <label>SOURCE {queue.length > 1 ? `(${idx + 1})` : ''}</label>
                       <div className="path-entry">
@@ -497,6 +565,15 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
                 <span className="label">Total</span>
                 <span className="value">{queueSummary.total}</span>
               </div>
+            </div>
+
+            <div className="verification-queue-summary-list">
+              {queue.map((row) => (
+                <div key={row.id} className={`verification-queue-summary-item status-${row.status?.toLowerCase() || "queued"}`}>
+                  <span>{row.label || `Check ${String(row.idx).padStart(2, "0")}`}</span>
+                  <span>{(row.status || "queued").toUpperCase()}</span>
+                </div>
+              ))}
             </div>
 
             {progress && (
