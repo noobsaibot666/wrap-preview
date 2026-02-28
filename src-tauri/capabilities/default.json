@@ -31,9 +31,29 @@
       ]
     },
     "dialog:default",
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "/Volumes/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "/Volumes/**"
+        }
+      ]
+    },
     "fs:default",
-    "fs:allow-write-file",
-    "fs:allow-read-file",
     "fs:write-all",
     "core:webview:allow-print"
   ]

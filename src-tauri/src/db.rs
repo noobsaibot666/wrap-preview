@@ -162,6 +162,18 @@ pub struct ProjectSettings {
     pub settings_json: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistentJob {
+    pub id: String,
+    pub kind: String,
+    pub status: String,
+    pub progress: f32,
+    pub message: String,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 impl Database {
     pub fn new(db_path: &str) -> SqlResult<Self> {
         let conn = Connection::open(db_path)?;
@@ -602,6 +614,17 @@ impl Database {
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (clip_id, threshold, analyzer_version),
                 FOREIGN KEY (clip_id) REFERENCES clips(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS jobs (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                status TEXT NOT NULL,
+                progress REAL NOT NULL,
+                message TEXT NOT NULL,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
             ",
         )?;
@@ -1898,6 +1921,66 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM scene_detection_cache", [])?;
         conn.execute("DELETE FROM file_hash_cache", [])?;
+        Ok(())
+    }
+
+    pub fn upsert_job(&self, job: &PersistentJob) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO jobs (id, kind, status, progress, message, error, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                status = excluded.status,
+                progress = excluded.progress,
+                message = excluded.message,
+                error = excluded.error,
+                updated_at = excluded.updated_at",
+            params![
+                job.id,
+                job.kind,
+                job.status,
+                job.progress,
+                job.message,
+                job.error,
+                job.created_at,
+                job.updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_jobs(&self) -> SqlResult<Vec<PersistentJob>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, kind, status, progress, message, error, created_at, updated_at 
+             FROM jobs ORDER BY updated_at DESC LIMIT 100",
+        )?;
+        let jobs = stmt
+            .query_map([], |row| {
+                Ok(PersistentJob {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    status: row.get(2)?,
+                    progress: row.get(3)?,
+                    message: row.get(4)?,
+                    error: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(jobs)
+    }
+
+    pub fn cleanup_stale_jobs(&self) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        // Mark any jobs stuck in "queued" or "running" as "cancelled" on app start
+        conn.execute(
+            "UPDATE jobs SET status = 'cancelled', message = 'App restarted'
+             WHERE status IN ('queued', 'running')",
+            [],
+        )?;
         Ok(())
     }
 }

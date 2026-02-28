@@ -14,6 +14,18 @@ pub enum JobStatus {
     Cancelled,
 }
 
+impl JobStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            JobStatus::Queued => "queued",
+            JobStatus::Running => "running",
+            JobStatus::Done => "done",
+            JobStatus::Failed => "failed",
+            JobStatus::Cancelled => "cancelled",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct JobInfo {
     pub id: String,
@@ -33,12 +45,17 @@ struct JobRecord {
 
 pub struct JobManager {
     jobs: Mutex<HashMap<String, JobRecord>>,
+    db: Mutex<Option<crate::db::Database>>,
 }
 
 impl JobManager {
-    pub fn new() -> Self {
+    pub fn new(db: Option<crate::db::Database>) -> Self {
+        if let Some(ref d) = db {
+            let _ = d.cleanup_stale_jobs();
+        }
         Self {
             jobs: Mutex::new(HashMap::new()),
+            db: Mutex::new(db),
         }
     }
 
@@ -59,15 +76,36 @@ impl JobManager {
         lock_or_recover(&self.jobs).insert(
             job_id.clone(),
             JobRecord {
-                info,
+                info: info.clone(),
                 cancel_flag: cancel_flag.clone(),
             },
         );
+
+        // Persist to DB
+        if let Some(db) = lock_or_recover(&self.db).as_ref() {
+            let _ = db.upsert_job(&crate::db::PersistentJob {
+                id: info.id,
+                kind: info.kind,
+                status: info.status.as_str().to_string(),
+                progress: info.progress,
+                message: info.message,
+                error: info.error,
+                created_at: info.created_at,
+                updated_at: info.updated_at,
+            });
+        }
+
         (job_id, cancel_flag)
     }
 
     pub fn mark_running(&self, job_id: &str, message: &str) {
-        self.update(job_id, JobStatus::Running, None, Some(message.to_string()), None);
+        self.update(
+            job_id,
+            JobStatus::Running,
+            None,
+            Some(message.to_string()),
+            None,
+        );
     }
 
     pub fn update_progress(&self, job_id: &str, progress: f32, message: Option<String>) {
@@ -102,6 +140,21 @@ impl JobManager {
             record.info.status = JobStatus::Cancelled;
             record.info.message = "Cancellation requested".to_string();
             record.info.updated_at = Utc::now().to_rfc3339();
+
+            // Persist
+            if let Some(db) = lock_or_recover(&self.db).as_ref() {
+                let _ = db.upsert_job(&crate::db::PersistentJob {
+                    id: record.info.id.clone(),
+                    kind: record.info.kind.clone(),
+                    status: record.info.status.as_str().to_string(),
+                    progress: record.info.progress,
+                    message: record.info.message.clone(),
+                    error: record.info.error.clone(),
+                    created_at: record.info.created_at.clone(),
+                    updated_at: record.info.updated_at.clone(),
+                });
+            }
+
             return true;
         }
         false
@@ -112,11 +165,45 @@ impl JobManager {
     }
 
     pub fn get_job(&self, job_id: &str) -> Option<JobInfo> {
-        lock_or_recover(&self.jobs).get(job_id).map(|r| r.info.clone())
+        lock_or_recover(&self.jobs)
+            .get(job_id)
+            .map(|r| r.info.clone())
     }
 
     pub fn list_jobs(&self) -> Vec<JobInfo> {
-        let mut out: Vec<JobInfo> = lock_or_recover(&self.jobs).values().map(|r| r.info.clone()).collect();
+        let mut out: Vec<JobInfo> = lock_or_recover(&self.jobs)
+            .values()
+            .map(|r| r.info.clone())
+            .collect();
+
+        // Merge with persisted jobs for history
+        if let Some(db) = lock_or_recover(&self.db).as_ref() {
+            if let Ok(persisted) = db.list_jobs() {
+                for p in persisted {
+                    if !out.iter().any(|j| j.id == p.id) {
+                        let status = match p.status.as_str() {
+                            "queued" => JobStatus::Queued,
+                            "running" => JobStatus::Running,
+                            "done" => JobStatus::Done,
+                            "failed" => JobStatus::Failed,
+                            "cancelled" => JobStatus::Cancelled,
+                            _ => JobStatus::Failed,
+                        };
+                        out.push(JobInfo {
+                            id: p.id,
+                            kind: p.kind,
+                            status,
+                            progress: p.progress,
+                            message: p.message,
+                            error: p.error,
+                            created_at: p.created_at,
+                            updated_at: p.updated_at,
+                        });
+                    }
+                }
+            }
+        }
+
         out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         out
     }
@@ -142,6 +229,20 @@ impl JobManager {
                 record.info.error = Some(e);
             }
             record.info.updated_at = Utc::now().to_rfc3339();
+
+            // Persist
+            if let Some(db) = lock_or_recover(&self.db).as_ref() {
+                let _ = db.upsert_job(&crate::db::PersistentJob {
+                    id: record.info.id.clone(),
+                    kind: record.info.kind.clone(),
+                    status: record.info.status.as_str().to_string(),
+                    progress: record.info.progress,
+                    message: record.info.message.clone(),
+                    error: record.info.error.clone(),
+                    created_at: record.info.created_at.clone(),
+                    updated_at: record.info.updated_at.clone(),
+                });
+            }
         }
     }
 }

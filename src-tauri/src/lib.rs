@@ -30,9 +30,9 @@ pub fn run() {
     let database = db::Database::new(&db_path).expect("Failed to initialize database");
 
     let app_state = Arc::new(AppState {
-        db: database,
+        db: database.clone(),
         cache_dir,
-        job_manager: crate::jobs::JobManager::new(),
+        job_manager: crate::jobs::JobManager::new(Some(database)),
         perf_log: crate::perf::PerfLog::new(500),
     });
 

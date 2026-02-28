@@ -227,6 +227,7 @@ pub fn extract_with_fallback(
     output_path: &str,
     target_ms: u64,
     duration_ms: u64,
+    cancel_flag: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<u64, String> {
     // Try the target timestamp first
     match extract_thumbnail(input_path, output_path, target_ms) {
@@ -238,6 +239,11 @@ pub fn extract_with_fallback(
     // Fallback: try offsets around the target
     let offsets: Vec<i64> = vec![1000, 2000, -1000, -2000, 3000, -3000];
     for offset in offsets {
+        if let Some(cf) = cancel_flag {
+            if cf.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("Cancelled".to_string());
+            }
+        }
         let fallback_ms = (target_ms as i64 + offset).max(0).min(duration_ms as i64) as u64;
         if fallback_ms == target_ms {
             continue;

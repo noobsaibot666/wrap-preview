@@ -2,6 +2,7 @@ use crate::db::Clip;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
+use std::path::Path;
 
 struct Rational {
     num: i64,
@@ -31,6 +32,7 @@ pub fn generate_fcpxml_structured(
     clips: &[Clip],
     project_name: &str,
     include_master_timeline: bool,
+    base_path: Option<&str>,
 ) -> String {
     let mut xml = String::new();
     let mut clips_ordered = clips.to_vec();
@@ -69,7 +71,17 @@ pub fn generate_fcpxml_structured(
         let asset_id = format!("r{}", idx + 1);
         asset_ref_map.insert(clip.id.clone(), asset_id.clone());
         let duration = Rational::from_ms(clip.duration_ms).as_fcpxml();
-        let src = format!("file://localhost{}", clip.file_path);
+
+        let src = if let Some(bp) = base_path {
+            // Attempt to make it relative to the FCPXML location (bp)
+            if let Ok(rel) = Path::new(&clip.file_path).strip_prefix(bp) {
+                rel.to_string_lossy().to_string()
+            } else {
+                format!("file://localhost{}", clip.file_path)
+            }
+        } else {
+            format!("file://localhost{}", clip.file_path)
+        };
 
         let _ = write!(
             xml,
@@ -396,6 +408,7 @@ mod tests {
             &[clip("1", "A&B <test>.mov", "2026-01-01 10:00:00")],
             "Proj & Test",
             true,
+            None,
         );
         assert!(xml.contains("A&amp;B &lt;test&gt;.mov"));
         assert!(xml.contains("Proj &amp; Test"));
@@ -408,8 +421,8 @@ mod tests {
             clip("1", "CamA_001.mov", "2026-01-01 10:00:00"),
             clip("2", "CamB_001.mov", "2026-01-01 10:00:05"),
         ];
-        let xml1 = generate_fcpxml_structured(&clips, "Project", true);
-        let xml2 = generate_fcpxml_structured(&clips, "Project", true);
+        let xml1 = generate_fcpxml_structured(&clips, "Project", true, None);
+        let xml2 = generate_fcpxml_structured(&clips, "Project", true, None);
         assert_eq!(xml1, xml2);
     }
 }

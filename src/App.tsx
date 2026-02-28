@@ -71,9 +71,31 @@ function AppContent() {
   const TOUR_SEEN_KEY = "wp_has_seen_tour";
   const TOUR_VERSION_KEY = "wp_tour_version";
 
-  const [activeTab, setActiveTab] = useState<"home" | "preproduction" | "shot-planner" | "media-workspace" | "contact" | "blocks" | "safe-copy" | "all">("home");
-  const [activePreproductionApp, setActivePreproductionApp] = useState<"shot-planner" | "folder-creator" | null>(null);
-  const [activeMediaWorkspaceApp, setActiveMediaWorkspaceApp] = useState<"safe-copy" | "clip-review" | "scene-blocks" | "handoff" | null>(null);
+  const [activeTab, setActiveTab] = useState<"home" | "preproduction" | "shot-planner" | "media-workspace" | "contact" | "blocks" | "safe-copy" | "all">(() => {
+    const saved = localStorage.getItem('wp_activeTab');
+    return (saved as any) || 'home';
+  });
+  const [activePreproductionApp, setActivePreproductionApp] = useState<string | null>(() => {
+    return localStorage.getItem('wp_activePreApp') || null;
+  });
+  const [activeMediaWorkspaceApp, setActiveMediaWorkspaceApp] = useState<string | null>(() => {
+    return localStorage.getItem('wp_activeMediaApp') || null;
+  });
+
+  // Persist tab state
+  useEffect(() => {
+    localStorage.setItem('wp_activeTab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activePreproductionApp) localStorage.setItem('wp_activePreApp', activePreproductionApp);
+    else localStorage.removeItem('wp_activePreApp');
+  }, [activePreproductionApp]);
+
+  useEffect(() => {
+    if (activeMediaWorkspaceApp) localStorage.setItem('wp_activeMediaApp', activeMediaWorkspaceApp);
+    else localStorage.removeItem('wp_activeMediaApp');
+  }, [activeMediaWorkspaceApp]);
 
   // --- Phase-Isolated State ---
   type Phase = 'pre' | 'post';
@@ -475,16 +497,37 @@ function AppContent() {
         return;
       }
 
-      // Ratings (0-5)
-      if (!isCtrl && key >= '0' && key <= '5') {
-        handleUpdateMetadata(targetId, { rating: parseInt(key) });
-      } else if (key === 'r' || key === 'x') {
-        handleUpdateMetadata(targetId, { flag: 'reject' });
-      } else if (key === 's' && !isCtrl) {
-        toggleClipSelection(targetId);
-      } else if (key === 'u' || key === ' ') {
+      // Rating shortcuts (1-5)
+      if (!isCtrl && key >= '1' && key <= '5') {
+        handleUpdateMetadata(targetId, { rating: Number(key) });
+      }
+
+      // Ordering shortcuts (Ctrl + 1-9)
+      if (isCtrl && key >= '1' && key <= '9') {
+        e.preventDefault();
+        handleUpdateMetadata(targetId, { manual_order: Number(key) });
+      }
+
+      // Export shortcuts
+      if (!isCtrl && key === 'p') {
+        e.preventDefault();
+        handleExport();
+      }
+      if (!isCtrl && key === 'i') {
+        e.preventDefault();
+        handleExportImage();
+      }
+
+      // Flag shortcuts
+      if (key === 'r') handleUpdateMetadata(targetId, { flag: 'reject' });
+      if (key === 'k') handleUpdateMetadata(targetId, { flag: 'pick' });
+      if (key === 'n') handleUpdateMetadata(targetId, { flag: 'none' });
+      if (key === 'u' || key === ' ') {
         e.preventDefault();
         handleUpdateMetadata(targetId, { flag: 'none' });
+      }
+      if (key === 's' && !isCtrl) {
+        toggleClipSelection(targetId);
       }
     };
 
@@ -552,22 +595,21 @@ function AppContent() {
         }))
       );
       if (thumbEntries.length > 0) {
-        const results = thumbEntries.map(({ key, path }) => {
+        const nextCache = { ...(projectStates[activePhase].thumbnailCache || {}) };
+        for (const { key, path } of thumbEntries) {
           try {
-            const url = convertFileSrc(path);
-            return { key, url };
-          } catch (error) {
-            console.warn(`Thumbnail load failed for ${path}`, error);
-            return null;
+            nextCache[key] = convertFileSrc(path);
+          } catch (e) {
+            console.warn(`convertFileSrc failed for ${path}, attempting base64 rehydration`, e);
+            try {
+              const base64 = await invoke<string>("read_thumbnail", { path });
+              nextCache[key] = base64;
+            } catch (err) {
+              console.error(`Full thumbnail rehydration failure for ${path}`, err);
+            }
           }
-        });
-        setPhaseState(activePhase, prev => {
-          const next = { ...prev.thumbnailCache };
-          for (const item of results) {
-            if (item) next[item.key] = item.url;
-          }
-          return { ...prev, thumbnailCache: next };
-        });
+        }
+        setPhaseState(activePhase, { thumbnailCache: nextCache });
       }
 
       await fetchProjectSettings(nextProjectId);
@@ -987,7 +1029,7 @@ function AppContent() {
 
         <nav className="app-tabs-nav header-tabs">
           <button className={`nav-tab ${activeTab === 'home' ? 'active' : ''}`} onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
-            <LayoutGrid size={14} /> Home
+            <LayoutGrid size={14} /> Modules
           </button>
           <button
             className={`nav-tab ${activeTab === 'preproduction' ? 'active' : ''}`}

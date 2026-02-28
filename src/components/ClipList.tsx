@@ -286,6 +286,19 @@ function ClipCard({
                             </button>
                         )}
                         <button
+                            className={`btn-flag btn-pick ${clip.flag === 'pick' ? 'active' : ''}`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const nextFlag = clip.flag === 'pick' ? 'none' : 'pick';
+                                onUpdateMetadata(clip.id, { flag: nextFlag });
+                            }}
+                            title="Pick (P)"
+                            aria-label="Pick"
+                        >
+                            <CheckCircle2 size={14} />
+                            <span>Pick</span>
+                        </button>
+                        <button
                             className={`btn-flag btn-reject ${clip.flag === 'reject' ? 'active' : ''}`}
                             onClick={(e) => {
                                 e.stopPropagation();

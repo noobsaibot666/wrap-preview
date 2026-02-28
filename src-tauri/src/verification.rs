@@ -33,13 +33,18 @@ pub struct FileEntry {
     pub mtime: u64,
 }
 
-pub fn index_tree(root: &Path) -> Vec<FileEntry> {
+pub fn index_tree(root: &Path, cancel_flag: Option<&AtomicBool>) -> Vec<FileEntry> {
     let mut entries = Vec::new();
     for entry in WalkDir::new(root)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
     {
+        if let Some(cf) = cancel_flag {
+            if cf.load(Ordering::Relaxed) {
+                break;
+            }
+        }
         let path = entry.path();
         let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if filename.starts_with('.') || filename == "Thumbs.db" {
@@ -70,13 +75,21 @@ pub fn index_tree(root: &Path) -> Vec<FileEntry> {
     entries
 }
 
-pub fn hash_file(path: &Path) -> Result<String, std::io::Error> {
+pub fn hash_file(path: &Path, cancel_flag: Option<&AtomicBool>) -> Result<String, std::io::Error> {
     let file = fs::File::open(path)?;
     let mut reader = BufReader::with_capacity(1024 * 1024 * 4, file);
     let mut hasher = Hasher::new();
     let mut buffer = [0; 1024 * 1024];
 
     loop {
+        if let Some(cf) = cancel_flag {
+            if cf.load(Ordering::Relaxed) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "Cancelled",
+                ));
+            }
+        }
         let n = reader.read(&mut buffer)?;
         if n == 0 {
             break;
@@ -128,7 +141,8 @@ pub async fn run_verification(
         extra_in_dest_count: 0,
     };
 
-    db.insert_verification_job(&job).map_err(|e| e.to_string())?;
+    db.insert_verification_job(&job)
+        .map_err(|e| e.to_string())?;
 
     emit_progress(
         &app,
@@ -148,12 +162,13 @@ pub async fn run_verification(
 
     let source_path = PathBuf::from(&source_root);
     let dest_path = PathBuf::from(&dest_root);
-    let source_entries = index_tree(&source_path);
-    let dest_entries = index_tree(&dest_path);
+    let source_entries = index_tree(&source_path, Some(&cancel_flag));
+    let dest_entries = index_tree(&dest_path, Some(&cancel_flag));
 
     job.total_files = source_entries.len() as u32;
     job.total_bytes = source_entries.iter().map(|e| e.size).sum();
-    db.update_verification_job_counts(&job).map_err(|e| e.to_string())?;
+    db.update_verification_job_counts(&job)
+        .map_err(|e| e.to_string())?;
 
     let dest_map: HashMap<String, FileEntry> = dest_entries
         .into_iter()
@@ -172,117 +187,122 @@ pub async fn run_verification(
         .map_err(|e| e.to_string())?;
 
     pool.install(|| {
-        source_entries.par_iter().enumerate().for_each(|(idx, src)| {
-            if cancel_flag.load(Ordering::Relaxed) {
-                cancelled.store(true, Ordering::Relaxed);
-                return;
-            }
-
-            let mut item = VerificationItem {
-                job_id: job_id.clone(),
-                rel_path: src.rel_path.clone(),
-                source_size: src.size,
-                dest_size: None,
-                source_mtime: src.mtime,
-                dest_mtime: None,
-                source_hash: None,
-                dest_hash: None,
-                status: "OK".to_string(),
-                error_message: None,
-            };
-
-            let mut dest_entry = None;
-            if let Ok(mut dm) = dest_map_shared.lock() {
-                if let Some(dst) = dm.remove(&src.rel_path) {
-                    dest_entry = Some(dst);
+        source_entries
+            .par_iter()
+            .enumerate()
+            .for_each(|(idx, src)| {
+                if cancel_flag.load(Ordering::Relaxed) {
+                    cancelled.store(true, Ordering::Relaxed);
+                    return;
                 }
-            }
 
-            if let Some(dst) = dest_entry {
-                item.dest_size = Some(dst.size);
-                item.dest_mtime = Some(dst.mtime);
+                let mut item = VerificationItem {
+                    job_id: job_id.clone(),
+                    rel_path: src.rel_path.clone(),
+                    source_size: src.size,
+                    dest_size: None,
+                    source_mtime: src.mtime,
+                    dest_mtime: None,
+                    source_hash: None,
+                    dest_hash: None,
+                    status: "OK".to_string(),
+                    error_message: None,
+                };
 
-                if src.size != dst.size {
-                    item.status = "SIZE_MISMATCH".to_string();
-                    if let Ok(mut j) = job_shared.lock() {
-                        j.size_mismatch_count += 1;
+                let mut dest_entry = None;
+                if let Ok(mut dm) = dest_map_shared.lock() {
+                    if let Some(dst) = dm.remove(&src.rel_path) {
+                        dest_entry = Some(dst);
                     }
-                } else if mode == "SOLID" {
-                    let src_hash = hash_file(&src.abs_path);
-                    let dst_hash = hash_file(&dst.abs_path);
-                    match (src_hash, dst_hash) {
-                        (Ok(sh), Ok(dh)) => {
-                            item.source_hash = Some(sh.clone());
-                            item.dest_hash = Some(dh.clone());
-                            if sh != dh {
-                                item.status = "HASH_MISMATCH".to_string();
-                                if let Ok(mut j) = job_shared.lock() {
-                                    j.hash_mismatch_count += 1;
+                }
+
+                if let Some(dst) = dest_entry {
+                    item.dest_size = Some(dst.size);
+                    item.dest_mtime = Some(dst.mtime);
+
+                    if src.size != dst.size {
+                        item.status = "SIZE_MISMATCH".to_string();
+                        if let Ok(mut j) = job_shared.lock() {
+                            j.size_mismatch_count += 1;
+                        }
+                    } else if mode == "SOLID" {
+                        let src_hash = hash_file(&src.abs_path, Some(&cancel_flag));
+                        let dst_hash = hash_file(&dst.abs_path, Some(&cancel_flag));
+                        match (src_hash, dst_hash) {
+                            (Ok(sh), Ok(dh)) => {
+                                item.source_hash = Some(sh.clone());
+                                item.dest_hash = Some(dh.clone());
+                                if sh != dh {
+                                    item.status = "HASH_MISMATCH".to_string();
+                                    if let Ok(mut j) = job_shared.lock() {
+                                        j.hash_mismatch_count += 1;
+                                    }
+                                } else if let Ok(mut j) = job_shared.lock() {
+                                    j.verified_ok_count += 1;
                                 }
-                            } else if let Ok(mut j) = job_shared.lock() {
-                                j.verified_ok_count += 1;
+                            }
+                            (e1, e2) => {
+                                item.status = if e1.is_err() {
+                                    "UNREADABLE_SOURCE"
+                                } else {
+                                    "UNREADABLE_DEST"
+                                }
+                                .to_string();
+                                item.error_message =
+                                    Some(format!("S:{:?} D:{:?}", e1.err(), e2.err()));
+                                if let Ok(mut j) = job_shared.lock() {
+                                    j.unreadable_count += 1;
+                                }
                             }
                         }
-                        (e1, e2) => {
-                            item.status = if e1.is_err() {
-                                "UNREADABLE_SOURCE"
-                            } else {
-                                "UNREADABLE_DEST"
-                            }
-                            .to_string();
-                            item.error_message = Some(format!("S:{:?} D:{:?}", e1.err(), e2.err()));
-                            if let Ok(mut j) = job_shared.lock() {
-                                j.unreadable_count += 1;
-                            }
-                        }
+                    } else if let Ok(mut j) = job_shared.lock() {
+                        j.verified_ok_count += 1;
                     }
-                } else if let Ok(mut j) = job_shared.lock() {
-                    j.verified_ok_count += 1;
-                }
-            } else {
-                item.status = "MISSING".to_string();
-                if let Ok(mut j) = job_shared.lock() {
-                    j.missing_count += 1;
-                }
-            }
-
-            let current_bytes = bytes_processed.fetch_add(src.size, Ordering::SeqCst) + src.size;
-            if idx % 10 == 0 || idx == source_entries.len().saturating_sub(1) {
-                if let Ok(j) = job_shared.lock() {
-                    emit_progress(
-                        &app,
-                        VerificationProgress {
-                            job_id: job_id.clone(),
-                            phase: "HASHING".to_string(),
-                            current_file: src.rel_path.clone(),
-                            bytes_total: j.total_bytes,
-                            bytes_processed: current_bytes,
-                            files_total: j.total_files,
-                            files_processed: idx as u32 + 1,
-                            ok_count: j.verified_ok_count,
-                            mismatch_count: j.size_mismatch_count + j.hash_mismatch_count,
-                            missing_count: j.missing_count,
-                        },
-                    );
-                }
-            }
-
-            if let Ok(mut res) = results_shared.lock() {
-                res.push(item);
-                if res.len() >= 100 {
-                    let flushed = res.clone();
-                    res.clear();
-                    if let Err(e) = db.insert_verification_items(&flushed) {
-                        eprintln!("verification: failed flush items: {}", e);
+                } else {
+                    item.status = "MISSING".to_string();
+                    if let Ok(mut j) = job_shared.lock() {
+                        j.missing_count += 1;
                     }
+                }
+
+                let current_bytes =
+                    bytes_processed.fetch_add(src.size, Ordering::SeqCst) + src.size;
+                if idx % 10 == 0 || idx == source_entries.len().saturating_sub(1) {
                     if let Ok(j) = job_shared.lock() {
-                        if let Err(e) = db.update_verification_job_counts(&j) {
-                            eprintln!("verification: failed flush counts: {}", e);
+                        emit_progress(
+                            &app,
+                            VerificationProgress {
+                                job_id: job_id.clone(),
+                                phase: "HASHING".to_string(),
+                                current_file: src.rel_path.clone(),
+                                bytes_total: j.total_bytes,
+                                bytes_processed: current_bytes,
+                                files_total: j.total_files,
+                                files_processed: idx as u32 + 1,
+                                ok_count: j.verified_ok_count,
+                                mismatch_count: j.size_mismatch_count + j.hash_mismatch_count,
+                                missing_count: j.missing_count,
+                            },
+                        );
+                    }
+                }
+
+                if let Ok(mut res) = results_shared.lock() {
+                    res.push(item);
+                    if res.len() >= 100 {
+                        let flushed = res.clone();
+                        res.clear();
+                        if let Err(e) = db.insert_verification_items(&flushed) {
+                            eprintln!("verification: failed flush items: {}", e);
+                        }
+                        if let Ok(j) = job_shared.lock() {
+                            if let Err(e) = db.update_verification_job_counts(&j) {
+                                eprintln!("verification: failed flush counts: {}", e);
+                            }
                         }
                     }
                 }
-            }
-        });
+            });
     });
 
     let final_results = if let Ok(mut res) = results_shared.lock() {
@@ -375,7 +395,9 @@ pub async fn run_verification(
                 "Complete".to_string()
             },
             bytes_total: final_job.total_bytes,
-            bytes_processed: final_job.total_bytes.min(bytes_processed.load(Ordering::SeqCst)),
+            bytes_processed: final_job
+                .total_bytes
+                .min(bytes_processed.load(Ordering::SeqCst)),
             files_total: final_job.total_files,
             files_processed: final_job.total_files,
             ok_count: final_job.verified_ok_count,
