@@ -844,13 +844,7 @@ body {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(45, 212, 191, 0.18);
 }
 
-.stat-value-xl {
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.stat-card-highlight .stat-value-xl {
+.stat-card-highlight .stat-value {
   color: #4ade80;
 }
 
@@ -898,7 +892,8 @@ body {
 
 .stat-value {
   font-size: 1.25rem;
-  font-weight: 700;
+  font-weight: 800;
+  line-height: 1.1;
   color: var(--text-primary);
 }
 

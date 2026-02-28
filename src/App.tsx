@@ -1064,7 +1064,7 @@ function AppContent() {
                     <div className="stat-header">
                       <span className="stat-label">Selection</span>
                     </div>
-                    <span className="stat-value stat-value-xl">{selectedClipIds.size}<span className="stat-value-total"> / {totalClips}</span></span>
+                    <span className="stat-value">{selectedClipIds.size}<span className="stat-value-total"> / {totalClips}</span></span>
                     <span className="stat-sub">Selected for Export</span>
                   </div>
                   <div className="stat-card">
@@ -1086,7 +1086,7 @@ function AppContent() {
                     <div className="stat-header">
                       <span className="stat-label">Resolution</span>
                     </div>
-                    <span className="stat-value" style={{ fontSize: '0.85rem' }}>{topRes}</span>
+                    <span className="stat-value">{topRes}</span>
                     <span className="stat-sub">
                       {ratioLabel ? `${ratioLabel}` : `${resolutions.size} format${resolutions.size !== 1 ? 's' : ''}`}
                     </span>
