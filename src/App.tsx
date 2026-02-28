@@ -952,33 +952,33 @@ function AppContent() {
               <span className="project-name-highlight">{projectName}</span>
             </div>
           )}
-
-          <nav className="app-tabs-nav header-tabs">
-            <button className={`nav-tab ${activeTab === 'home' ? 'active' : ''}`} onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
-              <LayoutGrid size={14} /> Home
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'preproduction' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab('preproduction');
-                setActivePreproductionApp(null);
-                setActiveMediaWorkspaceApp(null);
-              }}
-            >
-              <Boxes size={14} /> Pre-production
-            </button>
-            <button
-              className={`nav-tab ${activeTab === 'media-workspace' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab('media-workspace');
-                setActivePreproductionApp(null);
-                setActiveMediaWorkspaceApp(null);
-              }}
-            >
-              <BriefcaseBusiness size={14} /> Media Workspace
-            </button>
-          </nav>
         </div>
+
+        <nav className="app-tabs-nav header-tabs">
+          <button className={`nav-tab ${activeTab === 'home' ? 'active' : ''}`} onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
+            <LayoutGrid size={14} /> Home
+          </button>
+          <button
+            className={`nav-tab ${activeTab === 'preproduction' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('preproduction');
+              setActivePreproductionApp(null);
+              setActiveMediaWorkspaceApp(null);
+            }}
+          >
+            <Boxes size={14} /> Pre-production
+          </button>
+          <button
+            className={`nav-tab ${activeTab === 'media-workspace' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('media-workspace');
+              setActivePreproductionApp(null);
+              setActiveMediaWorkspaceApp(null);
+            }}
+          >
+            <BriefcaseBusiness size={14} /> Media Workspace
+          </button>
+        </nav>
         <div className="app-header-right">
           <nav className="header-nav">
           </nav>
