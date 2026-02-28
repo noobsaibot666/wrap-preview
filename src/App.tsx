@@ -29,7 +29,7 @@ import { JobsPanel } from "./components/JobsPanel";
 import { AboutPanel } from "./components/AboutPanel";
 import { FolderCreator } from "./components/FolderCreator";
 import { TourGuide, TourStep } from "./components/TourGuide";
-import { exportPdf, exportImage, ExportClip } from "./utils/ExportUtils";
+import { exportPdf, exportImage } from "./utils/ExportUtils";
 import appLogo from "./assets/Icon_square_rounded.svg";
 import { AppInfo, Clip, ClipWithThumbnails, JobInfo, ScanResult, ThumbnailProgress, RecentProject } from "./types";
 import {
@@ -825,24 +825,10 @@ function AppContent() {
 
 
 
-  const getExportClips = useCallback((): ExportClip[] => {
+  const getExportClips = useCallback((): Clip[] => {
     return clips
       .filter((c) => selectedClipIds.has(c.clip.id))
-      .map((c) => ({
-        id: c.clip.id,
-        filename: c.clip.filename,
-        duration_ms: c.clip.duration_ms,
-        fps: c.clip.fps,
-        width: c.clip.width,
-        height: c.clip.height,
-        video_codec: c.clip.video_codec,
-        audio_codec: c.clip.audio_codec,
-        rating: c.clip.rating,
-        flag: c.clip.flag,
-        shot_size: c.clip.shot_size,
-        movement: c.clip.movement,
-        lut_enabled: c.clip.lut_enabled,
-      }));
+      .map((c) => c.clip);
   }, [clips, selectedClipIds]);
 
   const handleExportImage = async () => {

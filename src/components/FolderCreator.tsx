@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo } from "react";
-import { FolderTree, Plus, Trash2, RotateCcw, Download, Folder, FileType, ChevronRight, Hash } from "lucide-react";
+import { useState, useCallback, useMemo, useRef } from "react";
+import { FolderTree, Plus, Trash2, RotateCcw, Download, Folder, FileType, ChevronRight, Hash, UploadCloud } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 
@@ -15,6 +15,7 @@ export function FolderCreator() {
     { id: "root", name: "PROJECT_NAME", type: "folder", children: [] }
   ]);
   const [creating, setCreating] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resetStructure = useCallback(() => {
     setStructure([{ id: "root", name: "PROJECT_NAME", type: "folder", children: [] }]);
@@ -73,6 +74,60 @@ export function FolderCreator() {
     setStructure(prev => updateStructure(prev));
   }, []);
 
+  const handleJSONUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+
+        // Recursive function to validate and ensure all nodes have required properties
+        const validateStructure = (nodes: any[]): FolderNode[] => {
+          if (!Array.isArray(nodes)) return [];
+          return nodes.map((node: any) => {
+            const validNode: FolderNode = {
+              id: typeof node.id === 'string' && node.id ? node.id : Math.random().toString(36).substr(2, 9),
+              name: typeof node.name === 'string' ? node.name.replace(/[\/\\?%*:|"<>]/g, '_') : "unnamed_node",
+              type: node.type === "file" ? "file" : "folder",
+            };
+
+            if (validNode.type === "folder" && Array.isArray(node.children)) {
+              validNode.children = validateStructure(node.children);
+            } else if (validNode.type === "folder") {
+              validNode.children = [];
+            }
+
+            return validNode;
+          });
+        };
+
+        // Handle both object wrapper and direct array
+        let rawData = Array.isArray(json) ? json : (json.structure || json.data || json.children || [json]);
+        if (!Array.isArray(rawData)) {
+          rawData = [json];
+        }
+
+        const newStructure = validateStructure(rawData);
+        if (newStructure.length > 0) {
+          // If first element isn't root folder, wrap it
+          setStructure(newStructure);
+        } else {
+          console.error("No valid structure found in JSON");
+        }
+      } catch (err) {
+        console.error("Failed to parse JSON", err);
+      }
+
+      // Reset input so the same file can be uploaded again if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const flattenedPaths = useMemo(() => {
     const paths: string[] = [];
     const traverse = (node: FolderNode, currentPath: string) => {
@@ -105,7 +160,7 @@ export function FolderCreator() {
 
   const renderNode = (node: FolderNode, depth: number = 0) => (
     <div key={node.id} className="folder-node-wrapper" style={{ marginLeft: depth > 0 ? 24 : 0 }}>
-      <div className={`folder-node-item ${node.id === "root" ? "root-node" : ""}`}>
+      <div className={`folder-node-item ${node.id === "root" || depth === 0 ? "root-node" : ""}`}>
         <div className="folder-node-drag-handle">
           <Hash size={12} opacity={0.3} />
         </div>
@@ -125,7 +180,7 @@ export function FolderCreator() {
               <Plus size={14} />
             </button>
           )}
-          {node.id !== "root" && (
+          {(node.id !== "root" && depth !== 0) && (
             <button className="btn-icon-sm danger" onClick={() => removeNode(node.id)} title="Remove">
               <Trash2 size={14} />
             </button>
@@ -149,6 +204,16 @@ export function FolderCreator() {
           <p>Build and export sophisticated directory hierarchies for macOS & Windows.</p>
         </div>
         <div className="header-right">
+          <input
+            type="file"
+            accept=".json"
+            ref={fileInputRef}
+            onChange={handleJSONUpload}
+            style={{ display: 'none' }}
+          />
+          <button className="btn btn-secondary btn-glass" onClick={() => fileInputRef.current?.click()}>
+            <UploadCloud size={16} /> Import JSON
+          </button>
           <button className="btn btn-secondary btn-glass" onClick={resetStructure}>
             <RotateCcw size={16} /> Reset
           </button>

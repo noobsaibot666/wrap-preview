@@ -1,26 +1,12 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { jsPDF } from 'jspdf';
-
-export interface ExportClip {
-    id: string;
-    filename: string;
-    duration_ms: number;
-    fps: number;
-    width: number;
-    height: number;
-    video_codec: string;
-    audio_codec: string;
-    rating: number;
-    flag: string;
-    shot_size?: string | null;
-    movement?: string | null;
-    lut_enabled: number;
-}
+import { Clip } from '../types';
+import { formatDuration, formatCodecLabel, getAudioBadge } from './clipMetadata';
 
 interface ExportOptions {
     projectName: string;
-    clips: ExportClip[];
+    clips: Clip[];
     thumbnailCache: Record<string, string>;
     thumbCount: number;
     projectLutHash?: string | null;
@@ -60,13 +46,6 @@ async function readThumbAsDataUrl(urlOrPath: string): Promise<string | null> {
         console.warn("readThumbAsDataUrl failed:", urlOrPath, e);
         return null;
     }
-}
-
-function formatDuration(ms: number): string {
-    const totalSecs = Math.floor(ms / 1000);
-    const m = Math.floor(totalSecs / 60);
-    const s = totalSecs % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
 // ─── PDF Export ───
@@ -182,24 +161,29 @@ export async function exportPdf(options: ExportOptions): Promise<boolean> {
             pdf.setFont('helvetica', 'bold');
             pdf.text(clip.filename, margin, metaY);
 
-            // Technical metadata
+            // Duration after filename
+            const filenameW = pdf.getTextWidth(clip.filename);
             pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(6.5);
             pdf.setTextColor(100);
+            pdf.text(`   ${formatDuration(clip.duration_ms)}`, margin + filenameW, metaY);
 
+            const audioBadge = getAudioBadge(clip.audio_summary, clip.audio_envelope);
             const metaParts: string[] = [
-                formatDuration(clip.duration_ms),
                 `${clip.width}×${clip.height}`,
-                `${clip.fps}fps`,
-                clip.video_codec,
-            ];
-            if (clip.audio_codec && clip.audio_codec !== 'none') metaParts.push(clip.audio_codec);
+                formatCodecLabel(clip),
+                clip.fps > 0 ? `${clip.fps}fps` : '',
+            ].filter(Boolean);
+
             if (clip.shot_size) metaParts.push(clip.shot_size);
             if (clip.movement) metaParts.push(clip.movement);
+            if (audioBadge) metaParts.push(audioBadge);
 
             const metaStr = metaParts.join('  •  ');
-            const filenameW = pdf.getTextWidth(clip.filename);
-            pdf.text(metaStr, margin + filenameW + 4, metaY);
+
+            // Technical metadata goes to Line 2
+            const metaY2 = metaY + 3.5;
+            pdf.setFontSize(6.5);
+            pdf.text(metaStr, margin, metaY2);
 
             // Rating and flag on right side
             let rightX = margin + usableW;
@@ -361,14 +345,15 @@ export async function exportImage(options: ExportOptions): Promise<boolean> {
         const line2Y = line1Y + 18;
         ctx.font = '13px Inter, system-ui, sans-serif';
         ctx.fillStyle = '#555';
+        const audioBadge = getAudioBadge(clip.audio_summary, clip.audio_envelope);
         const metaParts: string[] = [
             `${clip.width}×${clip.height}`,
-            `${clip.fps}fps`,
-            clip.video_codec,
-        ];
-        if (clip.audio_codec && clip.audio_codec !== 'none') metaParts.push(clip.audio_codec);
+            formatCodecLabel(clip),
+            clip.fps > 0 ? `${clip.fps}fps` : '',
+        ].filter(Boolean);
         if (clip.shot_size) metaParts.push(clip.shot_size);
         if (clip.movement) metaParts.push(clip.movement);
+        if (audioBadge) metaParts.push(audioBadge);
         ctx.fillText(metaParts.join('   •   '), marginX, line2Y);
 
         // ── Rating + Flag (right-aligned on line 1) ──
