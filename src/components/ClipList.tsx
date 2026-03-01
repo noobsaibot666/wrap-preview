@@ -124,6 +124,27 @@ export const ClipList = memo(function ClipList({
     );
 
 
+    const virtuosoRef = useRef<any>(null);
+
+    // Scroll to focused item when it changes
+    useEffect(() => {
+        if (focusedClipId && virtuosoRef.current) {
+            const index = clips.findIndex(c => c.clip.id === focusedClipId);
+            if (index !== -1) {
+                virtuosoRef.current.scrollIntoView({
+                    index,
+                    behavior: 'smooth',
+                    done: () => {
+                        // Optional: extra check if we need to refine position
+                    }
+                });
+            }
+        }
+    }, [focusedClipId, clips]);
+
+    const isManual = lookbookSortMode === "custom" || lookbookSortMode === "hook_first";
+    const useGroups = isManual || !groupByShotSize ? false : groups.length > 0;
+
     return (
         <div className="clip-list-container" style={{ height: 'calc(100vh - 280px)', minHeight: 400 }}>
             {variant !== "shot-planner" && (
@@ -144,7 +165,7 @@ export const ClipList = memo(function ClipList({
                         <button
                             className="btn btn-secondary btn-sm"
                             onClick={(e) => { e.stopPropagation(); onExportImage(); }}
-                            title="Export as Image"
+                            title="Export Single Image"
                         >
                             <Image size={14} />
                             <span>Image</span>
@@ -153,8 +174,9 @@ export const ClipList = memo(function ClipList({
                 </div>
             )}
 
-            {groups.length > 0 ? (
+            {useGroups ? (
                 <GroupedVirtuoso
+                    ref={virtuosoRef}
                     groupCounts={groupCounts}
                     groupContent={(index) => (
                         <div className="clip-shot-group-header" style={{ background: 'var(--color-bg-page)', zIndex: 10 }}>
@@ -196,13 +218,13 @@ export const ClipList = memo(function ClipList({
                             </div>
                         );
                     }}
-
                     components={{ Scroller, List }}
                     useWindowScroll={false}
                     increaseViewportBy={300}
                 />
             ) : (
                 <Virtuoso
+                    ref={virtuosoRef}
                     totalCount={clips.length}
                     itemContent={(index) => {
                         const item = clips[index];
@@ -238,7 +260,6 @@ export const ClipList = memo(function ClipList({
                             </div>
                         );
                     }}
-
                     components={{ Scroller, List }}
                     useWindowScroll={false}
                     increaseViewportBy={300}

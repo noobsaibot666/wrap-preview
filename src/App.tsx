@@ -616,11 +616,21 @@ function AppContent() {
   }, [handleUpdateMetadata]);
 
   const focusShotPlannerClip = useCallback((clipId: string) => {
-    setFocusedClipId(clipId);
-    if (hoveredClipId && hoveredClipId !== clipId && manualOrderBufferRef.current) {
+    setFocusedClipId(prev => {
+      if (prev === clipId) return prev;
+      return clipId;
+    });
+    if (manualOrderBufferRef.current) {
       clearManualOrderBuffer();
     }
-  }, [clearManualOrderBuffer, hoveredClipId]);
+  }, [clearManualOrderBuffer]);
+
+  const onHoverClip = useCallback((id: string | null) => {
+    setHoveredClipId(prev => {
+      if (prev === id) return prev;
+      return id;
+    });
+  }, []);
 
   useEffect(() => {
     if (!isShotPlannerActive || clips.length === 0 || hoveredClipId) return;
@@ -1283,7 +1293,6 @@ function AppContent() {
         return;
       }
       if ((key === "arrowdown" || key === "arrowup") && state.sortedClips.length > 0) {
-        e.preventDefault();
         if (manualOrderBufferRef.current) {
           void commitBufferedManualOrder();
         }
@@ -1291,8 +1300,11 @@ function AppContent() {
         const nextIndex = key === "arrowdown"
           ? Math.min(currentIndex + 1, state.sortedClips.length - 1)
           : Math.max(currentIndex - 1, 0);
-        if (state.sortedClips[nextIndex]) {
+
+        if (state.sortedClips[nextIndex] && state.sortedClips[nextIndex].clip.id !== targetId) {
+          e.preventDefault();
           state.focusShotPlannerClip(state.sortedClips[nextIndex].clip.id);
+          state.onHoverClip(state.sortedClips[nextIndex].clip.id);
         }
         return;
       }
@@ -1637,7 +1649,7 @@ function AppContent() {
                       onToggleSelection={toggleClipSelection}
                       thumbCount={thumbCount}
                       onUpdateMetadata={handleUpdateMetadata}
-                      onHoverClip={setHoveredClipId}
+                      onHoverClip={onHoverClip}
                       onFocusClip={focusShotPlannerClip}
                       focusedClipId={focusedClipId}
                       cacheKeyContext={thumbCacheContext}
@@ -1747,8 +1759,8 @@ function AppContent() {
                       onToggleSelection={toggleClipSelection}
                       thumbCount={thumbCount}
                       onUpdateMetadata={handleUpdateMetadata}
-                      onHoverClip={setHoveredClipId}
-                      onFocusClip={setFocusedClipId}
+                      onHoverClip={onHoverClip}
+                      onFocusClip={focusShotPlannerClip}
                       focusedClipId={focusedClipId}
                       cacheKeyContext={thumbCacheContext}
                       shotSizeOptions={[...SHOT_SIZE_CANONICAL, ...customShotSizes]}
