@@ -932,7 +932,7 @@ impl Database {
                 movement TEXT,
                 manual_order INTEGER NOT NULL DEFAULT 0,
                 audio_envelope BLOB,
-                lut_enabled INTEGER NOT NULL DEFAULT 0
+                lut_enabled INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (project_id) REFERENCES projects(id)
             );
 
