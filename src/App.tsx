@@ -5,6 +5,7 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   Camera,
+  Compass,
   FolderOpen,
   Info,
   ShieldCheck,
@@ -12,8 +13,6 @@ import {
   Boxes,
   BriefcaseBusiness,
   MessageCircleWarning,
-  BadgeInfo,
-  CircleHelp,
   MoreHorizontal,
   FileDown,
   LayoutGrid,
@@ -73,15 +72,20 @@ function AppContent() {
   const TOUR_VERSION = "1.0.0-beta.1";
   const TOUR_SEEN_KEY = "wp_has_seen_tour";
   const TOUR_VERSION_KEY = "wp_tour_version";
+  const DEV_BOOT_RESET_KEY = "wrap_preview:dev_boot_reset_done";
+  const IS_DEV = import.meta.env.DEV;
 
   const [activeTab, setActiveTab] = useState<"home" | "preproduction" | "shot-planner" | "media-workspace" | "contact" | "blocks" | "safe-copy" | "all">(() => {
+    if (IS_DEV) return "home";
     const saved = localStorage.getItem('wp_activeTab');
     return (saved as any) || 'home';
   });
   const [activePreproductionApp, setActivePreproductionApp] = useState<string | null>(() => {
+    if (IS_DEV) return null;
     return localStorage.getItem('wp_activePreApp') || null;
   });
   const [activeMediaWorkspaceApp, setActiveMediaWorkspaceApp] = useState<string | null>(() => {
+    if (IS_DEV) return null;
     return localStorage.getItem('wp_activeMediaApp') || null;
   });
   const [shareRouteToken, setShareRouteToken] = useState<string | null>(() => {
@@ -100,18 +104,50 @@ function AppContent() {
 
   // Persist tab state
   useEffect(() => {
-    localStorage.setItem('wp_activeTab', activeTab);
+    if (!IS_DEV) {
+      localStorage.setItem('wp_activeTab', activeTab);
+    }
   }, [activeTab]);
 
   useEffect(() => {
-    if (activePreproductionApp) localStorage.setItem('wp_activePreApp', activePreproductionApp);
-    else localStorage.removeItem('wp_activePreApp');
+    if (!IS_DEV) {
+      if (activePreproductionApp) localStorage.setItem('wp_activePreApp', activePreproductionApp);
+      else localStorage.removeItem('wp_activePreApp');
+    }
   }, [activePreproductionApp]);
 
   useEffect(() => {
-    if (activeMediaWorkspaceApp) localStorage.setItem('wp_activeMediaApp', activeMediaWorkspaceApp);
-    else localStorage.removeItem('wp_activeMediaApp');
+    if (!IS_DEV) {
+      if (activeMediaWorkspaceApp) localStorage.setItem('wp_activeMediaApp', activeMediaWorkspaceApp);
+      else localStorage.removeItem('wp_activeMediaApp');
+    }
   }, [activeMediaWorkspaceApp]);
+
+  useEffect(() => {
+    if (!IS_DEV || shareRouteToken) return;
+    if (window.sessionStorage.getItem(DEV_BOOT_RESET_KEY)) {
+      setActiveTab("home");
+      setActivePreproductionApp(null);
+      setActiveMediaWorkspaceApp(null);
+      return;
+    }
+
+    const keysToClear = ["wp_activeTab", "wp_activePreApp", "wp_activeMediaApp", "review_core:last_project_id"];
+    for (const key of keysToClear) {
+      window.localStorage.removeItem(key);
+    }
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index);
+      if (key && key.includes("last_")) {
+        window.localStorage.removeItem(key);
+      }
+    }
+
+    window.sessionStorage.setItem(DEV_BOOT_RESET_KEY, "true");
+    setActiveTab("home");
+    setActivePreproductionApp(null);
+    setActiveMediaWorkspaceApp(null);
+  }, [DEV_BOOT_RESET_KEY, IS_DEV, shareRouteToken]);
 
   // --- Phase-Isolated State ---
   type Phase = 'pre' | 'post';
@@ -796,54 +832,46 @@ function AppContent() {
 
   const tourSteps: TourStep[] = [
     {
-      target: ".onboarding-grid",
-      title: "Workflow Modules",
-      description: "Start from these cards to run the suite in order.",
+      target: ".onboarding-grid-root",
+      title: "Modules",
+      description: "Start from the modules screen to choose between pre-production and post-production work.",
       placement: "bottom",
-      learnMore: ["Each module focuses on one production phase.", "You can jump modules at any time.", "Use Jobs to monitor long tasks."]
+      learnMore: [
+        "The left module covers planning before the shoot.",
+        "The right module covers review, verification, organization, and delivery after ingest."
+      ]
     },
     {
-      target: ".tour-safe-copy-module",
-      title: "Safe Copy",
-      description: "Run FAST or SOLID verification before editorial work.",
-      placement: "right",
-      learnMore: ["SOLID uses full-file hashing.", "FAST checks metadata quickly.", "Export JSON reports for records."]
+      target: ".btn-jobs",
+      title: "Jobs & Activity",
+      description: "Track processing, export progress, and surfaced issues in one drawer.",
+      placement: "bottom",
+      learnMore: [
+        "Active jobs show live progress and cancel actions.",
+        "Completed jobs stay visible as history.",
+        "In dev builds, the drawer includes a Maintenance area for Reset Dev Data."
+      ]
     },
     {
-      target: ".tour-contact-module",
-      title: "Contact Sheet",
-      description: "Scan media and generate visual strip previews.",
-      placement: "right"
+      target: ".tour-home-preproduction",
+      title: "Pre-Production",
+      description: "Use this module for Shot Planner and Folder Creator during prep.",
+      placement: "bottom",
+      learnMore: [
+        "Shot Planner helps review reference media and build selects before the shoot.",
+        "Folder Creator generates production folder structures."
+      ]
     },
     {
-      target: ".clip-rating",
-      title: "Ratings & Flags",
-      description: "Use stars and pick/reject to tag editorial selects.",
-      placement: "top"
-    },
-    {
-      target: ".waveform-container",
-      title: "Audio Waveform",
-      description: "Waveform and badges help identify low/absent/clipped audio quickly.",
-      placement: "top"
-    },
-    {
-      target: ".tour-blocks-tab",
-      title: "Blocks",
-      description: "Open Blocks to cluster clips by timeline gaps and camera labels.",
-      placement: "bottom"
-    },
-    {
-      target: ".tour-open-export",
-      title: "Resolve Export",
-      description: "Open export to generate structured FCPXML for Resolve.",
-      placement: "bottom"
-    },
-    {
-      target: ".tour-director-pack-btn",
-      title: "Director Pack",
-      description: "Create a deterministic bundle with PDF, FCPXML, and JSON report.",
-      placement: "left"
+      target: ".tour-home-postproduction",
+      title: "Post-Production",
+      description: "Use this module for Safe Copy, Review, Scene Blocks, Delivery, and Review Core.",
+      placement: "bottom",
+      learnMore: [
+        "Open Workspace / Review, Scene Blocks, and Delivery open after a workspace is loaded.",
+        "Safe Copy verifies transfers before editorial.",
+        "Review Core can run as an independent review surface."
+      ]
     }
   ];
 
@@ -857,6 +885,15 @@ function AppContent() {
     localStorage.removeItem(TOUR_SEEN_KEY);
     localStorage.removeItem(TOUR_VERSION_KEY);
     setTourRun(false);
+  }, []);
+
+  const startTour = useCallback(() => {
+    setHelpMenuOpen(false);
+    setJobsOpen(false);
+    setActiveTab("home");
+    setActivePreproductionApp(null);
+    setActiveMediaWorkspaceApp(null);
+    setTourRun(true);
   }, []);
 
 
@@ -1117,11 +1154,12 @@ function AppContent() {
               {helpMenuOpen && (
                 <>
                   <div className="dropdown-backdrop" onClick={() => setHelpMenuOpen(false)} />
-                  <div className="help-dropdown">
-                    <button className="dropdown-item" onClick={() => { setAboutOpen(true); setHelpMenuOpen(false); }}>
-                      <BadgeInfo size={15} /> About Wrap Preview
+                  <div className="help-dropdown menu-dropdown">
+                    <button className="dropdown-item menu-item" onClick={() => { setAboutOpen(true); setHelpMenuOpen(false); }}>
+                      <span className="menu-item-icon"><Info size={16} /></span>
+                      <span className="menu-item-label">About Wrap Preview</span>
                     </button>
-                    <button className="dropdown-item" onClick={async () => {
+                    <button className="dropdown-item menu-item" onClick={async () => {
                       setHelpMenuOpen(false);
                       const dest = await open({ directory: true, multiple: false, title: "Export Feedback Bundle" });
                       if (!dest) return;
@@ -1136,15 +1174,16 @@ function AppContent() {
                         setUiError({ title: "Diagnostics export failed", hint: "Retry and verify destination folder is writable." });
                       }
                     }}>
-                      <MessageCircleWarning size={15} /> Send Feedback
+                      <span className="menu-item-icon"><MessageCircleWarning size={16} /></span>
+                      <span className="menu-item-label">Send Feedback</span>
                     </button>
-                    <div className="dropdown-divider" />
-                    <button className="dropdown-item" onClick={() => {
-                      setHelpMenuOpen(false);
+                    <div className="dropdown-divider menu-divider" />
+                    <button className="dropdown-item menu-item" onClick={() => {
                       if (tourRun) completeTour();
-                      else setTourRun(true);
+                      else startTour();
                     }}>
-                      <CircleHelp size={15} /> {tourRun ? "Hide Tour" : "Show Tour"}
+                      <span className="menu-item-icon"><Compass size={16} /></span>
+                      <span className="menu-item-label">{tourRun ? "Hide Tour" : "Show Tour"}</span>
                     </button>
                   </div>
                 </>
@@ -1362,15 +1401,14 @@ function AppContent() {
                 <p>Plan your shoot and organize your project structure.</p>
               </div>
               <div className="onboarding-grid">
-                <div
-                  className="module-card premium-card"
-                  onClick={() => {
-                    if (projectStates.pre.projectId) setActivePreproductionApp('shot-planner');
-                    else handleSelectFolder('shot-planner');
-                  }}
-                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
-                >
-                  <div className="module-icon"><Camera size={32} strokeWidth={1.5} /></div>
+              <div
+                className="module-card premium-card"
+                onClick={() => {
+                  if (projectStates.pre.projectId) setActivePreproductionApp('shot-planner');
+                  else handleSelectFolder('shot-planner');
+                }}
+              >
+                  <div className="module-icon"><Camera size={20} strokeWidth={1.5} /></div>
                   <div className="module-info">
                     <h3>Shot Planner</h3>
                     <p>Analyze reference footage and export selected on-set reference sheets.</p>
@@ -1380,9 +1418,8 @@ function AppContent() {
                 <div
                   className="module-card premium-card"
                   onClick={() => setActivePreproductionApp('folder-creator')}
-                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
                 >
-                  <div className="module-icon"><FolderTree size={32} strokeWidth={1.5} /></div>
+                  <div className="module-icon"><FolderTree size={20} strokeWidth={1.5} /></div>
                   <div className="module-info">
                     <h3>Folder Creator</h3>
                     <p>Generate sophisticated folder structures for multi-platform use.</p>
@@ -1457,9 +1494,8 @@ function AppContent() {
                 <div
                   className="module-card premium-card"
                   onClick={() => setActiveMediaWorkspaceApp('safe-copy')}
-                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
                 >
-                  <div className="module-icon"><ShieldCheck size={32} strokeWidth={1.5} /></div>
+                  <div className="module-icon"><ShieldCheck size={20} strokeWidth={1.5} /></div>
                   <div className="module-info">
                     <h3>Safe Copy</h3>
                     <p>Verify source and destination pairs before editorial work begins.</p>
@@ -1472,9 +1508,8 @@ function AppContent() {
                     if (projectId) setActiveMediaWorkspaceApp('clip-review');
                     else handleSelectFolder("clip-review");
                   }}
-                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
                 >
-                  <div className="module-icon"><Camera size={32} strokeWidth={1.5} /></div>
+                  <div className="module-icon"><Camera size={20} strokeWidth={1.5} /></div>
                   <div className="module-info">
                     <h3>Open Workspace / Review</h3>
                     <p>{projectId ? "Continue reviewing thumbnails, metadata, and audio." : "Load a footage folder to unlock Review, Scene Blocks, and Delivery."}</p>
@@ -1486,9 +1521,8 @@ function AppContent() {
                   onClick={() => {
                     setActiveMediaWorkspaceApp('review-core');
                   }}
-                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
                 >
-                  <div className="module-icon"><Film size={32} strokeWidth={1.5} /></div>
+                  <div className="module-icon"><Film size={20} strokeWidth={1.5} /></div>
                   <div className="module-info">
                     <h3>Review Core</h3>
                     <p>{projectId ? "Play app-managed HLS proxies, inspect versions, and confirm metadata." : "Create or reopen a Review Core project to import and review media independently."}</p>
@@ -1500,9 +1534,8 @@ function AppContent() {
                   onClick={() => {
                     if (projectId) setActiveMediaWorkspaceApp('scene-blocks');
                   }}
-                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
                 >
-                  <div className="module-icon"><Boxes size={32} strokeWidth={1.5} /></div>
+                  <div className="module-icon"><Boxes size={20} strokeWidth={1.5} /></div>
                   <div className="module-info">
                     <h3>Scene Blocks</h3>
                     <p>{projectId ? "Organize reviewed clips into deterministic editorial groups." : "Available after a workspace is opened in Review."}</p>
@@ -1512,9 +1545,8 @@ function AppContent() {
                 <div
                   className={`module-card premium-card ${!projectId ? "disabled" : ""}`}
                   onClick={() => { if (projectId) setShowExportPanel(true); }}
-                  style={{ "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
                 >
-                  <div className="module-icon"><FileDown size={32} strokeWidth={1.5} /></div>
+                  <div className="module-icon"><FileDown size={20} strokeWidth={1.5} /></div>
                   <div className="module-info">
                     <h3>Delivery</h3>
                     <p>{projectId ? "Export Resolve timelines and Director Packs from the current scope." : "Available after clips are loaded into the workspace."}</p>
@@ -1532,40 +1564,41 @@ function AppContent() {
         ) : (
           <div className="onboarding-container">
             <div className="onboarding-header">
+              <span className="onboarding-eyebrow">Modules</span>
               <h1>Wrap Preview Suite</h1>
-              <p>State-of-the-art production management tools.</p>
+              <p>Offline media control for shoots and post.</p>
             </div>
-            <div className="onboarding-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', maxWidth: 800 }}>
+            <div className="onboarding-grid onboarding-grid-root">
               <div
-                className="module-card premium-card"
+                className="module-card premium-card tour-home-preproduction"
                 onClick={() => {
                   setActiveTab("preproduction");
                   setActivePreproductionApp(null);
                   setActiveMediaWorkspaceApp(null);
                 }}
-                style={{ height: 320, "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
               >
-                <div className="module-icon"><Boxes size={48} strokeWidth={1.2} /></div>
+                <div className="module-icon"><Boxes size={22} strokeWidth={1.35} /></div>
                 <div className="module-info">
-                  <h2 style={{ fontSize: '1.8rem', marginBottom: 12 }}>Pre-production</h2>
-                  <p style={{ fontSize: '1.1rem', opacity: 0.7 }}>Shot Planning, Reference Sequencing, and Project Infrastructure.</p>
-                  <span className="module-action" style={{ marginTop: 'auto' }}>Enter Module <ArrowRight size={18} /></span>
+                  <span className="module-label">Pre-Production</span>
+                  <h2>Pre-Production</h2>
+                  <p>Plan shots, build references, generate folder structure.</p>
+                  <span className="module-action">Enter Module <ArrowRight size={16} /></span>
                 </div>
               </div>
               <div
-                className="module-card premium-card"
+                className="module-card premium-card tour-home-postproduction"
                 onClick={() => {
                   setActiveTab("media-workspace");
                   setActivePreproductionApp(null);
                   setActiveMediaWorkspaceApp(null);
                 }}
-                style={{ height: 320, "--corner-color": "var(--color-accent-soft)", "--card-accent": "var(--color-accent)", "--card-accent-soft": "var(--color-accent-soft)" } as any}
               >
-                <div className="module-icon"><BriefcaseBusiness size={48} strokeWidth={1.2} /></div>
+                <div className="module-icon"><BriefcaseBusiness size={22} strokeWidth={1.35} /></div>
                 <div className="module-info">
-                  <h2 style={{ fontSize: '1.8rem', marginBottom: 12 }}>Media Workspace</h2>
-                  <p style={{ fontSize: '1.1rem', opacity: 0.7 }}>Post-production Review, Media Verification, and Handoff.</p>
-                  <span className="module-action" style={{ marginTop: 'auto' }}>Enter Module <ArrowRight size={18} /></span>
+                  <span className="module-label">Post-Production</span>
+                  <h2>Post-Production</h2>
+                  <p>Review footage, verify copies, build selects, export handoff.</p>
+                  <span className="module-action">Enter Module <ArrowRight size={16} /></span>
                 </div>
               </div>
             </div>

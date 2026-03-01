@@ -96,15 +96,20 @@ export function TourGuide({ run, steps, onComplete, onClose }: TourGuideProps) {
 
   return (
     <>
-      <div className="tour-overlay" />
+      <div className="tour-overlay" onClick={onClose} />
       <div
         className="tour-highlight"
         style={{ top, left, width, height }}
       />
-      <div className="tour-tooltip" style={tooltipStyle} data-tour-tooltip>
+      <div className="tour-tooltip" style={tooltipStyle} data-tour-tooltip role="dialog" aria-modal="true">
         <div className="tour-header">
           <strong>{step.title}</strong>
-          <span>{index + 1}/{steps.length}</span>
+          <div className="tour-header-meta">
+            <span>{index + 1}/{steps.length}</span>
+            <button className="tour-close-btn" onClick={onClose} aria-label="Close tour">
+              x
+            </button>
+          </div>
         </div>
         <p>{step.description}</p>
         {step.learnMore && (
@@ -113,7 +118,7 @@ export function TourGuide({ run, steps, onComplete, onClose }: TourGuideProps) {
           </button>
         )}
         {showMore && step.learnMore && (
-          <ul style={{ margin: "8px 0 10px 18px", color: "var(--text-muted)", fontSize: 12 }}>
+          <ul className="tour-learn-more">
             {step.learnMore.map((item) => <li key={item}>{item}</li>)}
           </ul>
         )}

@@ -33,6 +33,8 @@ use tokio::sync::Semaphore;
 pub struct AppState {
     pub db: Database,
     pub cache_dir: String,
+    pub app_data_dir: std::path::PathBuf,
+    pub db_path: std::path::PathBuf,
     pub job_manager: Arc<crate::jobs::JobManager>,
     pub perf_log: crate::perf::PerfLog,
     pub review_core_base_dir: std::path::PathBuf,
@@ -3753,6 +3755,7 @@ pub async fn review_core_ingest_files(
                 app: app_clone.clone(),
                 db: app_state.db.clone(),
                 job_manager: app_state.job_manager.clone(),
+                review_core_base_dir: app_state.review_core_base_dir.clone(),
                 job_id: job_id_clone.clone(),
                 cancel_flag: cancel_for_task.clone(),
             };
@@ -5189,6 +5192,33 @@ pub async fn purge_cache(state: State<'_, Arc<AppState>>) -> Result<serde_json::
         "freed_bytes": freed_bytes,
         "removed_files": removed_files
     }))
+}
+
+#[cfg(debug_assertions)]
+#[tauri::command]
+pub async fn dev_reset_all_data(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
+    state.db.reset_file()?;
+
+    if state.app_data_dir.exists() {
+        for entry in std::fs::read_dir(&state.app_data_dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            if path == state.db_path {
+                continue;
+            }
+            if path.is_dir() {
+                std::fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
+            } else {
+                std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    std::fs::create_dir_all(&state.app_data_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&state.review_core_base_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&state.cache_dir).map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({ "ok": true }))
 }
 
 fn dir_size(path: &std::path::Path) -> std::io::Result<u64> {

@@ -1,10 +1,19 @@
 use std::path::{Component, Path, PathBuf};
 
-pub fn review_core_base_dir() -> PathBuf {
+pub fn review_core_app_root() -> PathBuf {
+    let app_dir = if cfg!(debug_assertions) {
+        "wrap-preview-dev"
+    } else {
+        "wrap-preview"
+    };
+
     dirs_next::data_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("wrap-preview")
-        .join("review_core")
+        .join(app_dir)
+}
+
+pub fn review_core_base_dir() -> PathBuf {
+    review_core_app_root().join("review_core")
 }
 
 #[allow(dead_code)]

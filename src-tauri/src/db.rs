@@ -1,11 +1,13 @@
 use rusqlite::{params, params_from_iter, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 /// Thread-safe database wrapper
 #[derive(Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
+    path: Arc<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -295,6 +297,7 @@ impl Database {
         let conn = Connection::open(db_path)?;
         let db = Database {
             conn: Arc::new(Mutex::new(conn)),
+            path: Arc::new(db_path.to_string()),
         };
         db.create_tables()?;
 
@@ -863,6 +866,32 @@ impl Database {
         }
 
         Ok(db)
+    }
+
+    pub fn reset_file(&self) -> Result<(), String> {
+        let db_path = (*self.path).clone();
+        if let Some(parent) = Path::new(&db_path).parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+
+        {
+            let mut conn = self.conn.lock().unwrap();
+            let placeholder = Connection::open_in_memory().map_err(|e| e.to_string())?;
+            let old_conn = std::mem::replace(&mut *conn, placeholder);
+            drop(old_conn);
+        }
+
+        remove_sqlite_file(&db_path)?;
+        remove_sqlite_file(&format!("{}-wal", db_path))?;
+        remove_sqlite_file(&format!("{}-shm", db_path))?;
+
+        let reopened = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        {
+            let mut conn = self.conn.lock().unwrap();
+            *conn = reopened;
+        }
+
+        self.create_tables().map_err(|e| e.to_string())
     }
 
     fn create_tables(&self) -> SqlResult<()> {
@@ -3463,5 +3492,13 @@ impl Database {
             [],
         )?;
         Ok(())
+    }
+}
+
+fn remove_sqlite_file(path: &str) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
     }
 }

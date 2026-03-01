@@ -17,25 +17,53 @@ mod verification;
 use commands::AppState;
 use std::sync::Arc;
 
+fn cache_root_dir() -> std::path::PathBuf {
+    #[cfg(debug_assertions)]
+    {
+        crate::review_core::storage::review_core_app_root().join("cache")
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        dirs_next::cache_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("wrap-preview")
+    }
+}
+
+fn sqlite_db_path() -> std::path::PathBuf {
+    #[cfg(debug_assertions)]
+    {
+        crate::review_core::storage::review_core_app_root().join("wrap-preview.db")
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        cache_root_dir().join("wrap-preview.db")
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Determine cache directory
-    let cache_dir = dirs_next::cache_dir()
-        .map(|d| d.join("wrap-preview").to_string_lossy().to_string())
-        .unwrap_or_else(|| "/tmp/wrap-preview".to_string());
+    let app_data_dir = crate::review_core::storage::review_core_app_root();
+    let review_core_base_dir = crate::review_core::storage::review_core_base_dir();
+    let cache_dir_path = cache_root_dir();
+    let db_path = sqlite_db_path();
 
-    std::fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
+    std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data directory");
+    std::fs::create_dir_all(&cache_dir_path).expect("Failed to create cache directory");
+    std::fs::create_dir_all(&review_core_base_dir).expect("Failed to create Review Core directory");
 
-    // Database path
-    let db_path = format!("{}/wrap-preview.db", &cache_dir);
-    let database = db::Database::new(&db_path).expect("Failed to initialize database");
+    let database = db::Database::new(&db_path.to_string_lossy()).expect("Failed to initialize database");
 
     let app_state = Arc::new(AppState {
         db: database.clone(),
-        cache_dir,
+        cache_dir: cache_dir_path.to_string_lossy().to_string(),
+        app_data_dir,
+        db_path,
         job_manager: Arc::new(crate::jobs::JobManager::new(Some(database))),
         perf_log: crate::perf::PerfLog::new(500),
-        review_core_base_dir: crate::review_core::storage::review_core_base_dir(),
+        review_core_base_dir,
         review_core_server_base_url: std::sync::Mutex::new(None),
     });
 
@@ -148,6 +176,8 @@ pub fn run() {
             commands::review_core_share_set_display_name,
             commands::review_core_share_list_annotations,
             commands::review_core_share_export_download,
+            #[cfg(debug_assertions)]
+            commands::dev_reset_all_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

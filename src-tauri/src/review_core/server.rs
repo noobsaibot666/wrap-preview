@@ -657,21 +657,22 @@ mod tests {
         .unwrap();
 
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let status = runtime.block_on(async {
-            serve_frame_note_asset(
-                ReviewCoreServerState {
-                    db,
-                    base_dir: base,
-                },
-                "p1",
-                "asset-1",
-                "v1",
-                "n1",
-                "../secret.txt",
-            )
-            .await
-            .unwrap_err()
-        });
+        let status: StatusCode = runtime
+            .block_on(async {
+                super::serve_frame_note_asset(
+                    super::ReviewCoreServerState {
+                        db,
+                        base_dir: base,
+                    },
+                    "p1",
+                    "asset-1",
+                    "v1",
+                    "n1",
+                    "../secret.txt",
+                )
+                .await
+            })
+            .unwrap_err();
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }

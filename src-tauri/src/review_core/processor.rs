@@ -7,6 +7,7 @@ pub struct ReviewCoreProcessContext {
     pub app: AppHandle,
     pub db: crate::db::Database,
     pub job_manager: Arc<crate::jobs::JobManager>,
+    pub review_core_base_dir: PathBuf,
     pub job_id: String,
     pub cancel_flag: Arc<AtomicBool>,
 }
@@ -197,7 +198,7 @@ pub async fn process_asset_version(
     check_cancel(&ctx.cancel_flag)?;
 
     let paths = crate::review_core::storage::build_version_paths(
-        &crate::review_core::storage::review_core_base_dir(),
+        &ctx.review_core_base_dir,
         &project_id,
         &asset_id,
         ctx.db

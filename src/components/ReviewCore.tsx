@@ -467,6 +467,7 @@ export function ReviewCore({
 
   const persistLastProjectId = (nextProjectId: string | null) => {
     if (!usesEmbeddedProjectPicker) return;
+    if (import.meta.env.DEV) return;
     if (nextProjectId) {
       window.localStorage.setItem(REVIEW_CORE_LAST_PROJECT_STORAGE_KEY, nextProjectId);
     } else {
@@ -523,6 +524,10 @@ export function ReviewCore({
         const projects = await invoke<ReviewCoreProjectSummary[]>("review_core_list_projects");
         if (cancelled) return;
         applyRecentProjectState(projects);
+        if (import.meta.env.DEV) {
+          setActiveProject(null);
+          return;
+        }
         const lastProjectId = window.localStorage.getItem(REVIEW_CORE_LAST_PROJECT_STORAGE_KEY);
         if (!lastProjectId) {
           setActiveProject(null);
