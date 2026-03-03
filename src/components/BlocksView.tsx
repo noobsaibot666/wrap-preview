@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Scissors, GitMerge, RefreshCw, Pencil, Rows3, Timer } from "lucide-react";
+import { Scissors, GitMerge, RefreshCw, Pencil, Rows3, Timer, CheckCircle2, ChevronUp, ChevronDown, Send } from "lucide-react";
 import { SceneBlockWithClips, Thumbnail } from "../types";
 import { FilmStrip } from "./FilmStrip";
 
@@ -10,7 +10,6 @@ interface BlocksViewProps {
   thumbnailsByClipId: Record<string, Thumbnail[]>;
   onSelectedBlockIdsChange: (ids: string[]) => void;
   onOpenDelivery: () => void;
-  onOpenReview: () => void;
 }
 
 type BuildMode = "time_gap" | "scene_change" | "multicam_overlap";
@@ -23,7 +22,6 @@ export function BlocksView({
   thumbnailsByClipId,
   onSelectedBlockIdsChange,
   onOpenDelivery,
-  onOpenReview,
 }: BlocksViewProps) {
   const [blocks, setBlocks] = useState<SceneBlockWithClips[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,6 +39,8 @@ export function BlocksView({
   const [codecFilter, setCodecFilter] = useState("all");
   const [dayFilter, setDayFilter] = useState("all");
   const [selectFilter, setSelectFilter] = useState("all");
+  const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
+  const blockRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
 
@@ -110,13 +110,10 @@ export function BlocksView({
     await refreshBlocks();
   };
 
-  const mergeIntoPrevious = async (index: number) => {
-    if (index <= 0) return;
-    const previous = blocks[index - 1];
-    const current = blocks[index];
+  const mergeIntoPrevious = async (primaryBlockId: string, secondaryBlockId: string) => {
     await invoke("merge_scene_blocks", {
-      primaryBlockId: previous.block.id,
-      secondaryBlockId: current.block.id
+      primaryBlockId,
+      secondaryBlockId
     });
     await refreshBlocks();
   };
@@ -147,6 +144,36 @@ export function BlocksView({
       .map((item) => ({ ...item, clips: item.clips.filter(filterClip) }))
       .filter((item) => item.clips.length > 0);
   }, [blocks, selectedCameras, audioFilter, fpsFilter, resolutionFilter, codecFilter, dayFilter, selectFilter]);
+
+  const reorderBlocks = useCallback(async (draggedId: string, targetId: string) => {
+    if (draggedId === targetId || groupMode !== "block") return;
+    const orderedIds = filteredBlocks.map((item) => item.block.id);
+    const fromIndex = orderedIds.indexOf(draggedId);
+    const toIndex = orderedIds.indexOf(targetId);
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
+    const nextIds = [...orderedIds];
+    const [moved] = nextIds.splice(fromIndex, 1);
+    nextIds.splice(toIndex, 0, moved);
+    await invoke("reorder_scene_blocks", { projectId, blockIds: nextIds });
+    await refreshBlocks();
+    setFocusedBlockId(moved);
+  }, [filteredBlocks, groupMode, projectId]);
+
+  const moveBlockByDirection = useCallback(async (blockId: string, direction: -1 | 1) => {
+    if (groupMode !== "block") return;
+    const orderedIds = filteredBlocks.map((item) => item.block.id);
+    const index = orderedIds.indexOf(blockId);
+    const targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= orderedIds.length) return;
+    await reorderBlocks(blockId, orderedIds[targetIndex]);
+  }, [filteredBlocks, groupMode, reorderBlocks]);
+
+  useEffect(() => {
+    setFocusedBlockId((current) => {
+      if (current && filteredBlocks.some((item) => item.block.id === current)) return current;
+      return filteredBlocks[0]?.block.id ?? null;
+    });
+  }, [filteredBlocks]);
 
   const cameraOptions = useMemo(() => {
     const set = new Set<string>();
@@ -187,86 +214,120 @@ export function BlocksView({
       .map(([label, items]) => ({ label, items }));
   }, [filteredBlocks, groupMode]);
 
+  const orderedBlocks = useMemo(() => groupedBlocks.flatMap((group) => group.items), [groupedBlocks]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return;
+      if (target instanceof HTMLElement && target.closest("[data-tooltip]")) return;
+      if (!orderedBlocks.length) return;
+
+      const currentIndex = Math.max(0, orderedBlocks.findIndex((item) => item.block.id === focusedBlockId));
+      const currentBlock = orderedBlocks[currentIndex];
+      const key = event.key.toLowerCase();
+
+      if (key === "arrowdown" || key === "arrowup") {
+        event.preventDefault();
+        const delta = key === "arrowdown" ? 1 : -1;
+        const nextIndex = Math.max(0, Math.min(orderedBlocks.length - 1, currentIndex + delta));
+        const nextId = orderedBlocks[nextIndex]?.block.id;
+        if (!nextId) return;
+        setFocusedBlockId(nextId);
+        blockRefs.current[nextId]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+      }
+
+      if (key === "s" && groupMode === "block" && currentBlock) {
+        event.preventDefault();
+        toggleBlock(currentBlock.block.id);
+        return;
+      }
+
+      if (key === "m" && groupMode === "block" && currentIndex > 0 && currentBlock) {
+        event.preventDefault();
+        void mergeIntoPrevious(orderedBlocks[currentIndex - 1].block.id, currentBlock.block.id);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [focusedBlockId, groupMode, orderedBlocks]);
+
   return (
-    <div>
-      <div className="toolbar premium-toolbar" style={{ marginBottom: 16 }}>
-        <div className="toolbar-left-group">
-          <div className="toolbar-segment">
-            <span className="toolbar-label">View</span>
-            <select className="input-select" value={viewMode} onChange={(e) => setViewMode(e.target.value as ViewMode)} style={{ width: 130 }}>
-              <option value="list">List</option>
-              <option value="timeline">Timeline</option>
-            </select>
-          </div>
-          <div className="toolbar-segment">
-            <span className="toolbar-label">Group</span>
-            <select className="input-select" value={groupMode} onChange={(e) => setGroupMode(e.target.value as GroupMode)} style={{ width: 150 }}>
-              <option value="block">By Block</option>
-              <option value="camera">By Camera</option>
-              <option value="day">By Day</option>
-              <option value="tech">By Tech</option>
-              <option value="selects">By Selects</option>
-            </select>
-          </div>
-          <div className="toolbar-segment">
-            <span className="toolbar-label">Mode</span>
-            <select
-              className="input-select"
-              value={buildMode}
-              onChange={(e) => setBuildMode(e.target.value as BuildMode)}
-              style={{ width: 180 }}
-            >
-              <option value="time_gap">Time Gap</option>
-              <option value="scene_change">Scene Change</option>
-              <option value="multicam_overlap">Multicam Overlap</option>
-            </select>
-          </div>
-          <div className="toolbar-segment">
-            <span className="toolbar-label">Gap</span>
-            <input
-              className="input-text"
-              type="number"
-              min={15}
-              max={300}
-              step={5}
-              value={gapSeconds}
-              onChange={(e) => setGapSeconds(Math.max(15, Number(e.target.value || 60)))}
-              style={{ width: 85 }}
-            />
-          </div>
-          {buildMode === "multicam_overlap" && (
-            <div className="toolbar-segment">
-              <span className="toolbar-label">Overlap</span>
+    <div className="scene-blocks-view">
+      <div className="scene-blocks-toolbar-stack">
+        <div className="toolbar premium-toolbar scene-blocks-toolbar">
+          <div className="toolbar-left-group">
+            <div className="toolbar-segment delayed-tooltip" data-tooltip="Choose how Scene Blocks are displayed.">
+              <span className="toolbar-label">View</span>
+              <select className="input-select" value={viewMode} onChange={(e) => setViewMode(e.target.value as ViewMode)} style={{ width: 120 }}>
+                <option value="list">List</option>
+                <option value="timeline">Timeline</option>
+              </select>
+            </div>
+            <div className="toolbar-segment delayed-tooltip" data-tooltip="Change how clips are grouped into block sections.">
+              <span className="toolbar-label">Group</span>
+              <select className="input-select" value={groupMode} onChange={(e) => setGroupMode(e.target.value as GroupMode)} style={{ width: 136 }}>
+                <option value="block">Block</option>
+                <option value="camera">Camera</option>
+                <option value="day">Day</option>
+                <option value="tech">Tech</option>
+                <option value="selects">Selects</option>
+              </select>
+            </div>
+            <div className="toolbar-separator" />
+            <div className="toolbar-segment delayed-tooltip" data-tooltip="Choose the logic used to rebuild Scene Blocks.">
+              <span className="toolbar-label">Build</span>
+              <select
+                className="input-select"
+                value={buildMode}
+                onChange={(e) => setBuildMode(e.target.value as BuildMode)}
+                style={{ width: 170 }}
+              >
+                <option value="time_gap">Time Gap</option>
+                <option value="scene_change">Scene Change</option>
+                <option value="multicam_overlap">Multicam Overlap</option>
+              </select>
+            </div>
+            <div className="toolbar-segment delayed-tooltip" data-tooltip={buildMode === "multicam_overlap" ? "Time overlap used to connect cameras into one block." : "Maximum gap before clips split into a new block."}>
+              <span className="toolbar-label">{buildMode === "multicam_overlap" ? "Window" : "Gap"}</span>
               <input
                 className="input-text"
                 type="number"
-                min={5}
+                min={buildMode === "multicam_overlap" ? 5 : 15}
                 max={300}
                 step={5}
-                value={overlapWindowSeconds}
-                onChange={(e) => setOverlapWindowSeconds(Math.max(5, Number(e.target.value || 30)))}
-                style={{ width: 85 }}
+                value={buildMode === "multicam_overlap" ? overlapWindowSeconds : gapSeconds}
+                onChange={(e) => {
+                  const value = Number(e.target.value || (buildMode === "multicam_overlap" ? 30 : 60));
+                  if (buildMode === "multicam_overlap") setOverlapWindowSeconds(Math.max(5, value));
+                  else setGapSeconds(Math.max(15, value));
+                }}
+                style={{ width: 82 }}
               />
             </div>
-          )}
-        </div>
-        <div className="toolbar-right-group">
-          <button className="btn btn-secondary" onClick={refreshBlocks} disabled={loading}>
-            <RefreshCw size={14} /> Reload
-          </button>
-          {buildMode === "scene_change" && (
-            <button className="btn btn-secondary" onClick={() => invoke("clear_scene_detection_cache", { projectId })} disabled={loading}>
-              <Timer size={14} /> Clear Scene Cache
+          </div>
+          <div className="toolbar-right-group">
+            <button className="btn btn-secondary btn-sm delayed-tooltip" data-tooltip="Refresh blocks without rebuilding." onClick={refreshBlocks} disabled={loading}>
+              <RefreshCw size={14} /> Reload
             </button>
-          )}
-          <button className="btn btn-primary" onClick={buildBlocks} disabled={loading}>
-            <Scissors size={14} /> Build Blocks
-          </button>
+            {buildMode === "scene_change" && (
+              <button className="btn btn-ghost btn-sm delayed-tooltip" data-tooltip="Clear cached scene-detection results for this project." onClick={() => invoke("clear_scene_detection_cache", { projectId })} disabled={loading}>
+                <Timer size={14} /> Clear Cache
+              </button>
+            )}
+            <button className="btn btn-primary btn-sm delayed-tooltip" data-tooltip="Rebuild Scene Blocks using the current build settings." onClick={buildBlocks} disabled={loading}>
+              <Scissors size={14} /> Rebuild
+            </button>
+            <button className="btn btn-secondary btn-sm delayed-tooltip" data-tooltip="Send the current Scene Blocks work into Delivery." onClick={onOpenDelivery}>
+              <Send size={14} /> Delivery
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="toolbar premium-toolbar" style={{ marginBottom: 12 }}>
-        <div className="toolbar-left-group" style={{ flexWrap: "wrap" }}>
+        <div className="toolbar premium-toolbar scene-blocks-toolbar scene-blocks-filter-toolbar">
+          <div className="toolbar-left-group scene-blocks-filter-group">
           <div className="camera-chip-filter">
             <button
               className={`btn btn-ghost btn-xs ${selectedCameras.length === 0 ? "active" : ""}`}
@@ -314,101 +375,154 @@ export function BlocksView({
             <option value="rated">Rated</option>
           </select>
         </div>
-      </div>
-
-      <div className="scene-blocks-next-step premium-card">
-        <div>
-          <span className="toolbar-label">Next Step</span>
-          <h3>Move this organization into delivery</h3>
-          <p>{selectedIds.length > 0 ? `${selectedIds.length} block${selectedIds.length === 1 ? "" : "s"} selected for downstream scope.` : "Review the grouped blocks, select the ones you want, then send that scope to Delivery."}</p>
-        </div>
-        <div className="scene-blocks-next-step-actions">
-          <button className="btn btn-secondary btn-sm" onClick={onOpenReview}>
-            Back to Review
-          </button>
-          <button className="btn btn-secondary btn-sm" onClick={onOpenDelivery}>
-            Send to Delivery
-          </button>
         </div>
       </div>
 
-      {filteredBlocks.length === 0 ? (
-        <div className="empty-state">No blocks match current filters.</div>
-      ) : viewMode === "timeline" ? (
-        <TimelineView blocks={filteredBlocks} onSelectBlock={toggleBlock} selected={selected} />
-      ) : (
-        <div className="clip-list">
-          {groupedBlocks.map((group) => (
-            <div key={group.label}>
-              {groupMode !== "block" && <div className="toolbar-label" style={{ margin: "8px 0 10px" }}>{group.label}</div>}
-              {group.items.map((item, idx) => {
-                const stats = blockStats(item);
-                return (
-                  <div key={item.block.id} className="clip-card selected">
-                    <div className="clip-card-header">
-                      <div className="clip-card-title-group">
-                        <label className="clip-selection-label">
-                          <input
-                            type="checkbox"
-                            checked={selected.has(item.block.id)}
-                            onChange={() => toggleBlock(item.block.id)}
-                            className="clip-checkbox"
-                          />
-                        </label>
-                        <span className="clip-filename">{item.block.name}</span>
-                      </div>
-                      <div className="clip-card-header-right" style={{ gap: 8 }}>
-                        <button className="btn-link" onClick={() => renameBlock(item.block.id, item.block.name)}>
-                          <Pencil size={14} />
-                        </button>
-                        <button className="btn-link" onClick={() => mergeIntoPrevious(idx)} disabled={idx === 0}>
-                          <GitMerge size={14} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="clip-metadata-compact" style={{ marginBottom: 8 }}>
-                      <span className="metadata-tag">{item.block.clip_count} clips</span>
-                      <span className="metadata-tag">Duration {stats.duration}</span>
-                      <span className="metadata-tag">Cameras {stats.cameraCount}</span>
-                      <span className="metadata-tag">Audio {stats.audioPresentPct}%</span>
-                      <span className="metadata-tag">Confidence {(item.block.confidence * 100).toFixed(0)}%</span>
-                      {stats.mixedFps && <span className="metadata-tag danger-tag">Mixed FPS</span>}
-                      {stats.missingTimecode && <span className="metadata-tag danger-tag">No TC</span>}
-                      {stats.audioPresentPct < 100 && <span className="metadata-tag warn-tag">Partial Audio ({stats.audioPresentPct}%)</span>}
-                    </div>
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {item.clips.map((clip, clipIdx) => (
-                        <div key={clip.id} className="block-clip-row">
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{clip.filename}</span>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              {clipIdx > 0 && groupMode === "block" && (
-                                <button className="btn-link" onClick={() => splitAtClip(item.block.id, clip.id)}>
-                                  Split Here
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <FilmStrip
-                            clipId={clip.id}
-                            thumbnails={thumbnailsByClipId[clip.id] || []}
-                            thumbnailCache={thumbnailCache}
-                            status={clip.status}
-                            count={5}
-                            aspectRatio={clip.width > 0 && clip.height > 0 ? clip.width / clip.height : 16 / 9}
-                          />
+      <div className="scene-blocks-content custom-scrollbar">
+        {filteredBlocks.length === 0 ? (
+          <div className="empty-state">No blocks match current filters.</div>
+        ) : viewMode === "timeline" ? (
+          <TimelineView blocks={filteredBlocks} onSelectBlock={toggleBlock} selected={selected} />
+        ) : (
+          <div className="clip-list scene-blocks-list">
+            {groupedBlocks.map((group) => (
+              <div key={group.label}>
+                {groupMode !== "block" && <div className="toolbar-label" style={{ margin: "8px 0 10px" }}>{group.label}</div>}
+                {group.items.map((item) => {
+                  const stats = blockStats(item);
+                  const blockIndex = orderedBlocks.findIndex((entry) => entry.block.id === item.block.id);
+                  const isFocused = focusedBlockId === item.block.id;
+                  return (
+                    <div
+                      key={item.block.id}
+                      ref={(node) => {
+                        blockRefs.current[item.block.id] = node;
+                      }}
+                      className={`clip-card scene-block-card ${selected.has(item.block.id) ? "selected" : ""} ${isFocused ? "focused" : ""}`}
+                      onClick={() => setFocusedBlockId(item.block.id)}
+                    >
+                      <div className="clip-card-header">
+                        <div className="clip-card-title-group">
+                          <button
+                            type="button"
+                            className="btn-link btn-link-prominent delayed-tooltip"
+                            data-tooltip="Rename block."
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void renameBlock(item.block.id, item.block.name);
+                            }}
+                          >
+                            <Pencil size={17} />
+                          </button>
+                          <span className="clip-filename">{item.block.name}</span>
                         </div>
-                      ))}
+                        <div className="clip-card-header-right scene-block-card-actions">
+                          {groupMode === "block" && (
+                            <>
+                              <button
+                                type="button"
+                                className="btn-link btn-link-prominent delayed-tooltip"
+                                data-tooltip="Move block up in sequence."
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void moveBlockByDirection(item.block.id, -1);
+                                }}
+                                disabled={blockIndex <= 0}
+                              >
+                                <ChevronUp size={17} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-link btn-link-prominent delayed-tooltip"
+                                data-tooltip="Move block down in sequence."
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void moveBlockByDirection(item.block.id, 1);
+                                }}
+                                disabled={blockIndex >= orderedBlocks.length - 1}
+                              >
+                                <ChevronDown size={17} />
+                              </button>
+                            </>
+                          )}
+                          {groupMode === "block" && (
+                            <button
+                              type="button"
+                              className="btn-flag btn-select scene-block-connect delayed-tooltip"
+                              data-tooltip="Merge this block into the one above (M)."
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void mergeIntoPrevious(orderedBlocks[blockIndex - 1].block.id, item.block.id);
+                              }}
+                              disabled={blockIndex <= 0}
+                            >
+                              <GitMerge size={16} />
+                              <span>Connect</span>
+                            </button>
+                          )}
+                          {groupMode === "block" && (
+                            <button
+                              type="button"
+                              className={`btn-flag btn-select scene-block-select ${selected.has(item.block.id) ? "active" : ""}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleBlock(item.block.id);
+                              }}
+                              title="Select block (S)"
+                              aria-label={selected.has(item.block.id) ? "Selected" : "Select"}
+                            >
+                              <CheckCircle2 size={14} />
+                              <span>{selected.has(item.block.id) ? "Selected" : "Select"}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="clip-metadata-compact" style={{ marginBottom: 8 }}>
+                        <span className="metadata-tag">{item.block.clip_count} clips</span>
+                        <span className="metadata-tag">Duration {stats.duration}</span>
+                        <span className="metadata-tag">Cameras {stats.cameraCount}</span>
+                        <span className="metadata-tag">Audio {stats.audioPresentPct}%</span>
+                        <span className="metadata-tag">Confidence {(item.block.confidence * 100).toFixed(0)}%</span>
+                        {stats.mixedFps && <span className="metadata-tag danger-tag">Mixed FPS</span>}
+                        {stats.missingTimecode && <span className="metadata-tag danger-tag">No TC</span>}
+                        {stats.audioPresentPct < 100 && <span className="metadata-tag warn-tag">Partial Audio ({stats.audioPresentPct}%)</span>}
+                      </div>
+
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {item.clips.map((clip, clipIdx) => (
+                          <div key={clip.id} className="block-clip-row">
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                              <div className="scene-block-clip-heading">
+                                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{clip.filename}</span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                {clipIdx > 0 && groupMode === "block" && (
+                                  <button className="btn-link delayed-tooltip" data-tooltip="Split the block at this clip." onClick={() => splitAtClip(item.block.id, clip.id)}>
+                                    Split Here
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <FilmStrip
+                              clipId={clip.id}
+                              thumbnails={thumbnailsByClipId[clip.id] || []}
+                              thumbnailCache={thumbnailCache}
+                              status={clip.status}
+                              count={5}
+                              aspectRatio={clip.width > 0 && clip.height > 0 ? clip.width / clip.height : 16 / 9}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      )}
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

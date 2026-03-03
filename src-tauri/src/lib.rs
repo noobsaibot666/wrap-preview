@@ -8,6 +8,7 @@ mod folders;
 mod jobs;
 mod lut;
 mod perf;
+mod production;
 mod review_core;
 mod scanner;
 mod thumbnail;
@@ -54,7 +55,8 @@ pub fn run() {
     std::fs::create_dir_all(&cache_dir_path).expect("Failed to create cache directory");
     std::fs::create_dir_all(&review_core_base_dir).expect("Failed to create Review Core directory");
 
-    let database = db::Database::new(&db_path.to_string_lossy()).expect("Failed to initialize database");
+    let database =
+        db::Database::new(&db_path.to_string_lossy()).expect("Failed to initialize database");
 
     let app_state = Arc::new(AppState {
         db: database.clone(),
@@ -130,6 +132,8 @@ pub fn run() {
             commands::rename_scene_block,
             commands::merge_scene_blocks,
             commands::split_scene_block,
+            commands::reorder_scene_blocks,
+            commands::reorder_scene_block_clips,
             commands::promote_clip_to_block,
             commands::set_project_lut,
             commands::remove_project_lut,
@@ -177,6 +181,19 @@ pub fn run() {
             commands::review_core_share_set_display_name,
             commands::review_core_share_list_annotations,
             commands::review_core_share_export_download,
+            commands::create_production_project,
+            commands::list_production_projects,
+            commands::get_production_project,
+            commands::get_camera_profiles,
+            commands::get_look_presets,
+            commands::save_production_camera_config,
+            commands::list_production_camera_configs,
+            commands::save_production_look_target,
+            commands::get_production_look_target,
+            commands::save_production_scene_constraint,
+            commands::get_production_scene_constraint,
+            commands::save_production_output,
+            commands::get_production_output,
             #[cfg(debug_assertions)]
             commands::dev_reset_all_data,
         ])

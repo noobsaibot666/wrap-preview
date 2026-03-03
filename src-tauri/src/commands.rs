@@ -1,13 +1,15 @@
 use crate::audio;
 use crate::clustering;
 use crate::db::{
-    Asset, AssetVersion, Clip, Database, Project, ProjectRoot, ReviewCoreAnnotation,
-    ReviewCoreApprovalState, ReviewCoreComment, ReviewCoreFrameNote, ReviewCoreProject,
-    ReviewCoreShareLink, ReviewCoreShareSession, SceneBlock, SceneDetectionCache, Thumbnail,
-    VerificationItem, VerificationJob, VerificationQueueItem,
+    Asset, AssetVersion, Clip, Database, ProductionCameraConfig, ProductionLookTarget,
+    ProductionOutput, ProductionProject, ProductionSceneConstraint, Project, ProjectRoot,
+    ReviewCoreAnnotation, ReviewCoreApprovalState, ReviewCoreComment, ReviewCoreFrameNote,
+    ReviewCoreProject, ReviewCoreShareLink, ReviewCoreShareSession, SceneBlock,
+    SceneDetectionCache, Thumbnail, VerificationItem, VerificationJob, VerificationQueueItem,
 };
 use crate::ffprobe;
 use crate::jobs::{JobInfo, JobStatus};
+use crate::production::{self, CameraProfile, LookPreset};
 use crate::review_core;
 use crate::scanner;
 use crate::thumbnail;
@@ -16,6 +18,7 @@ use base64::Engine;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use rand::rngs::OsRng;
 use rand::RngCore;
+use uuid;
 mod folders_impl {
     pub use crate::folders::*;
 }
@@ -2029,6 +2032,7 @@ pub async fn split_scene_block(
         name: format!("{} (Part 2)", original.name),
         start_time: original.start_time,
         end_time: original.end_time,
+        display_order: original.display_order + 1,
         clip_count: second_half.len() as i32,
         camera_list: original.camera_list.clone(),
         confidence: original.confidence,
@@ -2036,6 +2040,62 @@ pub async fn split_scene_block(
     db.create_scene_block(&new_block)
         .map_err(|e| e.to_string())?;
     db.replace_block_memberships(&new_block_id, &second_half)
+        .map_err(|e| e.to_string())?;
+    db.refresh_scene_block_stats(&block_id)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reorder_scene_blocks(
+    project_id: String,
+    block_ids: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let db = &state.db;
+    let existing_ids: Vec<String> = db
+        .get_scene_blocks(&project_id)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|block| block.id)
+        .collect();
+
+    if existing_ids.len() != block_ids.len() {
+        return Err("Block order does not match the project block count.".into());
+    }
+
+    let existing_set: std::collections::HashSet<String> = existing_ids.into_iter().collect();
+    let next_set: std::collections::HashSet<String> = block_ids.iter().cloned().collect();
+    if existing_set != next_set {
+        return Err("Block order contains invalid project blocks.".into());
+    }
+
+    db.replace_scene_block_order(&project_id, &block_ids)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reorder_scene_block_clips(
+    block_id: String,
+    clip_ids: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let db = &state.db;
+    let existing_ids = db
+        .get_block_clip_ids(&block_id)
+        .map_err(|e| e.to_string())?;
+    if existing_ids.len() != clip_ids.len() {
+        return Err("Clip order does not match the block membership.".into());
+    }
+
+    let existing_set: std::collections::HashSet<String> = existing_ids.into_iter().collect();
+    let next_set: std::collections::HashSet<String> = clip_ids.iter().cloned().collect();
+    if existing_set != next_set {
+        return Err("Clip order contains invalid block members.".into());
+    }
+
+    db.replace_block_memberships(&block_id, &clip_ids)
         .map_err(|e| e.to_string())?;
     db.refresh_scene_block_stats(&block_id)
         .map_err(|e| e.to_string())?;
@@ -5299,4 +5359,147 @@ fn count_files(path: &std::path::Path) -> std::io::Result<u64> {
         }
     }
     Ok(count)
+}
+
+// --- Production Module Commands ---
+
+#[tauri::command]
+pub async fn create_production_project(
+    name: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<ProductionProject, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let project = ProductionProject {
+        id,
+        name,
+        created_at: now.clone(),
+        last_opened_at: now,
+    };
+
+    state
+        .db
+        .upsert_production_project(&project)
+        .map_err(|e| format!("Failed to create production project: {}", e))?;
+
+    Ok(project)
+}
+
+#[tauri::command]
+pub async fn list_production_projects(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<ProductionProject>, String> {
+    state
+        .db
+        .list_production_projects()
+        .map_err(|e| format!("Failed to list production projects: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_production_project(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<ProductionProject>, String> {
+    state
+        .db
+        .get_production_project(&id)
+        .map_err(|e| format!("Failed to get production project: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_camera_profiles() -> Result<Vec<CameraProfile>, String> {
+    Ok(production::load_camera_profiles())
+}
+
+#[tauri::command]
+pub async fn get_look_presets() -> Result<Vec<LookPreset>, String> {
+    Ok(production::load_look_presets())
+}
+
+#[tauri::command]
+pub async fn save_production_camera_config(
+    config: ProductionCameraConfig,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .upsert_production_camera_config(&config)
+        .map_err(|e| format!("Failed to save camera config: {}", e))
+}
+
+#[tauri::command]
+pub async fn list_production_camera_configs(
+    project_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<ProductionCameraConfig>, String> {
+    state
+        .db
+        .list_production_camera_configs(&project_id)
+        .map_err(|e| format!("Failed to list camera configs: {}", e))
+}
+
+#[tauri::command]
+pub async fn save_production_look_target(
+    target: ProductionLookTarget,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .upsert_production_look_target(&target)
+        .map_err(|e| format!("Failed to save look target: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_production_look_target(
+    project_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<ProductionLookTarget>, String> {
+    state
+        .db
+        .get_production_look_target(&project_id)
+        .map_err(|e| format!("Failed to get look target: {}", e))
+}
+
+#[tauri::command]
+pub async fn save_production_scene_constraint(
+    constraint: ProductionSceneConstraint,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .upsert_production_scene_constraint(&constraint)
+        .map_err(|e| format!("Failed to save scene constraint: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_production_scene_constraint(
+    project_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<ProductionSceneConstraint>, String> {
+    state
+        .db
+        .get_production_scene_constraint(&project_id)
+        .map_err(|e| format!("Failed to get scene constraint: {}", e))
+}
+
+#[tauri::command]
+pub async fn save_production_output(
+    output: ProductionOutput,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .upsert_production_output(&output)
+        .map_err(|e| format!("Failed to save production output: {}", e))
+}
+
+#[tauri::command]
+pub async fn get_production_output(
+    project_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<ProductionOutput>, String> {
+    state
+        .db
+        .get_production_output(&project_id)
+        .map_err(|e| format!("Failed to get production output: {}", e))
 }

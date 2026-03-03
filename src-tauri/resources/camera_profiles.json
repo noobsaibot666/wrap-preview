@@ -1,0 +1,51 @@
+[
+    {
+        "brand": "ARRI",
+        "model": "ALEXA Mini / LF",
+        "sensor_type": "ALEV-III",
+        "recommended_modes": [
+            {
+                "label": "ARRIRAW / LogC3",
+                "base_iso": [
+                    800
+                ],
+                "wb_notes": "Preserve highlights; exposure bias +0.5 to +1.0 for skin density.",
+                "highlight_limit_guidance": "Soft roll-off starts early. Don't clip sensor.",
+                "skin_ire_targets": {
+                    "log": 45,
+                    "rec709": 70
+                },
+                "sharpening_nr_defaults": "Off"
+            }
+        ],
+        "known_pitfalls": [
+            "Heavy files in RAW.",
+            "Requires high power draw."
+        ]
+    },
+    {
+        "brand": "Sony",
+        "model": "FX3 / FX6 / A7SIII",
+        "sensor_type": "Full Frame 4K",
+        "recommended_modes": [
+            {
+                "label": "XAVC-S-I / S-Log3",
+                "base_iso": [
+                    800,
+                    12800
+                ],
+                "wb_notes": "Dual native ISO. Use 12800 for clean shadows in low light.",
+                "highlight_limit_guidance": "S-Log3 needs +1 to +2 stops exposure to avoid noise.",
+                "skin_ire_targets": {
+                    "log": 41,
+                    "rec709": 70
+                },
+                "sharpening_nr_defaults": "Detail: -7"
+            }
+        ],
+        "known_pitfalls": [
+            "Internal sharpening can be aggressive.",
+            "Base ISO 12800 is extremely clean but watch for clipping."
+        ]
+    }
+]

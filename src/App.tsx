@@ -36,7 +36,7 @@ import { ReviewCore } from "./components/ReviewCore";
 import { TourGuide, TourStep } from "./components/TourGuide";
 import { exportPdf, exportImage, exportMosaicImage, exportMosaicPdf } from "./utils/ExportUtils";
 import appLogo from "./assets/Icon_square_rounded.svg";
-import { AppInfo, Clip, ClipWithThumbnails, JobInfo, ScanResult, ThumbnailProgress, RecentProject } from "./types";
+import { AppInfo, Clip, ClipWithThumbnails, JobInfo, ScanResult, ThumbnailProgress, RecentProject, ProductionProject } from "./types";
 import {
   LookbookSortMode,
   MOVEMENT_CANONICAL,
@@ -44,6 +44,11 @@ import {
   SHOT_SIZE_OPTIONAL,
   sortLookbookClips,
 } from "./lookbook";
+import { ProductionLanding } from "./modules/Production/ProductionLanding";
+import { ProjectManager } from "./modules/Production/ProjectManager";
+import { LookSetup } from "./modules/Production/apps/LookSetup";
+import { OnSetCoach } from "./modules/Production/apps/OnSetCoach";
+import { MatchNormalize } from "./modules/Production/apps/MatchNormalize";
 
 // --- Error Boundary ---
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
@@ -78,11 +83,13 @@ function AppContent() {
   const DEV_BOOT_RESET_KEY = "wrap_preview:dev_boot_reset_done";
   const IS_DEV = import.meta.env.DEV;
 
-  const [activeTab, setActiveTab] = useState<"home" | "preproduction" | "shot-planner" | "media-workspace" | "contact" | "blocks" | "safe-copy" | "all">(() => {
+  const [activeTab, setActiveTab] = useState<"home" | "production" | "preproduction" | "shot-planner" | "media-workspace" | "contact" | "blocks" | "safe-copy" | "all">(() => {
     if (IS_DEV) return "home";
     const saved = localStorage.getItem('wp_activeTab');
     return (saved as any) || 'home';
   });
+  const [activeProductionProject, setActiveProductionProject] = useState<ProductionProject | null>(null);
+  const [showProjectManager, setShowProjectManager] = useState(false);
   const [activePreproductionApp, setActivePreproductionApp] = useState<string | null>(() => {
     if (IS_DEV) return null;
     return localStorage.getItem('wp_activePreApp') || null;
@@ -90,6 +97,10 @@ function AppContent() {
   const [activeMediaWorkspaceApp, setActiveMediaWorkspaceApp] = useState<string | null>(() => {
     if (IS_DEV) return null;
     return localStorage.getItem('wp_activeMediaApp') || null;
+  });
+  const [activeProductionApp, setActiveProductionApp] = useState<string | null>(() => {
+    if (IS_DEV) return null;
+    return localStorage.getItem('wp_activeProdApp') || null;
   });
   const [shareRouteToken, setShareRouteToken] = useState<string | null>(() => {
     const match = window.location.hash.match(/^#\/r\/([^/?#]+)/);
@@ -126,6 +137,13 @@ function AppContent() {
       else localStorage.removeItem('wp_activeMediaApp');
     }
   }, [activeMediaWorkspaceApp]);
+
+  useEffect(() => {
+    if (!IS_DEV) {
+      if (activeProductionApp) localStorage.setItem('wp_activeProdApp', activeProductionApp);
+      else localStorage.removeItem('wp_activeProdApp');
+    }
+  }, [activeProductionApp]);
 
   useEffect(() => {
     if (!IS_DEV || shareRouteToken) return;
@@ -167,6 +185,7 @@ function AppContent() {
     if (!IS_DEV) return;
 
     const originalWarn = console.warn;
+    const originalError = console.error;
     console.warn = (...args: unknown[]) => {
       const firstArg = typeof args[0] === "string" ? args[0] : "";
       if (firstArg.includes("Couldn't find callback id")) {
@@ -174,9 +193,17 @@ function AppContent() {
       }
       originalWarn(...args);
     };
+    console.error = (...args: unknown[]) => {
+      const firstArg = typeof args[0] === "string" ? args[0] : "";
+      if (firstArg.includes("react-virtuoso: Zero-sized element")) {
+        return;
+      }
+      originalError(...args);
+    };
 
     return () => {
       console.warn = originalWarn;
+      console.error = originalError;
     };
   }, [IS_DEV]);
 
@@ -1233,7 +1260,6 @@ function AppContent() {
   const failedJobs = jobs.filter((j) => j.status === "failed").length;
   const inWorkspaceLauncher = activeTab === "media-workspace" && !activeMediaWorkspaceApp;
   const jobHudState = failedJobs > 0 ? "error" : (scanning || extracting || runningJobs > 0) ? "running" : jobs.some((j) => j.status === "done") ? "success" : "idle";
-  const isPreproductionLauncher = activeTab === "preproduction" && !activePreproductionApp;
   const rejectedCount = clips.filter((c) => c.clip.flag === "reject").length;
   const exportReadyCount = clips.filter(({ clip }) => {
     if (!selectedClipIds.has(clip.id) || clip.flag === "reject") return false;
@@ -1295,7 +1321,7 @@ function AppContent() {
     requestExport,
     sortedClips,
     toggleClipSelection,
-      tourRun,
+    tourRun,
   ]);
 
   useEffect(() => {
@@ -1539,34 +1565,55 @@ function AppContent() {
               )}
             </div>
 
-            {activeTab !== "home" && !isPreproductionLauncher && (
+            {activeTab !== "home" && (
               <nav className="app-tabs-nav header-tabs">
-                <button className="nav-tab" onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
+                <button
+                  className="nav-tab"
+                  onClick={() => {
+                    setActiveTab('home');
+                    setActivePreproductionApp(null);
+                    setActiveMediaWorkspaceApp(null);
+                    setActiveProductionApp(null);
+                  }}
+                >
                   <LayoutGrid size={14} /> Modules
                 </button>
-                {activeTab === "preproduction" ? (
-                  <button
-                    className="nav-tab active"
-                    onClick={() => {
-                      setActiveTab('preproduction');
-                      setActivePreproductionApp(null);
-                      setActiveMediaWorkspaceApp(null);
-                    }}
-                  >
-                    <Boxes size={14} /> Pre-production
-                  </button>
-                ) : (
-                  <button
-                    className="nav-tab active"
-                    onClick={() => {
-                      setActiveTab('media-workspace');
-                      setActivePreproductionApp(null);
-                      setActiveMediaWorkspaceApp(null);
-                    }}
-                  >
-                    <BriefcaseBusiness size={14} /> Media Workspace
-                  </button>
-                )}
+
+                <button
+                  className={`nav-tab ${activeTab === 'preproduction' ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveTab('preproduction');
+                    setActivePreproductionApp(null);
+                    setActiveMediaWorkspaceApp(null);
+                    setActiveProductionApp(null);
+                  }}
+                >
+                  <Boxes size={14} /> Pre-production
+                </button>
+
+                <button
+                  className={`nav-tab ${activeTab === 'production' ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveTab('production');
+                    setActivePreproductionApp(null);
+                    setActiveMediaWorkspaceApp(null);
+                    setActiveProductionApp(null);
+                  }}
+                >
+                  <Camera size={14} /> Production
+                </button>
+
+                <button
+                  className={`nav-tab ${activeTab === 'media-workspace' ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveTab('media-workspace');
+                    setActivePreproductionApp(null);
+                    setActiveMediaWorkspaceApp(null);
+                    setActiveProductionApp(null);
+                  }}
+                >
+                  <BriefcaseBusiness size={14} /> Post-production
+                </button>
               </nav>
             )}
             <div className="app-header-right">
@@ -1996,7 +2043,6 @@ function AppContent() {
                       thumbnailsByClipId={thumbnailsByClipId}
                       onSelectedBlockIdsChange={setSelectedBlockIds}
                       onOpenDelivery={() => setShowExportPanel(true)}
-                      onOpenReview={() => setActiveMediaWorkspaceApp("clip-review")}
                     />
                   </div>
                 ) : null
@@ -2087,6 +2133,40 @@ function AppContent() {
                   </div>
                 </div>
               )
+            ) : activeTab === 'production' ? (
+              activeProductionApp === "look-setup" && activeProductionProject ? (
+                <LookSetup
+                  project={activeProductionProject}
+                  onBack={() => setActiveProductionApp(null)}
+                />
+              ) : activeProductionApp === "onset-coach" && activeProductionProject ? (
+                <OnSetCoach
+                  project={activeProductionProject}
+                  onBack={() => setActiveProductionApp(null)}
+                />
+              ) : activeProductionApp === "match-normalize" && activeProductionProject ? (
+                <MatchNormalize
+                  project={activeProductionProject}
+                  onBack={() => setActiveProductionApp(null)}
+                />
+              ) : (
+                <ProductionLanding
+                  onOpenProjectManager={() => setShowProjectManager(true)}
+                  onOpenLookSetup={(project) => {
+                    setActiveProductionProject(project);
+                    setActiveProductionApp("look-setup");
+                  }}
+                  onOpenOnSetCoach={(project) => {
+                    setActiveProductionProject(project);
+                    setActiveProductionApp("onset-coach");
+                  }}
+                  onOpenMatchNormalize={(project: ProductionProject) => {
+                    setActiveProductionProject(project);
+                    setActiveProductionApp("match-normalize");
+                  }}
+                  activeProject={activeProductionProject}
+                />
+              )
             ) : (
               <div className="scrollable-view">
                 <div className="onboarding-container">
@@ -2109,6 +2189,22 @@ function AppContent() {
                         <span className="module-label">Pre-Production</span>
                         <h2>Pre-Production</h2>
                         <p>Plan shots, build references, generate folder structure.</p>
+                        <span className="module-action">Enter Module <ArrowRight size={16} /></span>
+                      </div>
+                    </div>
+                    <div
+                      className="module-card premium-card tour-home-production"
+                      onClick={() => {
+                        setActiveTab("production");
+                        setActivePreproductionApp(null);
+                        setActiveMediaWorkspaceApp(null);
+                      }}
+                    >
+                      <div className="module-icon"><Camera size={22} strokeWidth={1.35} /></div>
+                      <div className="module-info">
+                        <span className="module-label">Production</span>
+                        <h2>Production</h2>
+                        <p>Plan looks, lock exposure, and match cameras on set.</p>
                         <span className="module-action">Enter Module <ArrowRight size={16} /></span>
                       </div>
                     </div>
@@ -2190,6 +2286,15 @@ function AppContent() {
           <JobsPanel open={jobsOpen} jobs={jobs} onClose={() => setJobsOpen(false)} onRefresh={refreshJobs} extracting={extracting} extractProgress={extractProgress} scanning={scanning} />
           <AboutPanel open={aboutOpen} info={appInfo} onResetTour={resetTour} onClose={() => setAboutOpen(false)} />
 
+          {showProjectManager && (
+            <ProjectManager
+              onClose={() => setShowProjectManager(false)}
+              onSelectProject={(project) => {
+                setActiveProductionProject(project);
+                setShowProjectManager(false);
+              }}
+            />
+          )}
 
           <TourGuide
             run={tourRun}

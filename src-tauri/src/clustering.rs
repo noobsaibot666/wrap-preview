@@ -74,6 +74,7 @@ pub fn build_scene_blocks(
             name: block_name,
             start_time,
             end_time,
+            display_order: idx as i32,
             clip_count: group.len() as i32,
             camera_list,
             confidence,

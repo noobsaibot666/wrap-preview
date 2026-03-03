@@ -289,3 +289,66 @@ export interface ReviewCoreSharedVersionSummary {
     processing_status: "processing" | "ready" | "failed";
     created_at: string;
 }
+
+export interface ProductionProject {
+    id: string;
+    name: string;
+    created_at: string;
+    last_opened_at: string;
+}
+
+export interface ProductionCameraConfig {
+    id: string;
+    project_id: string;
+    slot: string; // "A" | "B" | "C"
+    brand: string;
+    model: string;
+    recording_mode: string;
+    base_iso_list_json: string;
+    notes?: string | null;
+}
+
+export interface ProductionLookTarget {
+    id: string;
+    project_id: string;
+    target_type: string; // "arri" | "fuji" | "cine_neutral" | "custom"
+    custom_notes?: string | null;
+}
+
+export interface ProductionSceneConstraint {
+    id: string;
+    project_id: string;
+    lighting: string; // "controlled" | "mixed" | "run_and_gun"
+    skin_priority: boolean;
+    notes?: string | null;
+}
+
+export interface ProductionOutput {
+    id: string;
+    project_id: string;
+    generated_at: string;
+    payload_json: string;
+}
+
+export interface CameraProfile {
+    brand: string;
+    model: string;
+    sensor_type: string;
+    recommended_modes: RecommendedMode[];
+    known_pitfalls: string[];
+}
+
+export interface RecommendedMode {
+    label: string;
+    base_iso: number[];
+    wb_notes: string;
+    highlight_limit_guidance: string;
+    skin_ire_targets: Record<string, number>;
+    sharpening_nr_defaults: string;
+}
+
+export interface LookPreset {
+    id: string;
+    name: string;
+    description: string;
+}

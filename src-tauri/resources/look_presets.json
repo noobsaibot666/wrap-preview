@@ -1,0 +1,17 @@
+[
+    {
+        "id": "arri_inspired",
+        "name": "ARRI-inspired (soft roll-off)",
+        "description": "Mimics the gentle highlight compression and skin tone bias of the ARRI ecosystem."
+    },
+    {
+        "id": "fuji_inspired",
+        "name": "Fuji-inspired (gentle color separation)",
+        "description": "Focuses on clean greens and gentle skin tone transitions."
+    },
+    {
+        "id": "cine_neutral",
+        "name": "Clean Cine Neutral",
+        "description": "Maximum data retention, linear-ish response, no creative bias."
+    }
+]
