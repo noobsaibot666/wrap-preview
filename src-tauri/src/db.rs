@@ -1526,6 +1526,30 @@ impl Database {
 
     // --- Production Module ---
 
+    pub fn production_boot_table_status(&self) -> SqlResult<Vec<(String, bool)>> {
+        let conn = self.conn.lock().unwrap();
+        let tables = vec![
+            "production_projects",
+            "production_camera_configs",
+            "production_look_setups",
+            "production_onset_checks",
+            "production_presets",
+            "production_matchlab_sources",
+            "production_matchlab_runs",
+            "production_matchlab_results",
+        ];
+        let mut out = Vec::with_capacity(tables.len());
+        for table in tables {
+            let exists: i64 = conn.query_row(
+                "SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                params![table],
+                |row| row.get(0),
+            )?;
+            out.push((table.to_string(), exists > 0));
+        }
+        Ok(out)
+    }
+
     pub fn upsert_production_project(&self, project: &ProductionProject) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

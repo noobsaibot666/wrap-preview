@@ -17,7 +17,7 @@ use crate::production_match_lab::{
     clip_name_from_path, create_braw_proxy_via_file, create_braw_proxy_via_stdout,
     hash_source_signature, is_braw_path, probe_braw_decoder, BrawDecoderCaps,
     validate_proxy_output_path,
-    CameraMatchAnalysisResult, MatchLabProxyAttempt, MatchLabProxyTracker,
+    CameraMatchAnalysisResult, MatchLabAnalysisTracker, MatchLabProxyAttempt, MatchLabProxyTracker,
     ProductionMatchLabProxyResult, ProductionMatchLabRun, ProductionMatchLabRunResult,
     ProductionMatchLabRunResultInput, ProductionMatchLabRunSummary,
 };
@@ -54,6 +54,7 @@ pub struct AppState {
     pub review_core_base_dir: std::path::PathBuf,
     pub review_core_server_base_url: Mutex<Option<String>>,
     pub production_matchlab_proxy_tracker: MatchLabProxyTracker,
+    pub production_matchlab_analysis_tracker: MatchLabAnalysisTracker,
     pub production_matchlab_decoder_caps: Mutex<Option<BrawDecoderCaps>>,
 }
 
@@ -4878,9 +4879,27 @@ async fn camera_match_analyze_clip_internal(
     state: Arc<AppState>,
 ) -> Result<CameraMatchAnalysisResult, String> {
     let clip_name = clip_name_from_path(clip_path);
+    let analysis_source_key = analysis_source_override_path.unwrap_or(clip_path);
+    let analysis_key = format!(
+        "{}:{}:{}",
+        project_id,
+        camera_slot,
+        hash_source_signature(analysis_source_key)
+    );
     let cache_dir = build_cache_dir(&state.cache_dir, project_id, camera_slot, clip_path);
     std::fs::create_dir_all(&cache_dir)
         .map_err(|e| format!("Failed to create match lab cache: {}", e))?;
+    {
+        let mut running = state
+            .production_matchlab_analysis_tracker
+            .running
+            .lock()
+            .unwrap();
+        if running.contains_key(&analysis_key) {
+            return Err("Analysis already running for this slot and source.".to_string());
+        }
+        running.insert(analysis_key.clone(), clip_name.clone());
+    }
 
     let job_kind = format!("camera_match_analysis_{}", camera_slot);
     let (job_id, cancel_flag) = state.job_manager.create_job(&job_kind, None);
@@ -4890,13 +4909,24 @@ async fn camera_match_analyze_clip_internal(
     emit_job_state(app, &state.job_manager, &job_id);
 
     let result: Result<CameraMatchAnalysisResult, String> = async {
+        let mut proxy_info: Option<String> = None;
         let source_path = if let Some(override_path) = analysis_source_override_path {
             validate_analysis_override_path(override_path)?;
+            proxy_info = Some("Override source: operator-selected MP4".to_string());
             override_path.to_string()
         } else if is_braw_path(clip_path) {
-            ensure_matchlab_proxy_internal(project_id, camera_slot, clip_path, app, state.clone())
-                .await?
-                .proxy_path
+            let proxy_result =
+                ensure_matchlab_proxy_internal(project_id, camera_slot, clip_path, app, state.clone())
+                    .await?;
+            proxy_info = Some(format!(
+                "Proxy: {} | Decoder: {} | Strategy: {}",
+                proxy_result.proxy_path,
+                proxy_result
+                    .decoder_path
+                    .unwrap_or_else(|| "unknown".to_string()),
+                proxy_result.strategy.unwrap_or_else(|| "unknown".to_string())
+            ));
+            proxy_result.proxy_path
         } else {
             choose_source_path_for_analysis(clip_path)?
         };
@@ -4904,6 +4934,7 @@ async fn camera_match_analyze_clip_internal(
         let timestamps = build_frame_timestamps(metadata.duration_ms, frame_count);
         let total_steps = timestamps.len().max(1) as f32;
         let mut per_frame = Vec::with_capacity(timestamps.len());
+        let mut analysis_warnings: Vec<String> = Vec::new();
 
         for (index, timestamp_ms) in timestamps.iter().enumerate() {
             if crate::jobs::JobManager::is_cancelled(&cancel_flag) {
@@ -4927,7 +4958,26 @@ async fn camera_match_analyze_clip_internal(
             )
             .await
             .map_err(|_| "Frame extraction timed out".to_string())?
-            .map_err(|e| format!("Frame extraction task failed: {}", e))??;
+            .map_err(|e| format!("Frame extraction task failed: {}", e))?;
+
+            let extraction_result = match extraction_result {
+                Ok(value) => value,
+                Err(frame_error) => {
+                    analysis_warnings.push(format!(
+                        "Frame {} failed at {}ms: {}",
+                        index + 1,
+                        timestamp_ms,
+                        frame_error.lines().next().unwrap_or("unknown extraction error")
+                    ));
+                    state.job_manager.update_progress(
+                        &job_id,
+                        (index as f32 + 1.0) / total_steps,
+                        Some(format!("Skipped frame {} due to decode issue", index + 1)),
+                    );
+                    emit_job_state(app, &state.job_manager, &job_id);
+                    continue;
+                }
+            };
 
             let output_path_for_metrics = output_path.clone();
             let used_timestamp_ms = extraction_result.used_timestamp_ms;
@@ -4973,6 +5023,8 @@ async fn camera_match_analyze_clip_internal(
             frame_paths,
             per_frame,
             aggregate,
+            proxy_info,
+            warnings: analysis_warnings,
         })
     }
     .await;
@@ -4989,6 +5041,14 @@ async fn camera_match_analyze_clip_internal(
         }
     }
     emit_job_state(app, &state.job_manager, &job_id);
+    {
+        let mut running = state
+            .production_matchlab_analysis_tracker
+            .running
+            .lock()
+            .unwrap();
+        running.remove(&analysis_key);
+    }
     result
 }
 
@@ -5003,6 +5063,8 @@ async fn ensure_matchlab_proxy_internal(
         return Ok(ProductionMatchLabProxyResult {
             proxy_path: source_path.to_string(),
             reused_proxy: true,
+            decoder_path: None,
+            strategy: Some("direct-source".to_string()),
         });
     }
 
@@ -5063,6 +5125,8 @@ async fn ensure_matchlab_proxy_internal(
             return Ok(ProductionMatchLabProxyResult {
                 proxy_path: final_path.to_string_lossy().to_string(),
                 reused_proxy: true,
+                decoder_path: decoder_caps.executable_path.clone(),
+                strategy: Some("cached-proxy".to_string()),
             });
         }
     }
@@ -5124,23 +5188,25 @@ async fn ensure_matchlab_proxy_internal(
         let tmp_for_task = tmp_path.clone();
         let decoded_for_task = build_proxy_decode_path(&proxy_root);
         let decoder_caps_for_task = decoder_caps.clone();
-        tokio::time::timeout(
+        let proxy_strategy = tokio::time::timeout(
             std::time::Duration::from_secs(300),
             tokio::task::spawn_blocking(move || {
+                if decoder_caps_for_task.supports_stdout {
+                    create_braw_proxy_via_stdout(
+                        &decoder_caps_for_task,
+                        &source_for_task,
+                        &tmp_for_task,
+                    )?;
+                    return Ok("decoder-stdout-pipe".to_string());
+                }
                 if decoder_caps_for_task.supports_output_flag {
-                    return create_braw_proxy_via_file(
+                    create_braw_proxy_via_file(
                         &decoder_caps_for_task,
                         &source_for_task,
                         &decoded_for_task,
                         &tmp_for_task,
-                    );
-                }
-                if decoder_caps_for_task.supports_stdout {
-                    return create_braw_proxy_via_stdout(
-                        &decoder_caps_for_task,
-                        &source_for_task,
-                        &tmp_for_task,
-                    );
+                    )?;
+                    return Ok("decoder-file-output".to_string());
                 }
                 Err(format!(
                     "Tool found: {}\nHelp: {}\nVersion: {}\nNext steps: Verify braw-decode can output a file or stdout stream, or pick Use existing MP4 proxy.",
@@ -5205,6 +5271,8 @@ async fn ensure_matchlab_proxy_internal(
         Ok(ProductionMatchLabProxyResult {
             proxy_path: final_string,
             reused_proxy: false,
+            decoder_path: decoder_caps.executable_path.clone(),
+            strategy: Some(proxy_strategy),
         })
     }
     .await;

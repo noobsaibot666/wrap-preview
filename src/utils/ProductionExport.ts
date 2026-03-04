@@ -289,7 +289,9 @@ async function drawMatchSheetPage(options: ProductionMatchSheetOptions): Promise
   const height = 1100;
   const margin = 48;
   const gap = 18;
-  const columnWidth = (width - margin * 2 - gap * 2) / 3;
+  const cameraCount = Math.min(Math.max(options.cameras.length, 1), 3);
+  const totalGap = gap * (cameraCount - 1);
+  const columnWidth = (width - margin * 2 - totalGap) / cameraCount;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -314,7 +316,7 @@ async function drawMatchSheetPage(options: ProductionMatchSheetOptions): Promise
   ctx.fillText(`Client ${options.clientName}`, margin + 78, 160);
 
   const metaTop = 58;
-  drawMetaChip(ctx, width - margin - 194, metaTop, 146, "HERO", `Camera ${options.heroSlot}`, "#3b82f6");
+  drawMetaChip(ctx, width - margin - 194, metaTop, 146, "HERO", `Camera ${options.heroSlot}`, "#9ca3af");
   drawMetaChip(
     ctx,
     width - margin - 194,
@@ -376,9 +378,9 @@ async function drawMatchSheetPage(options: ProductionMatchSheetOptions): Promise
           `Delta Mid ${formatSignedMetricPercent(camera.delta.midtone_density)}`,
         ]
       : ["Hero baseline", "Delta Hi 0.0%", "Delta Mid 0.0%"];
-    ctx.fillStyle = "#e8f1ff";
+    ctx.fillStyle = "#f3f4f6";
     roundRect(ctx, x + 18, cursorY, columnWidth - 36, 106, 16, true, false);
-    ctx.fillStyle = "#2563eb";
+    ctx.fillStyle = "#374151";
     ctx.font = "700 11px Helvetica";
     ctx.fillText("DELTAS", x + 30, cursorY + 22);
     ctx.fillStyle = "#111827";
@@ -473,11 +475,16 @@ function buildAdjustmentLines(suggestions: CameraMatchSuggestionSet | null): str
   if (!suggestions) {
     return ["Hold hero baseline", "Keep WB aligned", "Monitor highlights"];
   }
-  return [
+  const lines = [
     toActionLine("Exposure", suggestions.exposure),
     toActionLine("WB", suggestions.white_balance),
     toActionLine("Highlights", suggestions.highlight),
+    `Confidence ${suggestions.confidence}`,
   ];
+  if (suggestions.warning) {
+    lines.push(suggestions.warning);
+  }
+  return lines;
 }
 
 function toActionLine(label: string, value: string): string {

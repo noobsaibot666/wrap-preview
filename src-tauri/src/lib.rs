@@ -69,6 +69,7 @@ pub fn run() {
         review_core_base_dir,
         review_core_server_base_url: std::sync::Mutex::new(None),
         production_matchlab_proxy_tracker: crate::production_match_lab::MatchLabProxyTracker::default(),
+        production_matchlab_analysis_tracker: crate::production_match_lab::MatchLabAnalysisTracker::default(),
         production_matchlab_decoder_caps: std::sync::Mutex::new(None),
     });
 
@@ -84,6 +85,53 @@ pub fn run() {
             )?;
             if let Ok(mut lock) = app_state.review_core_server_base_url.lock() {
                 *lock = Some(server_url);
+            }
+            #[cfg(debug_assertions)]
+            {
+                let table_status = app_state
+                    .db
+                    .production_boot_table_status()
+                    .unwrap_or_default();
+                let cache_root = std::path::Path::new(&app_state.cache_dir)
+                    .join("production")
+                    .join("cache")
+                    .join("match_lab");
+                let _ = std::fs::create_dir_all(&cache_root);
+                let command_names = [
+                    "production_create_project",
+                    "production_list_projects",
+                    "production_touch_project",
+                    "production_save_look_setup",
+                    "production_get_look_setup",
+                    "production_save_onset_checks",
+                    "production_get_onset_checks",
+                    "production_save_preset",
+                    "production_list_presets",
+                    "production_get_preset",
+                    "production_matchlab_ensure_proxy",
+                    "camera_match_analyze_clip",
+                    "production_matchlab_save_run",
+                    "production_matchlab_list_runs",
+                    "production_matchlab_get_run",
+                    "production_matchlab_delete_run",
+                ];
+                eprintln!(
+                    "[production][boot] command registry loaded: {}",
+                    command_names.join(", ")
+                );
+                eprintln!(
+                    "[production][boot] table status: {}",
+                    table_status
+                        .iter()
+                        .map(|(name, ok)| format!("{}={}", name, if *ok { "ok" } else { "missing" }))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                eprintln!(
+                    "[production][boot] cache root: {} exists={}",
+                    cache_root.display(),
+                    cache_root.exists()
+                );
             }
             Ok(())
         })

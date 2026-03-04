@@ -431,6 +431,12 @@ export interface CameraMatchAggregateMetrics {
     luma_median: number;
     highlight_percent: number;
     midtone_density: number;
+    luma_variance: number;
+    red_variance: number;
+    green_variance: number;
+    blue_variance: number;
+    highlight_variance: number;
+    midtone_variance: number;
 }
 
 export interface CameraMatchAnalysisResult {
@@ -441,11 +447,15 @@ export interface CameraMatchAnalysisResult {
     frame_paths: string[];
     per_frame: CameraMatchFrameMetrics[];
     aggregate: CameraMatchAggregateMetrics;
+    proxy_info?: string | null;
+    warnings?: string[];
 }
 
 export interface ProductionMatchLabProxyResult {
     proxy_path: string;
     reused_proxy: boolean;
+    decoder_path?: string | null;
+    strategy?: string | null;
 }
 
 export interface ProductionMatchLabRunSummary {
@@ -485,6 +495,8 @@ export interface CameraMatchSuggestionSet {
     exposure: string;
     white_balance: string;
     highlight: string;
+    confidence: "High" | "Medium" | "Low";
+    warning?: string | null;
 }
 
 export interface CameraMatchMetrics {

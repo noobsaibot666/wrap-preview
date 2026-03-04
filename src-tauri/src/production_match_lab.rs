@@ -36,6 +36,12 @@ pub struct CameraMatchAggregateMetrics {
     pub luma_median: f64,
     pub highlight_percent: f64,
     pub midtone_density: f64,
+    pub luma_variance: f64,
+    pub red_variance: f64,
+    pub green_variance: f64,
+    pub blue_variance: f64,
+    pub highlight_variance: f64,
+    pub midtone_variance: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,12 +53,18 @@ pub struct CameraMatchAnalysisResult {
     pub frame_paths: Vec<String>,
     pub per_frame: Vec<CameraMatchFrameMetrics>,
     pub aggregate: CameraMatchAggregateMetrics,
+    #[serde(default)]
+    pub proxy_info: Option<String>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductionMatchLabProxyResult {
     pub proxy_path: String,
     pub reused_proxy: bool,
+    pub decoder_path: Option<String>,
+    pub strategy: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +121,11 @@ pub struct MatchLabProxyAttempt {
 #[derive(Default)]
 pub struct MatchLabProxyTracker {
     pub attempts: Mutex<HashMap<String, MatchLabProxyAttempt>>,
+}
+
+#[derive(Default)]
+pub struct MatchLabAnalysisTracker {
+    pub running: Mutex<HashMap<String, String>>,
 }
 
 pub fn build_cache_dir(
@@ -208,6 +225,16 @@ pub fn build_frame_timestamps(duration_ms: u64, frame_count: u32) -> Vec<u64> {
         .collect()
 }
 
+pub fn fallback_timestamps(timestamp_ms: u64) -> Vec<u64> {
+    let second = timestamp_ms.saturating_sub(1000).max(200);
+    let midpoint = ((timestamp_ms + second) / 2).max(200);
+    let mut values = vec![timestamp_ms, second];
+    if midpoint != timestamp_ms && midpoint != second {
+        values.push(midpoint);
+    }
+    values
+}
+
 pub fn extract_jpeg_frame_with_fallbacks(
     input_path: &str,
     timestamp_ms: u64,
@@ -227,12 +254,7 @@ pub fn extract_jpeg_frame_with_fallbacks(
         let _ = std::fs::remove_file(&tmp_path);
     }
 
-    let fallback_timestamp = timestamp_ms.saturating_sub(1000).max(200);
-    let attempted_timestamps = if fallback_timestamp == timestamp_ms {
-        vec![timestamp_ms]
-    } else {
-        vec![timestamp_ms, fallback_timestamp]
-    };
+    let attempted_timestamps = fallback_timestamps(timestamp_ms);
     let strategies = build_extraction_strategies();
     let mut attempted_labels = Vec::new();
     let mut last_stderr_tail = String::new();
@@ -551,6 +573,12 @@ pub fn aggregate_frames(per_frame: &[CameraMatchFrameMetrics]) -> CameraMatchAgg
         luma_median: median_of_values(&mut luma_values),
         highlight_percent: mean_of_values(&highlight_values),
         midtone_density: mean_of_values(&midtone_values),
+        luma_variance: variance_of_values(&luma_values),
+        red_variance: variance_of_values(&red_values),
+        green_variance: variance_of_values(&green_values),
+        blue_variance: variance_of_values(&blue_values),
+        highlight_variance: variance_of_values(&highlight_values),
+        midtone_variance: variance_of_values(&midtone_values),
     }
 }
 
@@ -596,6 +624,21 @@ fn mean_of_values(values: &[f64]) -> f64 {
         return 0.0;
     }
     values.iter().sum::<f64>() / values.len() as f64
+}
+
+fn variance_of_values(values: &[f64]) -> f64 {
+    if values.len() < 2 {
+        return 0.0;
+    }
+    let mean = mean_of_values(values);
+    values
+        .iter()
+        .map(|value| {
+            let delta = *value - mean;
+            delta * delta
+        })
+        .sum::<f64>()
+        / values.len() as f64
 }
 
 fn hash_string(input: &str) -> String {

@@ -140,8 +140,12 @@ const CAMERA_PROFILES: CameraProfile[] = [
     buildMode("PROFILE_NIKON_Z6III", "proresraw", "ProRes RAW HQ", "ProRes RAW HQ", null, [800], ["ProRes RAW HQ"], { rawName: "ProRes RAW HQ", notes: "Recorder-dependent. Confirm recorder path before relying on this mode." }),
   ]),
   buildProfile("PROFILE_NIKON_Z9", "Nikon", "Z9", "Nikon flagship with N-Log and RAW options.", [
+    buildMode("PROFILE_NIKON_Z9", "nlog-h265", "N-Log H.265 10-bit", "N-Log", "N_LOG", [800], ["H.265 10-bit"], { logName: "N-Log", notes: "Treat as protected LOG capture and keep highlight discipline." }),
     buildMode("PROFILE_NIKON_Z9", "nraw-nlog", "N-RAW / N-Log", "N-RAW N-Log", "N_LOG", [800], ["N-RAW"], { logName: "N-Log", rawName: "N-RAW" }),
     buildMode("PROFILE_NIKON_Z9", "proresraw", "ProRes RAW HQ", "ProRes RAW HQ", null, [800], ["ProRes RAW HQ"], { rawName: "ProRes RAW HQ", notes: "Recorder-dependent. Confirm recorder path before relying on this mode." }),
+  ]),
+  buildProfile("PROFILE_BLACKMAGIC_BMPC_4K", "Blackmagic", "Production Camera 4K", "Blackmagic Production Camera 4K with legacy Film profile behavior.", [
+    buildMode("PROFILE_BLACKMAGIC_BMPC_4K", "prores-film", "ProRes 422 HQ / Film", "BMD Film", null, [400], ["ProRes 422 HQ"], { logName: "BMD Film", notes: "Legacy film profile. If monitoring targets are missing, treat as Needs profile data." }),
   ]),
   buildProfile("PROFILE_BLACKMAGIC_4K", "Blackmagic", "Pocket Cinema Camera 4K", "BMCC 4K with Blackmagic RAW and ProRes options.", [
     buildMode("PROFILE_BLACKMAGIC_4K", "braw", "BRAW", "BRAW Film Gen 5", "BMD_FILM_GEN5", [400, 3200], ["Q0", "Q5", "8:1"], { logName: "BMD Film Gen 5", rawName: "Blackmagic RAW" }),

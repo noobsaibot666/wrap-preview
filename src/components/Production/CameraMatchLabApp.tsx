@@ -430,11 +430,14 @@ export function CameraMatchLabApp({ project }: CameraMatchLabAppProps) {
       <div className="production-matchlab-shell" style={matchLabLayoutStyle}>
         <main style={{ minWidth: 0, paddingBottom: 48 }}>
           <div style={headerRowStyle}>
+            <div style={headerTitleRowStyle}>
+              <div style={headerTitleStyle}>Camera Match Lab</div>
+              <div style={subtleStyle}>Measured match sheet. {FRAME_COUNT} frames per clip.</div>
+            </div>
             <div className="production-matchlab-header-utility" style={headerUtilityRowStyle}>
               <div style={headerMetaClusterStyle}>
                 <div style={headerInfoBlockStyle}>
                   <div style={headerProjectNameStyle}>Project {project.name}</div>
-                  <div style={subtleStyle}>Measured match sheet. {FRAME_COUNT} frames per clip.</div>
                 </div>
                 <div className="production-matchlab-header-capsule" style={headerCapsuleStyle}>
                   <div style={headerControlGroupStyle}>
@@ -548,6 +551,7 @@ export function CameraMatchLabApp({ project }: CameraMatchLabAppProps) {
               const rawAnalysis = analysisBySlot[slot];
               const representativeFrameUrl = rawAnalysis ? frameDataUrls[rawAnalysis.representative_frame_path] : "";
               const frameWarning = frameWarnings[slot];
+              const analysisWarning = rawAnalysis?.warnings?.[0];
               const slotError = slotErrors[slot];
               const slotErrorDetail = slotErrorDetails[slot];
               const slotStatus = slotStatuses[slot];
@@ -598,7 +602,7 @@ export function CameraMatchLabApp({ project }: CameraMatchLabAppProps) {
                             <HistogramOverlay histogram={analysis.metrics.luma_histogram} />
                           </div>
                         </div>
-                        {frameWarning && <div style={inlineWarningStyle}>{frameWarning}</div>}
+                        {(frameWarning || analysisWarning) && <div style={inlineWarningStyle}>{frameWarning || analysisWarning}</div>}
                         <div style={metricsWrapStyle}>
                           <MetricChip label="Luma" value={formatPercent(analysis.metrics.luma_median)} />
                           <MetricChip label="RGB" value={formatRgbTriplet(analysis.metrics.rgb_medians)} />
@@ -614,11 +618,19 @@ export function CameraMatchLabApp({ project }: CameraMatchLabAppProps) {
                           <SuggestionChip label="Exposure" value={analysis.suggestions?.exposure ?? "Hero baseline"} />
                           <SuggestionChip label="WB" value={analysis.suggestions?.white_balance ?? "Hero baseline"} />
                           <SuggestionChip label="Highlights" value={analysis.suggestions?.highlight ?? "Hero baseline"} />
+                          <SuggestionChip label="Confidence" value={analysis.suggestions?.confidence ?? "Low"} />
                         </div>
+                        {analysis.suggestions?.warning ? <div style={inlineWarningStyle}>{analysis.suggestions.warning}</div> : null}
                         <details style={detailsWrapStyle}>
                           <summary style={detailsSummaryStyle}>
                             <ImageIcon size={14} /> Frames & Details
                           </summary>
+                          {rawAnalysis.proxy_info ? (
+                            <div style={detailsMetaLineStyle}>
+                              <span style={rawMetricsLabelStyle}>Proxy info</span>
+                              <span style={detailsMetaValueStyle}>{rawAnalysis.proxy_info}</span>
+                            </div>
+                          ) : null}
                           <div style={framesGridStyle}>
                             {rawAnalysis.frame_paths.map((framePath) => (
                               <button
@@ -727,6 +739,8 @@ function buildAnalysisModel(
         exposure: "Hero baseline",
         white_balance: "Hero baseline",
         highlight: "Hero baseline",
+        confidence: computeConfidence(result.aggregate, result.per_frame.length),
+        warning: computeVarianceWarning(result.aggregate, result.per_frame.length),
       },
     };
   }
@@ -752,7 +766,7 @@ function buildAnalysisModel(
       luma_median: heroResult.aggregate.luma_median,
       highlight_percent: heroResult.aggregate.highlight_percent,
       midtone_density: heroResult.aggregate.midtone_density,
-    }),
+    }, result.aggregate, result.per_frame.length),
   };
 }
 
@@ -771,6 +785,15 @@ function buildSuggestionSet(
   delta: CameraMatchDelta,
   current: CameraMatchMetrics,
   hero: CameraMatchMetrics,
+  aggregateVariance: {
+    luma_variance: number;
+    red_variance: number;
+    green_variance: number;
+    blue_variance: number;
+    highlight_variance: number;
+    midtone_variance: number;
+  },
+  frameCount: number,
 ): CameraMatchSuggestionSet {
   const safeCurrent = Math.max(current.luma_median, 0.01);
   const safeHero = Math.max(hero.luma_median, 0.01);
@@ -792,7 +815,53 @@ function buildSuggestionSet(
       : delta.highlight_percent < -0.015
         ? `Safer ${(Math.abs(delta.highlight_percent) * 100).toFixed(1)}%`
         : "Aligned",
+    confidence: computeConfidence(aggregateVariance, frameCount),
+    warning: computeVarianceWarning(aggregateVariance, frameCount),
   };
+}
+
+function computeConfidence(
+  aggregateVariance: {
+    luma_variance: number;
+    red_variance: number;
+    green_variance: number;
+    blue_variance: number;
+    highlight_variance: number;
+    midtone_variance: number;
+  },
+  frameCount: number,
+): "High" | "Medium" | "Low" {
+  if (frameCount < 5) return "Low";
+  const varianceScore = aggregateVariance.luma_variance
+    + aggregateVariance.highlight_variance
+    + aggregateVariance.midtone_variance
+    + ((aggregateVariance.red_variance + aggregateVariance.green_variance + aggregateVariance.blue_variance) / 3);
+  if (varianceScore <= 0.002) return "High";
+  if (varianceScore <= 0.008) return "Medium";
+  return "Low";
+}
+
+function computeVarianceWarning(
+  aggregateVariance: {
+    luma_variance: number;
+    red_variance: number;
+    green_variance: number;
+    blue_variance: number;
+    highlight_variance: number;
+    midtone_variance: number;
+  },
+  frameCount: number,
+) {
+  if (frameCount < 5) {
+    return "Partial sample. Add a full 5-frame clip for stronger matching confidence.";
+  }
+  const varianceScore = aggregateVariance.luma_variance
+    + aggregateVariance.highlight_variance
+    + aggregateVariance.midtone_variance;
+  if (varianceScore > 0.008) {
+    return "Lighting changed across frames — capture a new reference clip.";
+  }
+  return null;
 }
 
 function HistogramOverlay({ histogram }: { histogram: number[] }) {
@@ -908,6 +977,8 @@ function slotBadgeColor(slot: string): React.CSSProperties {
 }
 
 const headerRowStyle: React.CSSProperties = { display: "grid", gap: 14, marginBottom: 20 };
+const headerTitleRowStyle: React.CSSProperties = { display: "grid", gap: 4, minWidth: 0 };
+const headerTitleStyle: React.CSSProperties = { color: "var(--text-primary)", fontSize: "1.28rem", fontWeight: 700, letterSpacing: "0.01em" };
 const headerUtilityRowStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 24, alignItems: "center", flexWrap: "wrap", minWidth: 0 };
 const headerMetaClusterStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 24, minWidth: 0, flexWrap: "wrap", flex: "1 1 auto" };
 const headerCapsuleStyle: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", minHeight: 44, maxWidth: "100%", flexWrap: "nowrap", minWidth: 0 };
@@ -966,6 +1037,8 @@ const chipLabelStyle: React.CSSProperties = { fontSize: "0.7rem", textTransform:
 const chipValueStyle: React.CSSProperties = { fontSize: "0.9rem", fontWeight: 700, color: "var(--text-primary)" };
 const detailsWrapStyle: React.CSSProperties = { marginTop: 4 };
 const detailsSummaryStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, cursor: "pointer", listStyle: "none", color: "var(--text-secondary)", fontSize: "0.84rem", fontWeight: 700 };
+const detailsMetaLineStyle: React.CSSProperties = { marginTop: 10, marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, minWidth: 0 };
+const detailsMetaValueStyle: React.CSSProperties = { color: "var(--text-secondary)", fontSize: "0.74rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, textAlign: "right" };
 const framesGridStyle: React.CSSProperties = { marginTop: 12, display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 8 };
 const frameThumbButtonStyle: React.CSSProperties = { padding: 0, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6, overflow: "hidden", background: "#070809", cursor: "pointer" };
 const frameThumbStyle: React.CSSProperties = { display: "block", width: "100%", aspectRatio: "16 / 9", objectFit: "cover" };
