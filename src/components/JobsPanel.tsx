@@ -158,15 +158,20 @@ export function JobsPanel({ open, jobs, onClose, onRefresh, extracting, extractP
         {(scanning || extracting) && (
           <div className="jobs-live-section">
             <div className="jobs-live-banner">
-              <Loader2 size={16} className="status-icon-running" />
+              <Loader2 size={14} className="status-icon-running" style={{ marginTop: 2 }} />
               <div className="jobs-live-info">
-                <span className="jobs-live-title">
-                  {scanning ? "Scanning folder…" : "Extracting thumbnails…"}
-                </span>
+                <div className="inspector-field">
+                  <div className="inspector-label" style={{ color: "var(--status-blue)", opacity: 0.8 }}>
+                    {scanning ? "Scanning" : "Processing"}
+                  </div>
+                  <div className="jobs-live-title" style={{ fontSize: "12px", fontWeight: 600 }}>
+                    {scanning ? "Scanning folder…" : "Extracting thumbnails…"}
+                  </div>
+                </div>
                 {extracting && extractProgress && (
                   <div className="jobs-live-progress">
-                    <div className="progress-bar-bg" style={{ height: 4 }}>
-                      <div className="progress-bar-fill" style={{ width: `${(extractProgress.done / (extractProgress.total || 1)) * 100}%` }} />
+                    <div className="progress-bar-bg" style={{ height: 3, background: "rgba(59, 130, 246, 0.1)" }}>
+                      <div className="progress-bar-fill" style={{ width: `${(extractProgress.done / (extractProgress.total || 1)) * 100}%`, background: "var(--status-blue)" }} />
                     </div>
                     <span className="jobs-live-count">{extractProgress.done}/{extractProgress.total} clips</span>
                   </div>
@@ -215,10 +220,11 @@ export function JobsPanel({ open, jobs, onClose, onRefresh, extracting, extractP
 
         {/* Purge Section */}
         <div className="jobs-purge-section">
-          <div className="jobs-purge-header">
-            <span className="jobs-purge-title">Cache Management</span>
+          <div className="jobs-purge-header inspector-field">
+            <div className="inspector-label">Storage</div>
+            <div className="jobs-purge-title" style={{ fontSize: "13px", fontWeight: 600, marginTop: 2 }}>Cache Management</div>
           </div>
-          <p className="jobs-purge-desc">Clear thumbnails, LUT renders, and detection data to free disk space.</p>
+          <p className="inspector-meta" style={{ margin: "8px 0 12px" }}>Clear thumbnails, LUT renders, and detection data to free disk space.</p>
           {purgeResult && (
             <div className="jobs-purge-result">
               <CheckCircle2 size={14} /> Freed {formatBytes(purgeResult.freed_bytes)} ({purgeResult.removed_files} files)

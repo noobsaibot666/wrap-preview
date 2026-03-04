@@ -1,7 +1,6 @@
 import { Component, ReactNode, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   Camera,
@@ -36,7 +35,7 @@ import { ReviewCore } from "./components/ReviewCore";
 import { TourGuide, TourStep } from "./components/TourGuide";
 import { exportPdf, exportImage, exportMosaicImage, exportMosaicPdf } from "./utils/ExportUtils";
 import appLogo from "./assets/Icon_square_rounded.svg";
-import { AppInfo, Clip, ClipWithThumbnails, JobInfo, ScanResult, ThumbnailProgress, RecentProject, ProductionProject } from "./types";
+import { AppInfo, Clip, ClipWithThumbnails, JobInfo, ScanResult, RecentProject, ProductionProject, Phase, PhaseData } from "./types";
 import {
   LookbookSortMode,
   MOVEMENT_CANONICAL,
@@ -44,11 +43,18 @@ import {
   SHOT_SIZE_OPTIONAL,
   sortLookbookClips,
 } from "./lookbook";
+import { useAppListeners } from "./hooks/useAppListeners";
+import { usePreviewPlayback } from "./hooks/usePreviewPlayback";
+import { useSelection } from "./hooks/useSelection";
+import { useClipActions } from "./hooks/useClipActions";
+import { useAppKeyboard } from "./hooks/useAppKeyboard";
 import { ProductionLanding } from "./modules/Production/ProductionLanding";
 import { ProjectManager } from "./modules/Production/ProjectManager";
-import { LookSetup } from "./modules/Production/apps/LookSetup";
-import { OnSetCoach } from "./modules/Production/apps/OnSetCoach";
-import { MatchNormalize } from "./modules/Production/apps/MatchNormalize";
+import LookSetup from './modules/Production/apps/LookSetup';
+import OnSetCoach from './modules/Production/apps/OnSetCoach.tsx';
+import MatchNormalize from './modules/Production/apps/MatchNormalize.tsx';
+import { useCommandPalette } from "./hooks/useCommandPalette";
+import { CommandPalette } from "./components/CommandPalette";
 
 // --- Error Boundary ---
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
@@ -208,17 +214,6 @@ function AppContent() {
   }, [IS_DEV]);
 
   // --- Phase-Isolated State ---
-  type Phase = 'pre' | 'post';
-  interface PhaseData {
-    projectId: string | null;
-    projectName: string;
-    clips: ClipWithThumbnails[];
-    selectedClipIds: Set<string>;
-    scanning: boolean;
-    extracting: boolean;
-    extractProgress: { done: number; total: number };
-    thumbnailCache: Record<string, string>;
-  }
 
   const initialPhaseState: PhaseData = {
     projectId: null,
@@ -240,7 +235,7 @@ function AppContent() {
 
   // Helper to update specific phase state
   const setPhaseState = useCallback((phase: Phase, updates: Partial<PhaseData> | ((prev: PhaseData) => PhaseData)) => {
-    setProjectStates((prev) => ({
+    setProjectStates((prev: Record<Phase, PhaseData>) => ({
       ...prev,
       [phase]: typeof updates === 'function' ? updates(prev[phase]) : { ...prev[phase], ...updates },
     }));
@@ -250,13 +245,13 @@ function AppContent() {
   const { projectId, projectName, clips, selectedClipIds, scanning, extracting, extractProgress, thumbnailCache } = projectStates[currentPhase];
 
   const setClips = (val: ClipWithThumbnails[] | ((prev: ClipWithThumbnails[]) => ClipWithThumbnails[])) => {
-    setPhaseState(currentPhase, (prev) => ({
+    setPhaseState(currentPhase, (prev: PhaseData) => ({
       ...prev,
       clips: typeof val === 'function' ? val(prev.clips) : val,
     }));
   };
   const setSelectedClipIds = (val: Set<string> | ((prev: Set<string>) => Set<string>)) => {
-    setPhaseState(currentPhase, (prev) => ({
+    setPhaseState(currentPhase, (prev: PhaseData) => ({
       ...prev,
       selectedClipIds: typeof val === 'function' ? val(prev.selectedClipIds) : val,
     }));
@@ -273,6 +268,12 @@ function AppContent() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [lastVerificationJobId, setLastVerificationJobId] = useState<string | null>(null);
+  const {
+    isOpen: commandPaletteOpen,
+    setIsOpen: setCommandPaletteOpen,
+    query: commandQuery,
+    setQuery: setCommandQuery,
+  } = useCommandPalette();
   const [uiError, setUiError] = useState<{ title: string; hint: string } | null>(null);
   const [tourRun, setTourRun] = useState(false);
   const [brandProfile, setBrandProfile] = useState<any>(null);
@@ -300,19 +301,13 @@ function AppContent() {
     return localStorage.getItem("wp_sequence_movement_filter") || "all";
   });
   const [shotSizeFilter] = useState<string>(() => localStorage.getItem("wp_shot_size_filter") || "all");
-  const [playingClipId, setPlayingClipId] = useState<string | null>(null);
-  const [playingProgress, setPlayingProgress] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioPreviewClipIdRef = useRef<string | null>(null);
+  const projectPhaseMapRef = useRef(new Map<string, Phase>());
+
+
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
-  const manualOrderBufferRef = useRef("");
-  const manualOrderTimerRef = useRef<number | null>(null);
-  const rejectKeyTimeoutRef = useRef<number | null>(null);
-  const lastRejectKeyAtRef = useRef(0);
   const shotPlannerStateRef = useRef<any>(null);
   const reviewStateRef = useRef<any>(null);
   const isUnloadingRef = useRef(false);
-  const projectPhaseMapRef = useRef(new Map<string, Phase>());
 
 
   // Settings with Persistence
@@ -431,28 +426,6 @@ function AppContent() {
     return () => clearInterval(t);
   }, [refreshJobs]);
 
-  // Job System Synchronization
-  useEffect(() => {
-    let unlisten: UnlistenFn | null = null;
-    let refreshTimeout: any = null;
-
-    const throttledRefresh = () => {
-      if (refreshTimeout) return;
-      refreshTimeout = setTimeout(() => {
-        refreshJobs();
-        refreshTimeout = null;
-      }, 1000); // Max once per second
-    };
-
-    listen<JobInfo>("job-progress", () => throttledRefresh())
-      .then((u) => { unlisten = u; })
-      .catch(console.error);
-
-    return () => {
-      if (unlisten) unlisten();
-      if (refreshTimeout) clearTimeout(refreshTimeout);
-    };
-  }, [refreshJobs]);
 
   useEffect(() => {
     invoke<AppInfo>("get_app_info").then(setAppInfo).catch(console.error);
@@ -465,6 +438,8 @@ function AppContent() {
 
   const [projectLut, setProjectLut] = useState<{ path: string; name: string; hash: string } | null>(null);
   const [lutRenderNonce, setLutRenderNonce] = useState(0);
+
+
   // Active project refs removed in favor of phase-aware listeners
 
   const fetchProjectSettings = useCallback(async (pid: string) => {
@@ -539,13 +514,6 @@ function AppContent() {
     });
   }, []);
 
-  const clearManualOrderBuffer = useCallback(() => {
-    if (manualOrderTimerRef.current !== null) {
-      window.clearTimeout(manualOrderTimerRef.current);
-      manualOrderTimerRef.current = null;
-    }
-    manualOrderBufferRef.current = "";
-  }, []);
 
   const getThumbCacheKey = useCallback((clipId: string, index: number, context = thumbCacheContext) => {
     return `${clipId}_${index}|${context}`;
@@ -578,107 +546,6 @@ function AppContent() {
     return hydrated.filter((entry): entry is { clipId: string; index: number; src: string } => Boolean(entry));
   }, [hydrateThumbnailEntry]);
 
-  const isManualOrderTaken = useCallback((clipId: string, order: number) => {
-    if (!order) return false;
-    return clips.some(({ clip }) => clip.id !== clipId && clip.flag !== "reject" && (clip.manual_order ?? 0) === order);
-  }, [clips]);
-
-  const toggleClipSelection = useCallback((id: string) => {
-    setSelectedClipIds((prev) => {
-      const clip = clips.find((c) => c.clip.id === id)?.clip;
-      if (!clip || clip.flag === "reject") return prev;
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, [clips]);
-
-  const handleUpdateMetadata = useCallback(async (clipId: string, updates: Partial<Pick<Clip, 'rating' | 'flag' | 'notes' | 'shot_size' | 'movement' | 'manual_order' | 'lut_enabled'>>) => {
-    const existingClip = clips.find((clipItem) => clipItem.clip.id === clipId)?.clip;
-    if (!existingClip) return false;
-
-    const manualOrder = updates.manual_order ?? existingClip.manual_order ?? 0;
-    if (isShotPlannerActive && manualOrder > 0 && isManualOrderTaken(clipId, manualOrder)) {
-      setManualOrderConflict({ clipId, nonce: Date.now() });
-      return false;
-    }
-
-    const nextFlag = updates.flag ?? existingClip.flag;
-    const shouldAutoSelect = isShotPlannerActive && nextFlag !== "reject" && (
-      (typeof updates.manual_order === "number" && updates.manual_order > 0) ||
-      (typeof updates.shot_size === "string" && updates.shot_size.trim().length > 0) ||
-      (typeof updates.movement === "string" && updates.movement.trim().length > 0)
-    );
-
-    // Optimistic UI update
-    setClips((prevClips) =>
-      prevClips.map(clipItem => {
-        if (clipItem.clip.id === clipId) {
-          return {
-            ...clipItem,
-            clip: { ...clipItem.clip, ...updates }
-          };
-        }
-        return clipItem;
-      })
-    );
-    if (updates.flag === "reject") {
-      setSelectedClipIds((prev) => {
-        if (!prev.has(clipId)) return prev;
-        const next = new Set(prev);
-        next.delete(clipId);
-        return next;
-      });
-    } else if (shouldAutoSelect) {
-      setSelectedClipIds((prev) => {
-        if (prev.has(clipId)) return prev;
-        const next = new Set(prev);
-        next.add(clipId);
-        return next;
-      });
-    }
-
-    try {
-      await invoke("update_clip_metadata", {
-        clipId,
-        rating: updates.rating ?? null,
-        flag: updates.flag ?? null,
-        notes: updates.notes ?? null,
-        shotSize: updates.shot_size ?? null,
-        movement: updates.movement ?? null,
-        manualOrder: updates.manual_order ?? null,
-        lutEnabled: updates.lut_enabled ?? null,
-      });
-      if (updates.lut_enabled === 1 && projectId && projectLut) {
-        await invoke("generate_lut_thumbnails", { projectId });
-        setLutRenderNonce((n) => n + 1);
-      }
-      if (updates.lut_enabled === 0) {
-        setLutRenderNonce((n) => n + 1);
-      }
-    } catch (err) {
-      console.error("Failed to persist metadata:", err);
-      setUiError({ title: "Could not save rating/flag", hint: "Retry. If this persists, export diagnostics from header actions." });
-      return false;
-    }
-    return true;
-  }, [clips, isManualOrderTaken, isShotPlannerActive, projectId, projectLut]);
-
-  const handleResetShotPlannerClip = useCallback(async (clipId: string) => {
-    setSelectedClipIds((prev) => {
-      if (!prev.has(clipId)) return prev;
-      const next = new Set(prev);
-      next.delete(clipId);
-      return next;
-    });
-    await handleUpdateMetadata(clipId, {
-      shot_size: "",
-      movement: "",
-      manual_order: 0,
-      flag: "none",
-    });
-  }, [handleUpdateMetadata]);
 
   const focusShotPlannerClip = useCallback((clipId: string, options?: { scrollIntoView?: boolean }) => {
     setFocusedClipId(prev => {
@@ -688,10 +555,8 @@ function AppContent() {
     if (options?.scrollIntoView) {
       setFocusedClipScrollToken((prev) => prev + 1);
     }
-    if (manualOrderBufferRef.current) {
-      clearManualOrderBuffer();
-    }
-  }, [clearManualOrderBuffer]);
+    // manualOrderBufferRef.current logic removed as it's handled in useAppKeyboard
+  }, []);
 
   const onHoverClip = useCallback((id: string | null) => {
     hoveredClipIdRef.current = id;
@@ -699,80 +564,6 @@ function AppContent() {
 
 
 
-  const handlePlayClip = useCallback(async (id: string | null) => {
-    const clearAudioPreview = () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.removeAttribute("src");
-        audioRef.current.load();
-        audioRef.current = null;
-      }
-      audioPreviewClipIdRef.current = null;
-    };
-
-    if (!id) {
-      clearAudioPreview();
-      setPlayingClipId(null);
-      setPlayingProgress(0);
-      return;
-    }
-
-    if (playingClipId === id && audioRef.current && audioPreviewClipIdRef.current === id) {
-      audioRef.current.pause();
-      setPlayingClipId(null);
-      return;
-    }
-
-    if (!playingClipId && audioRef.current && audioPreviewClipIdRef.current === id) {
-      try {
-        setPlayingClipId(id);
-        await audioRef.current.play();
-      } catch (err) {
-        console.error("Failed to resume audio:", err);
-        clearAudioPreview();
-        setPlayingClipId(null);
-        setPlayingProgress(0);
-      }
-      return;
-    }
-
-    const clip = clips.find(c => c.clip.id === id)?.clip;
-    if (!clip) return;
-
-    clearAudioPreview();
-
-    try {
-      const src = await invoke<string>("read_audio_preview", { path: clip.file_path });
-      const audio = new Audio();
-      audio.onended = () => {
-        clearAudioPreview();
-        setPlayingClipId(null);
-        setPlayingProgress(0);
-      };
-      audio.ontimeupdate = () => {
-        if (audio.duration) {
-          setPlayingProgress((audio.currentTime / audio.duration) * 100);
-        }
-      };
-      audio.onerror = (e) => {
-        console.error("Audio playback error", e);
-        clearAudioPreview();
-        setPlayingClipId(null);
-        setPlayingProgress(0);
-      };
-      audio.src = src;
-      audio.load();
-      audioRef.current = audio;
-      audioPreviewClipIdRef.current = id;
-      setPlayingClipId(id);
-      await audio.play();
-    } catch (err) {
-      console.error("Failed to play audio:", err);
-      clearAudioPreview();
-      setPlayingClipId(null);
-      setPlayingProgress(0);
-    }
-  }, [playingClipId, clips]);
 
   useEffect(() => {
     if (projectId && postScanTab) {
@@ -897,70 +688,50 @@ function AppContent() {
 
 
 
-  // Persistent Thumbnail Listeners
-  useEffect(() => {
-    let unlistenProgress: UnlistenFn | null = null;
-    let unlistenComplete: UnlistenFn | null = null;
+  const {
+    playingClipId,
+    playingProgress,
+    handlePlayClip,
+  } = usePreviewPlayback(clips);
 
-    async function setupListeners() {
-      unlistenProgress = await listen<ThumbnailProgress>("thumbnail-progress", (event) => {
-        const { project_id, clip_id, clip_index, total_clips, thumbnails } = event.payload;
+  const {
+    toggleClipSelection,
+    toggleSelectAll
+  } = useSelection(clips, selectedClipIds, setSelectedClipIds);
 
-        const targetPhase = projectPhaseMapRef.current.get(project_id);
-        if (!targetPhase) return;
+  const clipActions = useClipActions({
+    clips,
+    isShotPlannerActive,
+    projectId,
+    projectLut,
+    setClips,
+    setSelectedClipIds,
+    setManualOrderConflict,
+    setUiError,
+    setLutRenderNonce,
+    refreshProjectClips,
+  });
 
-        setPhaseState(targetPhase, (prev: PhaseData) => {
-          const done = clip_index + 1;
-          const nextProgress = { done, total: total_clips };
+  const {
+    handleUpdateMetadata,
+    handleResetShotPlannerClip,
+    handlePromoteClip,
+  } = clipActions;
 
-          // Throttled updates to clips state.
-          const isAtEnd = done === total_clips;
-          const shouldUpdateClips = !isShotPlannerActive || (clip_index % 10 === 0) || isAtEnd;
+  const { clearManualOrderBuffer } = useAppKeyboard({
+    shotPlannerStateRef,
+    reviewStateRef,
+    setManualOrderConflict,
+  });
 
-          // Also throttle extractProgress updates to once per 5% or once per 10 items
-          const shouldUpdateProgress = (clip_index % 10 === 0) || isAtEnd;
-
-          if (!shouldUpdateClips && !shouldUpdateProgress) {
-            return prev;
-          }
-
-          const nextClips = shouldUpdateClips
-            ? prev.clips.map((c) => c.clip.id === clip_id ? { ...c, thumbnails: thumbnails } : c)
-            : prev.clips;
-
-          return {
-            ...prev,
-            extractProgress: shouldUpdateProgress ? nextProgress : prev.extractProgress,
-            clips: nextClips,
-          };
-        });
-
-      });
-
-
-      unlistenComplete = await listen("thumbnail-complete", async (event) => {
-        const payload = event.payload as { project_id: string; clip_id?: string | null; jump_seconds?: number | null; thumb_count?: number | null };
-        const project_id = payload.project_id;
-
-        const targetPhase = projectPhaseMapRef.current.get(project_id);
-        if (targetPhase) {
-          setPhaseState(targetPhase, { extracting: false });
-          if (payload.clip_id) {
-            // Token handling removed as it depended on jumpSeconds
-          }
-          await refreshProjectClips(project_id, targetPhase);
-        }
-      });
-
-    }
-
-    setupListeners();
-
-    return () => {
-      if (unlistenProgress) unlistenProgress();
-      if (unlistenComplete) unlistenComplete();
-    };
-  }, [refreshProjectClips]);
+  // Register Global Listeners
+  useAppListeners({
+    setPhaseState,
+    refreshProjectClips,
+    projectPhaseMapRef,
+    isShotPlannerActive,
+    refreshJobs,
+  });
 
   // handleCloseProject was replaced by inline initialPhaseState reset in handleSelectFolder
 
@@ -1091,6 +862,19 @@ function AppContent() {
     sessionStorage.clear();
     window.location.reload();
   }, []);
+
+  const handleReorderClips = useCallback(async (activeId: string, overId: string) => {
+    const activeClip = clips.find(c => c.clip.id === activeId);
+    const overClip = clips.find(c => c.clip.id === overId);
+    if (!activeClip || !overClip) return;
+
+    const activeOrder = activeClip.clip.manual_order ?? 0;
+    const overOrder = overClip.clip.manual_order ?? 0;
+
+    // Swap manual_order values
+    await handleUpdateMetadata(activeId, { manual_order: overOrder || 1 });
+    await handleUpdateMetadata(overId, { manual_order: activeOrder || 1 });
+  }, [clips, handleUpdateMetadata]);
 
   const completeTour = useCallback(() => {
     localStorage.setItem(TOUR_SEEN_KEY, "true");
@@ -1227,17 +1011,6 @@ function AppContent() {
     void runExport(kind);
   }, [getExportClips, getFirstMissingTag, isShotPlannerActive, runExport]);
 
-  const handlePromoteClip = async (clipId: string) => {
-    try {
-      await invoke("promote_clip_to_block", { projectId, clipId });
-      if (projectId) {
-        await refreshProjectClips(projectId);
-      }
-    } catch (error) {
-      console.error("Failed to promote clip:", error);
-      setUiError({ title: "Promotion Failed", hint: String(error) });
-    }
-  };
 
   const handleExportImage = useCallback(() => {
     requestExport("image");
@@ -1284,13 +1057,7 @@ function AppContent() {
     .map((c) => c.clip.id);
   const selectedSelectableCount = selectableClipIds.filter((id) => selectedClipIds.has(id)).length;
 
-  const toggleSelectAll = () => {
-    if (selectedSelectableCount === selectableClipIds.length) {
-      setSelectedClipIds(new Set());
-      return;
-    }
-    setSelectedClipIds(new Set(selectableClipIds));
-  };
+  const handleToggleSelectAll = () => toggleSelectAll(selectableClipIds);
 
   useEffect(() => {
     shotPlannerStateRef.current = {
@@ -1311,11 +1078,11 @@ function AppContent() {
       clearManualOrderBuffer,
     };
   }, [
-    clearManualOrderBuffer,
     clips,
     effectiveLookbookSortMode,
     handleUpdateMetadata,
     handleResetShotPlannerClip,
+    clearManualOrderBuffer,
     focusShotPlannerClip,
     isShotPlannerActive,
     requestExport,
@@ -1349,156 +1116,68 @@ function AppContent() {
     toggleClipSelection,
   ]);
 
-  useEffect(() => {
-    const commitBufferedManualOrder = async () => {
-      const state = shotPlannerStateRef.current;
-      if (!state) return;
-      const targetId = state.hoveredClipId;
-      const buffer = manualOrderBufferRef.current;
-      if (!targetId || !buffer || state.effectiveLookbookSortMode !== "custom") return;
-      const order = Number(buffer);
-      if (!Number.isFinite(order) || order <= 0) return;
-      const ok = await state.handleUpdateMetadata(targetId, { manual_order: order });
-      if (ok) {
-        state.clearManualOrderBuffer();
-      }
-    };
+  const commandActions = useMemo(() => {
+    const recentJson = localStorage.getItem("wp_recent_projects");
+    let recent: RecentProject[] = [];
+    if (recentJson) {
+      try { recent = JSON.parse(recentJson); } catch (e) { /* ignore */ }
+    }
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const state = shotPlannerStateRef.current;
-      const reviewState = reviewStateRef.current;
-      if (!state?.active && !reviewState?.active) return;
-      if (state?.active && state.tourRun) return;
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
-      if (e.target instanceof HTMLElement && e.target.closest("[data-tour-tooltip]")) return;
+    const navigationActions = [
+      { id: "nav-home", title: "Go to Modules", description: "Home screen", icon: "box", category: "Navigation" as const, onSelect: () => { setActiveTab("home"); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); } },
+      { id: "nav-shot-planner", title: "Shot Planner", description: "Pre-production planning", icon: "play", category: "Navigation" as const, onSelect: () => { setActiveTab("preproduction"); setActivePreproductionApp("shot-planner"); } },
+      { id: "nav-review", title: "Post-production Review", description: "Review and organize footage", icon: "play", category: "Navigation" as const, onSelect: () => { setActiveTab("media-workspace"); setActiveMediaWorkspaceApp("clip-review"); } },
+      { id: "nav-safe-copy", title: "Safe Copy", description: "Secure ingest and verification", icon: "nav", category: "Navigation" as const, onSelect: () => { setActiveTab("media-workspace"); setActiveMediaWorkspaceApp("safe-copy"); } },
+    ];
 
-      const activeState = state?.active ? state : reviewState;
-      const targetId = activeState?.hoveredClipId;
-      const key = e.key.toLowerCase();
-      const isCtrl = e.ctrlKey || e.metaKey;
+    const projectActions = recent.map(p => ({
+      id: `project-${p.id}-${p.phase}`,
+      title: p.name,
+      description: p.path,
+      category: "Recent" as const,
+      icon: "project",
+      onSelect: async () => {
+        // Logic similar to handleSelectFolder but for existing project
+        const phase: Phase = p.phase as Phase;
+        setPhaseState(phase, { scanning: true, projectId: null, clips: [] });
+        setActiveTab(phase === "pre" ? "preproduction" : "media-workspace");
+        if (phase === "pre") setActivePreproductionApp("shot-planner");
+        else setActiveMediaWorkspaceApp("clip-review");
 
-      if (state?.active && isCtrl && (key === "3" || key === "5" || key === "7")) {
-        e.preventDefault();
-        state.setThumbCount(Number(key));
-        return;
-      }
-      if (state?.active && key === "e" && !isCtrl) {
-        e.preventDefault();
-        state.setShotPlannerExportMenuOpen((prev: boolean) => !prev);
-        return;
-      }
-      if (activeState?.active && key === "p" && !isCtrl) {
-        e.preventDefault();
-        activeState.requestExport("pdf");
-        return;
-      }
-      if (activeState?.active && key === "i" && !isCtrl) {
-        e.preventDefault();
-        activeState.requestExport("image");
-        return;
-      }
-      if (state?.active && key === "m" && !isCtrl) {
-        e.preventDefault();
-        state.setLookbookSortMode("custom");
-        return;
-      }
-      if (state?.active && key === "c" && !isCtrl) {
-        e.preventDefault();
-        state.clearManualOrderBuffer();
-        state.setLookbookSortMode("canonical");
-        return;
-      }
-      if ((key === "arrowdown" || key === "arrowup") && activeState?.sortedClips.length > 0) {
-        if (state?.active && manualOrderBufferRef.current) {
-          void commitBufferedManualOrder();
+        try {
+          const result = await safeInvoke<ScanResult>("scan_folder", {
+            folderPath: p.path,
+            phase: phase,
+          });
+          projectPhaseMapRef.current.set(result.project_id, phase);
+          setPhaseState(phase, {
+            projectId: result.project_id,
+            projectName: result.project_name,
+            clips: result.clips.map((clip) => ({ clip, thumbnails: [] })),
+            extracting: true,
+            extractProgress: { done: 0, total: result.clip_count }
+          });
+          refreshProjectClips(result.project_id, phase);
+        } catch (e) {
+          console.error("Failed to load project from palette", e);
+        } finally {
+          setPhaseState(phase, { scanning: false });
         }
-        const currentIndex = targetId ? activeState.sortedClips.findIndex((c: ClipWithThumbnails) => c.clip.id === targetId) : -1;
-        const nextIndex = key === "arrowdown"
-          ? Math.min(currentIndex + 1, activeState.sortedClips.length - 1)
-          : Math.max(currentIndex - 1, 0);
+      }
+    }));
 
-        if (activeState.sortedClips[nextIndex] && activeState.sortedClips[nextIndex].clip.id !== targetId) {
-          e.preventDefault();
-          activeState.focusClip(activeState.sortedClips[nextIndex].clip.id, { scrollIntoView: true });
-          hoveredClipIdRef.current = activeState.sortedClips[nextIndex].clip.id;
-        }
-        return;
-      }
-      if (!targetId) return;
-      if (reviewState?.active && key >= "0" && key <= "5" && !isCtrl) {
-        e.preventDefault();
-        void reviewState.handleUpdateMetadata(targetId, { rating: Number(key) });
-        return;
-      }
-      if (reviewState?.active && key === "l" && !isCtrl && reviewState.projectLutHash) {
-        e.preventDefault();
-        const clip = reviewState.clips.find((entry: ClipWithThumbnails) => entry.clip.id === targetId)?.clip;
-        if (clip) {
-          void reviewState.handleUpdateMetadata(targetId, { lut_enabled: clip.lut_enabled === 1 ? 0 : 1 });
-        }
-        return;
-      }
-      if (key === "r") {
-        e.preventDefault();
-        const now = Date.now();
-        if (now - lastRejectKeyAtRef.current <= 300) {
-          if (rejectKeyTimeoutRef.current !== null) {
-            window.clearTimeout(rejectKeyTimeoutRef.current);
-            rejectKeyTimeoutRef.current = null;
-          }
-          lastRejectKeyAtRef.current = 0;
-          void state.handleResetShotPlannerClip(targetId);
-          return;
-        }
-        lastRejectKeyAtRef.current = now;
-        rejectKeyTimeoutRef.current = window.setTimeout(() => {
-          const latestState = shotPlannerStateRef.current?.active ? shotPlannerStateRef.current : reviewStateRef.current;
-          const clip = latestState?.clips.find((entry: ClipWithThumbnails) => entry.clip.id === targetId)?.clip;
-          if (clip) {
-            void latestState.handleUpdateMetadata(targetId, { flag: clip.flag === "reject" ? "none" : "reject" });
-          }
-          rejectKeyTimeoutRef.current = null;
-        }, 300);
-        return;
-      }
-      if (key === "s" && !isCtrl) {
-        e.preventDefault();
-        activeState.toggleClipSelection(targetId);
-        return;
-      }
-      if (state?.active && state.effectiveLookbookSortMode === "custom" && key >= "0" && key <= "9" && !isCtrl) {
-        e.preventDefault();
-        manualOrderBufferRef.current = `${manualOrderBufferRef.current}${key}`.replace(/^0+/, "");
-        if (manualOrderTimerRef.current !== null) {
-          window.clearTimeout(manualOrderTimerRef.current);
-        }
-        manualOrderTimerRef.current = window.setTimeout(() => {
-          void commitBufferedManualOrder();
-        }, 200);
-        return;
-      }
-      if (state?.active && key === "enter" && manualOrderBufferRef.current) {
-        e.preventDefault();
-        void commitBufferedManualOrder();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      if (manualOrderTimerRef.current !== null) {
-        window.clearTimeout(manualOrderTimerRef.current);
-        manualOrderTimerRef.current = null;
-      }
-      if (rejectKeyTimeoutRef.current !== null) {
-        window.clearTimeout(rejectKeyTimeoutRef.current);
-        rejectKeyTimeoutRef.current = null;
-      }
-    };
-  }, []);
+    return [...navigationActions, ...projectActions];
+  }, [setActiveTab, setActivePreproductionApp, setActiveMediaWorkspaceApp, safeInvoke, setPhaseState, refreshProjectClips]);
 
   return (
     <div className="app-container">
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        query={commandQuery}
+        onQueryChange={setCommandQuery}
+        actions={commandActions}
+      />
       {shareRouteToken ? (
         <div className="app-content">
           {uiError && (
@@ -1709,34 +1388,36 @@ function AppContent() {
               activePreproductionApp === 'shot-planner' ? (
                 projectId ? (
                   <div className="media-workspace">
-                    <div className="stats-bar">
-                      <div className={`stat-card ${selectedClipIds.size > 0 ? 'stat-card-highlight' : ''}`}>
+                    <div className="stats-bar" style={{ background: "var(--inspector-bg)", borderBottom: "var(--inspector-border)", backdropFilter: "var(--inspector-glass-blur)" }}>
+                      <div className={`stat-card ${selectedClipIds.size > 0 ? 'stat-card-highlight' : ''}`} style={{ background: "transparent", border: "none", boxShadow: "none" }}>
                         <div className="stat-header">
-                          <span className="stat-label">Selected</span>
+                          <span className="stat-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Selected</span>
                         </div>
-                        <span className="stat-value">{selectedClipIds.size}<span className="stat-value-total"> / {totalClips}</span></span>
-                        <span className="stat-sub">Reference clips in export scope</span>
+                        <span className="stat-value" style={{ fontSize: "var(--inspector-value-size)", fontWeight: "var(--inspector-value-weight)", letterSpacing: "var(--inspector-value-spacing)" }}>
+                          {selectedClipIds.size}<span className="stat-value-total" style={{ opacity: 0.4 }}> / {totalClips}</span>
+                        </span>
+                        <span className="stat-sub" style={{ fontSize: "10px", opacity: 0.5 }}>Reference clips in export scope</span>
                       </div>
-                      <div className="stat-card">
+                      <div className="stat-card" style={{ background: "transparent", border: "none", boxShadow: "none" }}>
                         <div className="stat-header">
-                          <span className="stat-label">Rejected</span>
+                          <span className="stat-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Rejected</span>
                         </div>
-                        <span className="stat-value">{rejectedCount}</span>
-                        <span className="stat-sub">Rejected clips never export</span>
+                        <span className="stat-value" style={{ fontSize: "var(--inspector-value-size)", fontWeight: "var(--inspector-value-weight)", letterSpacing: "var(--inspector-value-spacing)" }}>{rejectedCount}</span>
+                        <span className="stat-sub" style={{ fontSize: "10px", opacity: 0.5 }}>Rejected clips never export</span>
                       </div>
-                      <div className="stat-card">
+                      <div className="stat-card" style={{ background: "transparent", border: "none", boxShadow: "none" }}>
                         <div className="stat-header">
-                          <span className="stat-label">Export-ready</span>
+                          <span className="stat-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Export-ready</span>
                         </div>
-                        <span className="stat-value">{exportReadyCount}</span>
-                        <span className="stat-sub">{effectiveLookbookSortMode === "custom" ? "Tagged with order, size, movement" : "Tagged with size and movement"}</span>
+                        <span className="stat-value" style={{ fontSize: "var(--inspector-value-size)", fontWeight: "var(--inspector-value-weight)", letterSpacing: "var(--inspector-value-spacing)" }}>{exportReadyCount}</span>
+                        <span className="stat-sub" style={{ fontSize: "10px", opacity: 0.5 }}>{effectiveLookbookSortMode === "custom" ? "Tagged with order, size, movement" : "Tagged with size and movement"}</span>
                       </div>
                     </div>
 
-                    <div className="toolbar premium-toolbar">
+                    <div className="toolbar premium-toolbar" style={{ background: "var(--inspector-bg)", borderBottom: "var(--inspector-border)", backdropFilter: "var(--inspector-glass-blur)", marginTop: -1 }}>
                       <div className="toolbar-left-group">
                         <div className="thumb-range-selector">
-                          <span className="toolbar-label">Thumbs</span>
+                          <span className="toolbar-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Thumbs</span>
                           {[3, 5, 7].map((n) => (
                             <button
                               key={n}
@@ -1749,7 +1430,7 @@ function AppContent() {
                         </div>
                         <div className="toolbar-separator" />
                         <div className="shot-planner-order-mode">
-                          <span className="toolbar-label">Order mode</span>
+                          <span className="toolbar-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Order</span>
                           <div className="clip-mode-pill-row">
                             <button type="button" className={`clip-mode-pill ${effectiveLookbookSortMode === "custom" ? "active" : ""}`} onClick={() => setLookbookSortMode("custom")}>Manual</button>
                             <button type="button" className={`clip-mode-pill ${effectiveLookbookSortMode === "canonical" ? "active" : ""}`} onClick={() => setLookbookSortMode("canonical")}>Canonical</button>
@@ -1758,7 +1439,7 @@ function AppContent() {
                         <div className="toolbar-separator" />
                       </div>
                       <div className="toolbar-right-group">
-                        <button className="btn btn-ghost btn-sm" onClick={toggleSelectAll}>
+                        <button className="btn btn-ghost btn-sm" onClick={handleToggleSelectAll}>
                           {selectedSelectableCount === selectableClipIds.length ? "Deselect all" : "Select all"}
                         </button>
                         <div className="shot-planner-export" ref={exportMenuRef}>
@@ -1832,28 +1513,36 @@ function AppContent() {
                       onExportMosaicPdf={handleExportMosaicPdf}
                       onExportMosaicImage={handleExportMosaicImage}
                       variant="shot-planner"
+                      onReorderClips={handleReorderClips}
                     />
                   </div>
                 ) : (scanning) ? (
                   <div className="media-workspace">
-                    <div className="toolbar premium-toolbar">
+                    <div className="toolbar premium-toolbar" style={{ background: "var(--inspector-bg)", borderBottom: "var(--inspector-border)", backdropFilter: "var(--inspector-glass-blur)" }}>
                       <div className="toolbar-left-group">
-                        <button className="btn btn-secondary btn-sm" disabled>
-                          {scanning ? <div className="spinner" /> : null}
-                          <span>{scanning ? "Scanning…" : ""}</span>
+                        <button className="btn btn-secondary btn-sm" disabled style={{ opacity: 0.8 }}>
+                          <div className="spinner" />
+                          <span>Scanning…</span>
                         </button>
                       </div>
                     </div>
-                    <div className="inline-loading-state">
-                      <span style={{ fontSize: '1rem' }}>{scanning ? "Scanning folder for media files…" : ""}</span>
+                    <div className="inline-loading-state" style={{ padding: '40px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div className="skeleton-pulse" style={{ height: '32px', width: '200px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }} />
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+                        {[1, 2, 3, 4, 5, 6].map(i => (
+                          <div key={i} className="skeleton-pulse" style={{ height: '160px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }} />
+                        ))}
+                      </div>
                     </div>
                   </div>
                 ) : (
                   <div className="media-workspace">
-                    <div className="workspace-empty-state premium-card">
+                    <div className="workspace-empty-state premium-card" style={{ background: "var(--inspector-bg)", border: "var(--inspector-border)", backdropFilter: "var(--inspector-glass-blur)" }}>
                       <div className="module-icon"><Camera size={28} strokeWidth={1.5} /></div>
                       <h2>Shot Planner</h2>
-                      <p>Load reference clips to tag shot sizes, movement, and selections before the shoot.</p>
+                      <p style={{ color: "var(--text-secondary)", maxWidth: "400px", margin: "0 auto var(--space-md)" }}>
+                        Load reference clips to tag shot sizes, movement, and selections before the shoot.
+                      </p>
                       <button className="btn btn-secondary" onClick={() => handleSelectFolder("shot-planner")}>
                         <FolderOpen size={14} />
                         <span>Load References</span>
@@ -1956,7 +1645,7 @@ function AppContent() {
                         </div>
                       </div>
                       <div className="toolbar-right-group">
-                        <button className="btn btn-ghost btn-sm" onClick={toggleSelectAll}>
+                        <button className="btn btn-ghost btn-sm" onClick={handleToggleSelectAll}>
                           {selectedSelectableCount === selectableClipIds.length ? "Deselect all" : "Select all"}
                         </button>
                         <div className="shot-planner-export">
@@ -2031,6 +1720,7 @@ function AppContent() {
                       onExportMosaicPdf={handleExportMosaicPdf}
                       onExportMosaicImage={handleExportMosaicImage}
                       hideSectionHeader={true}
+                      onReorderClips={handleReorderClips}
                     />
                   </div>
                 ) : null

@@ -373,3 +373,5 @@ export const MatchNormalize: React.FC<MatchNormalizeProps> = ({ project, onBack 
         </div>
     );
 };
+
+export default MatchNormalize;

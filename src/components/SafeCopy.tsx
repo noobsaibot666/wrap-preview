@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { TableVirtuoso } from "react-virtuoso";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -404,8 +405,8 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
         {(progress || queue.length > 0) && (
           <div className="verification-dashboard card premium-card safe-copy-summary-card">
             <div className="dashboard-header safe-copy-summary-header">
-              <div>
-                <span className="summary-kicker">Verification</span>
+              <div className="inspector-field">
+                <div className="inspector-label">Verification</div>
                 <h3>{isRunningQueue ? "Queue Running" : "Queue Summary"}</h3>
               </div>
               <span className="job-id">{queueRunId ? `Queue: ${queueRunId.slice(0, 12)}` : "Idle"}</span>
@@ -419,10 +420,6 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
               <div className="dash-stat failed">
                 <span className="label">Failed</span>
                 <span className="value fail">{queueSummary.failed}</span>
-              </div>
-              <div className="dash-stat cancelled">
-                <span className="label">Cancelled</span>
-                <span className="value">{queueSummary.cancelled}</span>
               </div>
               <div className="dash-stat total">
                 <span className="label">Total</span>
@@ -454,14 +451,14 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
         )}
 
         <div className="safe-copy-config card premium-card">
-            <div className="dashboard-header safe-copy-header" style={{ marginBottom: 24 }}>
+          <div className="dashboard-header safe-copy-header" style={{ marginBottom: 20 }}>
             <div className="safe-copy-title-block">
               <div className="safe-copy-title-icon">
-                <ShieldCheck size={20} />
+                <ShieldCheck size={18} />
               </div>
-              <div className="safe-copy-title-text">
-                <h3>Safe Copy</h3>
-                <p className="safe-copy-title-subtitle">Bit-accurate verification & checksums</p>
+              <div className="inspector-field">
+                <div className="inspector-label">Safe Copy</div>
+                <div className="inspector-meta" style={{ marginTop: 2 }}>Bit-accurate verification & checksums</div>
               </div>
             </div>
             <div className="toolbar-right">
@@ -491,8 +488,8 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
                   </div>
 
                   <div className="verification-row-inputs">
-                    <div className="input-field-group">
-                      <label>Source</label>
+                    <div className="inspector-field">
+                      <div className="inspector-label">Source</div>
                       <div className="path-entry">
                         <input
                           type="text"
@@ -505,13 +502,13 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
                           const p = await choosePath(`Select Source`);
                           if (p) updateRow(row.idx, { source_path: p });
                         }} disabled={isRunningQueue}>
-                          <FolderOpen size={16} />
+                          <FolderOpen size={14} />
                         </button>
                       </div>
                     </div>
 
-                    <div className="input-field-group">
-                      <label>Destination</label>
+                    <div className="inspector-field">
+                      <div className="inspector-label">Destination</div>
                       <div className="path-entry">
                         <input
                           type="text"
@@ -524,7 +521,7 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
                           const p = await choosePath(`Select Destination`);
                           if (p) updateRow(row.idx, { dest_path: p });
                         }} disabled={isRunningQueue}>
-                          <FolderOpen size={16} />
+                          <FolderOpen size={14} />
                         </button>
                       </div>
                     </div>
@@ -630,38 +627,45 @@ export function SafeCopy({ projectId, onJobCreated, onError }: SafeCopyProps) {
               </div>
             </div>
 
-            <div className="results-table-scroll">
-              <table className="results-table">
-                <thead>
-                  <tr>
-                    <th>Status</th>
+            <div className="results-table-scroll" style={{ height: 400 }}>
+              <TableVirtuoso
+                data={previewResults}
+                useWindowScroll={false}
+                fixedHeaderContent={() => (
+                  <tr style={{ background: "var(--bg-darker)" }}>
+                    <th style={{ width: 120 }}>Status</th>
                     <th>Relative Path</th>
-                    <th>Size</th>
+                    <th style={{ width: 100 }}>Size</th>
                     <th>Details</th>
                   </tr>
-                </thead>
-                <tbody>
-                  {previewResults.slice(0, 100).map((item, i) => (
-                    <tr key={i} className={item.status === "OK" ? "row-ok" : "row-fail"}>
-                      <td className="status-cell">
-                        {item.status === "OK" ? <CheckCircle size={14} className="ok" /> :
-                          item.status === "MISSING" ? <XCircle size={14} className="fail" /> :
-                            <AlertTriangle size={14} className="warn" />}
-                        <span className={`status-label ${item.status === "OK" ? "ok" : "fail"}`}>{item.status === "OK" ? "VERIFIED" : item.status}</span>
-                      </td>
-                      <td className="path-cell">{item.rel_path}</td>
-                      <td className="size-cell">{formatFileSize(item.source_size)}</td>
-                      <td className="detail-cell">{item.error_message || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                )}
+                itemContent={(_index, item) => (
+                  <>
+                    <td className="status-cell">
+                      {item.status === "OK" ? <CheckCircle size={14} className="ok" /> :
+                        item.status === "MISSING" ? <XCircle size={14} className="fail" /> :
+                          <AlertTriangle size={14} className="warn" />}
+                      <span className={`status-label ${item.status === "OK" ? "ok" : "fail"}`}>{item.status === "OK" ? "VERIFIED" : item.status}</span>
+                    </td>
+                    <td className="path-cell">{item.rel_path}</td>
+                    <td className="size-cell">{formatFileSize(item.source_size)}</td>
+                    <td className="detail-cell">{item.error_message || "—"}</td>
+                  </>
+                )}
+                components={{
+                  Table: ({ ...props }) => <table {...props} className="results-table" style={{ borderCollapse: 'collapse', width: '100%' }} />,
+                  TableRow: ({ item: _item, ...props }) => {
+                    const item = previewResults[props['data-index']];
+                    return <tr {...props} className={item?.status === "OK" ? "row-ok" : "row-fail"} />;
+                  }
+                }}
+              />
+
               {previewResults.length === 0 && (
                 <div className="results-empty-state">
                   Verification checked every file in the source, but this preview only shows video files.
                 </div>
               )}
-              {previewResults.length > 100 && <div className="table-footer">Showing first 100 video results...</div>}
             </div>
           </div>
         )}

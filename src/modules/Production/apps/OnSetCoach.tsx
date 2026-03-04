@@ -370,3 +370,5 @@ export const OnSetCoach: React.FC<OnSetCoachProps> = ({ project, onBack }) => {
         </div>
     );
 };
+
+export default OnSetCoach;

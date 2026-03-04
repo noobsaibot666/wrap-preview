@@ -257,17 +257,17 @@ export function BlocksView({
   return (
     <div className="scene-blocks-view">
       <div className="scene-blocks-toolbar-stack">
-        <div className="toolbar premium-toolbar scene-blocks-toolbar">
+        <div className="toolbar premium-toolbar scene-blocks-toolbar" style={{ background: "var(--inspector-bg)", borderBottom: "var(--inspector-border)", backdropFilter: "var(--inspector-glass-blur)" }}>
           <div className="toolbar-left-group">
             <div className="toolbar-segment delayed-tooltip" data-tooltip="Choose how Scene Blocks are displayed.">
-              <span className="toolbar-label">View</span>
+              <span className="toolbar-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>View</span>
               <select className="input-select" value={viewMode} onChange={(e) => setViewMode(e.target.value as ViewMode)} style={{ width: 120 }}>
                 <option value="list">List</option>
                 <option value="timeline">Timeline</option>
               </select>
             </div>
             <div className="toolbar-segment delayed-tooltip" data-tooltip="Change how clips are grouped into block sections.">
-              <span className="toolbar-label">Group</span>
+              <span className="toolbar-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Group</span>
               <select className="input-select" value={groupMode} onChange={(e) => setGroupMode(e.target.value as GroupMode)} style={{ width: 136 }}>
                 <option value="block">Block</option>
                 <option value="camera">Camera</option>
@@ -278,7 +278,7 @@ export function BlocksView({
             </div>
             <div className="toolbar-separator" />
             <div className="toolbar-segment delayed-tooltip" data-tooltip="Choose the logic used to rebuild Scene Blocks.">
-              <span className="toolbar-label">Build</span>
+              <span className="toolbar-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Build</span>
               <select
                 className="input-select"
                 value={buildMode}
@@ -291,7 +291,7 @@ export function BlocksView({
               </select>
             </div>
             <div className="toolbar-segment delayed-tooltip" data-tooltip={buildMode === "multicam_overlap" ? "Time overlap used to connect cameras into one block." : "Maximum gap before clips split into a new block."}>
-              <span className="toolbar-label">{buildMode === "multicam_overlap" ? "Window" : "Gap"}</span>
+              <span className="toolbar-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>{buildMode === "multicam_overlap" ? "Window" : "Gap"}</span>
               <input
                 className="input-text"
                 type="number"
@@ -326,61 +326,71 @@ export function BlocksView({
           </div>
         </div>
 
-        <div className="toolbar premium-toolbar scene-blocks-toolbar scene-blocks-filter-toolbar">
-          <div className="toolbar-left-group scene-blocks-filter-group">
-          <div className="camera-chip-filter">
-            <button
-              className={`btn btn-ghost btn-xs ${selectedCameras.length === 0 ? "active" : ""}`}
-              onClick={() => setSelectedCameras([])}
-            >
-              All Cameras
-            </button>
-            {cameraOptions.map((camera) => (
+        <div className="toolbar premium-toolbar scene-blocks-toolbar scene-blocks-filter-toolbar" style={{ background: "rgba(255,255,255,0.01)", borderBottom: "var(--inspector-border)" }}>
+          <div className="toolbar-left-group scene-blocks-filter-group" style={{ overflowX: "auto", whiteSpace: "nowrap" }}>
+            <div className="camera-chip-filter" style={{ display: "flex", gap: "var(--space-xs)" }}>
               <button
-                key={camera}
-                className={`btn btn-ghost btn-xs ${selectedCameras.includes(camera) ? "active" : ""}`}
-                onClick={() => toggleCamera(camera)}
+                className={`btn btn-ghost btn-xs ${selectedCameras.length === 0 ? "active" : ""}`}
+                onClick={() => setSelectedCameras([])}
+                style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 700, padding: "2px 8px" }}
               >
-                {camera}
+                All Cameras
               </button>
-            ))}
+              {cameraOptions.map((camera) => (
+                <button
+                  key={camera}
+                  className={`btn btn-ghost btn-xs ${selectedCameras.includes(camera) ? "active" : ""}`}
+                  onClick={() => toggleCamera(camera)}
+                  style={{ fontSize: 10, textTransform: "uppercase", fontWeight: 700, padding: "2px 8px" }}
+                >
+                  {camera}
+                </button>
+              ))}
+            </div>
+            <div className="toolbar-separator" />
+            <select className="input-select" value={audioFilter} onChange={(e) => setAudioFilter(e.target.value)} style={{ height: 26, fontSize: 11 }}>
+              <option value="all">All Audio</option>
+              <option value="audio_ok">Audio OK</option>
+              <option value="no_audio">No Audio</option>
+              <option value="possible_clip">Possible Clip</option>
+              <option value="very_low">Very Low</option>
+            </select>
+            <select className="input-select" value={fpsFilter} onChange={(e) => setFpsFilter(e.target.value)} style={{ height: 26, fontSize: 11 }}>
+              <option value="all">All FPS</option>
+              {fpsOptions.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+            <select className="input-select" value={resolutionFilter} onChange={(e) => setResolutionFilter(e.target.value)} style={{ height: 26, fontSize: 11 }}>
+              <option value="all">All Res</option>
+              {resolutionOptions.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+            <select className="input-select" value={codecFilter} onChange={(e) => setCodecFilter(e.target.value)} style={{ height: 26, fontSize: 11 }}>
+              <option value="all">All Codec</option>
+              {codecOptions.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+            <select className="input-select" value={dayFilter} onChange={(e) => setDayFilter(e.target.value)} style={{ height: 26, fontSize: 11 }}>
+              <option value="all">All Days</option>
+              {dayOptions.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+            <select className="input-select" value={selectFilter} onChange={(e) => setSelectFilter(e.target.value)} style={{ height: 26, fontSize: 11 }}>
+              <option value="all">All Selects</option>
+              <option value="pick">Picks</option>
+              <option value="reject">Rejects</option>
+              <option value="rated">Rated</option>
+            </select>
           </div>
-          <select className="input-select" value={audioFilter} onChange={(e) => setAudioFilter(e.target.value)}>
-            <option value="all">All Audio</option>
-            <option value="audio_ok">Audio OK</option>
-            <option value="no_audio">No Audio</option>
-            <option value="possible_clip">Possible Clip</option>
-            <option value="very_low">Very Low</option>
-          </select>
-          <select className="input-select" value={fpsFilter} onChange={(e) => setFpsFilter(e.target.value)}>
-            <option value="all">All FPS</option>
-            {fpsOptions.map((v) => <option key={v} value={v}>{v}</option>)}
-          </select>
-          <select className="input-select" value={resolutionFilter} onChange={(e) => setResolutionFilter(e.target.value)}>
-            <option value="all">All Res</option>
-            {resolutionOptions.map((v) => <option key={v} value={v}>{v}</option>)}
-          </select>
-          <select className="input-select" value={codecFilter} onChange={(e) => setCodecFilter(e.target.value)}>
-            <option value="all">All Codec</option>
-            {codecOptions.map((v) => <option key={v} value={v}>{v}</option>)}
-          </select>
-          <select className="input-select" value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
-            <option value="all">All Days</option>
-            {dayOptions.map((v) => <option key={v} value={v}>{v}</option>)}
-          </select>
-          <select className="input-select" value={selectFilter} onChange={(e) => setSelectFilter(e.target.value)}>
-            <option value="all">All Selects</option>
-            <option value="pick">Picks</option>
-            <option value="reject">Rejects</option>
-            <option value="rated">Rated</option>
-          </select>
-        </div>
         </div>
       </div>
 
       <div className="scene-blocks-content custom-scrollbar">
-        {filteredBlocks.length === 0 ? (
-          <div className="empty-state">No blocks match current filters.</div>
+        {loading ? (
+          <div className="clip-list scene-blocks-list" style={{ padding: "var(--space-md)" }}>
+            {[1, 2, 3].map(i => <BlockSkeleton key={i} />)}
+          </div>
+        ) : filteredBlocks.length === 0 ? (
+          <div className="empty-state">
+            <Rows3 size={48} style={{ opacity: 0.2, marginBottom: 16 }} />
+            <p>No blocks match current filters.</p>
+          </div>
         ) : viewMode === "timeline" ? (
           <TimelineView blocks={filteredBlocks} onSelectBlock={toggleBlock} selected={selected} />
         ) : (
@@ -400,8 +410,14 @@ export function BlocksView({
                       }}
                       className={`clip-card scene-block-card ${selected.has(item.block.id) ? "selected" : ""} ${isFocused ? "focused" : ""}`}
                       onClick={() => setFocusedBlockId(item.block.id)}
+                      style={{
+                        background: "var(--inspector-bg)",
+                        border: "var(--inspector-border)",
+                        backdropFilter: "var(--inspector-glass-blur)",
+                        borderRadius: "var(--radius-lg)"
+                      }}
                     >
-                      <div className="clip-card-header">
+                      <div className="clip-card-header" style={{ borderBottom: "var(--inspector-border)", paddingBottom: 10, marginBottom: 12 }}>
                         <div className="clip-card-title-group">
                           <button
                             type="button"
@@ -412,9 +428,9 @@ export function BlocksView({
                               void renameBlock(item.block.id, item.block.name);
                             }}
                           >
-                            <Pencil size={17} />
+                            <Pencil size={15} />
                           </button>
-                          <span className="clip-filename">{item.block.name}</span>
+                          <span className="clip-filename" style={{ fontSize: "var(--inspector-value-size)", fontWeight: "var(--inspector-value-weight)" }}>{item.block.name}</span>
                         </div>
                         <div className="clip-card-header-right scene-block-card-actions">
                           {groupMode === "block" && (
@@ -429,7 +445,7 @@ export function BlocksView({
                                 }}
                                 disabled={blockIndex <= 0}
                               >
-                                <ChevronUp size={17} />
+                                <ChevronUp size={15} />
                               </button>
                               <button
                                 type="button"
@@ -441,7 +457,7 @@ export function BlocksView({
                                 }}
                                 disabled={blockIndex >= orderedBlocks.length - 1}
                               >
-                                <ChevronDown size={17} />
+                                <ChevronDown size={15} />
                               </button>
                             </>
                           )}
@@ -478,15 +494,15 @@ export function BlocksView({
                         </div>
                       </div>
 
-                      <div className="clip-metadata-compact" style={{ marginBottom: 8 }}>
-                        <span className="metadata-tag">{item.block.clip_count} clips</span>
-                        <span className="metadata-tag">Duration {stats.duration}</span>
-                        <span className="metadata-tag">Cameras {stats.cameraCount}</span>
-                        <span className="metadata-tag">Audio {stats.audioPresentPct}%</span>
-                        <span className="metadata-tag">Confidence {(item.block.confidence * 100).toFixed(0)}%</span>
-                        {stats.mixedFps && <span className="metadata-tag danger-tag">Mixed FPS</span>}
-                        {stats.missingTimecode && <span className="metadata-tag danger-tag">No TC</span>}
-                        {stats.audioPresentPct < 100 && <span className="metadata-tag warn-tag">Partial Audio ({stats.audioPresentPct}%)</span>}
+                      <div className="clip-metadata-compact" style={{ marginBottom: 12, opacity: 0.8 }}>
+                        <span className="metadata-tag" style={{ background: "rgba(255,255,255,0.03)", border: "var(--inspector-border)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700 }}>{item.block.clip_count} CLIPS</span>
+                        <span className="metadata-tag" style={{ background: "rgba(255,255,255,0.03)", border: "var(--inspector-border)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700 }}>{stats.duration}</span>
+                        <span className="metadata-tag" style={{ background: "rgba(255,255,255,0.03)", border: "var(--inspector-border)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700 }}>CAM {stats.cameraCount}</span>
+                        <span className="metadata-tag" style={{ background: "rgba(255,255,255,0.03)", border: "var(--inspector-border)", color: "var(--text-secondary)", fontSize: 10, fontWeight: 700 }}>AUDIO {stats.audioPresentPct}%</span>
+                        <span className="metadata-tag" style={{ background: "rgba(255,255,255,0.03)", border: "var(--inspector-border)", color: "var(--status-ok)", fontSize: 10, fontWeight: 700 }}>CONFIDENCE {(item.block.confidence * 100).toFixed(0)}%</span>
+                        {stats.mixedFps && <span className="metadata-tag danger-tag" style={{ fontSize: 10, fontWeight: 700 }}>MIXED FPS</span>}
+                        {stats.missingTimecode && <span className="metadata-tag danger-tag" style={{ fontSize: 10, fontWeight: 700 }}>NO TC</span>}
+                        {stats.audioPresentPct < 100 && <span className="metadata-tag warn-tag" style={{ fontSize: 10, fontWeight: 700 }}>AUDIO WARN ({stats.audioPresentPct}%)</span>}
                       </div>
 
                       <div style={{ display: "grid", gap: 10 }}>
@@ -604,6 +620,27 @@ function TimelineView({
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+function BlockSkeleton() {
+  return (
+    <div className="clip-card scene-block-card skeleton-pulse" style={{ background: "var(--inspector-bg)", border: "var(--inspector-border)", borderRadius: "var(--radius-lg)", marginBottom: 16, height: 260 }}>
+      <div className="clip-card-header" style={{ borderBottom: "var(--inspector-border)", padding: "12px 16px", height: 44 }}>
+        <div style={{ width: 140, height: 16, background: "rgba(255,255,255,0.05)", borderRadius: 4 }} />
+      </div>
+      <div style={{ padding: 16 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} style={{ width: 80, height: 12, background: "rgba(255,255,255,0.05)", borderRadius: 4 }} />
+          ))}
+        </div>
+        <div style={{ height: 140, background: "rgba(255,255,255,0.03)", borderRadius: 8, display: "flex", gap: 2, padding: 4 }}>
+          {[1, 2, 3, 4, 5].map(i => (
+            <div key={i} style={{ flex: 1, height: "100%", background: "rgba(255,255,255,0.02)", borderRadius: 4 }} />
+          ))}
+        </div>
       </div>
     </div>
   );

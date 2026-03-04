@@ -314,53 +314,53 @@ export function FolderCreator() {
       depth === 0 ? "depth-main" : depth === 1 ? "depth-primary" : depth === 2 ? "depth-secondary" : "depth-detail";
 
     return (
-    <div key={node.id} className={`folder-node-wrapper ${depthClass}`} style={{ marginLeft: depth > 0 ? 24 : 0 }}>
-      <div className={`folder-node-item ${node.id === "root" || depth === 0 ? "root-node" : ""} ${depthClass}`}>
-        <div className="folder-node-drag-handle">
-          <Hash size={12} opacity={0.3} />
-        </div>
-        <div className={`folder-node-icon ${node.type === "folder" ? "folder-kind" : "file-kind"}`}>
-          {node.type === "folder" ? <Folder size={18} fill="currentColor" fillOpacity={0.1} /> : <FileType size={18} />}
-        </div>
-        <div className="folder-node-content">
-          <div className="folder-node-title-row">
-            <input
-              className="folder-node-input"
-              value={node.name}
-              onChange={(e) => updateName(node.id, e.target.value)}
-              placeholder="Name..."
-              spellCheck={false}
-            />
-            {hierarchyLabel && <span className={`folder-node-tier ${depthClass}`}>{hierarchyLabel}</span>}
+      <div key={node.id} className={`folder-node-wrapper ${depthClass}`} style={{ marginLeft: depth > 0 ? 24 : 0 }}>
+        <div className={`folder-node-item ${node.id === "root" || depth === 0 ? "root-node" : ""} ${depthClass}`}>
+          <div className="folder-node-drag-handle">
+            <Hash size={12} opacity={0.3} />
+          </div>
+          <div className={`folder-node-icon ${node.type === "folder" ? "folder-kind" : "file-kind"}`}>
+            {node.type === "folder" ? <Folder size={18} fill="currentColor" fillOpacity={0.1} /> : <FileType size={18} />}
+          </div>
+          <div className="folder-node-content">
+            <div className="folder-node-title-row">
+              <input
+                className="folder-node-input"
+                value={node.name}
+                onChange={(e) => updateName(node.id, e.target.value)}
+                placeholder="Name..."
+                spellCheck={false}
+              />
+              {hierarchyLabel && <span className={`folder-node-tier ${depthClass}`}>{hierarchyLabel}</span>}
+            </div>
+          </div>
+          <div className="folder-node-actions">
+            {node.type === "folder" && (
+              <button className="btn-icon-sm" onClick={() => addNode(node.id, "folder")} title="Add Child Folder">
+                <Plus size={14} />
+              </button>
+            )}
+            {(node.id !== "root" && depth !== 0) && (
+              <button className="btn-icon-sm danger" onClick={() => removeNode(node.id)} title="Remove">
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         </div>
-        <div className="folder-node-actions">
-          {node.type === "folder" && (
-            <button className="btn-icon-sm" onClick={() => addNode(node.id, "folder")} title="Add Child Folder">
-              <Plus size={14} />
-            </button>
-          )}
-          {(node.id !== "root" && depth !== 0) && (
-            <button className="btn-icon-sm danger" onClick={() => removeNode(node.id)} title="Remove">
-              <Trash2 size={14} />
-            </button>
-          )}
-        </div>
+        {node.children && node.children.length > 0 && (
+          <div className="folder-node-children">
+            {node.children.map(child => renderNode(child, depth + 1))}
+          </div>
+        )}
       </div>
-      {node.children && node.children.length > 0 && (
-        <div className="folder-node-children">
-          {node.children.map(child => renderNode(child, depth + 1))}
-        </div>
-      )}
-    </div>
-  );
+    );
   };
 
   return (
     <div className="folder-creator-container">
       <div className="folder-creator-header">
         <div className="header-left">
-          <div className="badge accent-badge">VFX PIPELINE</div>
+          <div className="accent-badge">VFX PIPELINE</div>
           <h2>Project Structure Creator</h2>
           <p>Build and export sophisticated directory hierarchies for macOS & Windows.</p>
         </div>
@@ -390,7 +390,11 @@ export function FolderCreator() {
       </div>
 
       {(statusMessage || errorMessage) && (
-        <div className={`folder-creator-status ${errorMessage ? "error" : "success"}`}>
+        <div className={`folder-creator-status ${errorMessage ? "error" : "success"}`} style={{
+          background: errorMessage ? "rgba(239, 68, 68, 0.1)" : "rgba(0, 209, 255, 0.05)",
+          border: `1px solid ${errorMessage ? "rgba(239, 68, 68, 0.2)" : "rgba(0, 209, 255, 0.1)"}`,
+          color: errorMessage ? "var(--status-red)" : "var(--color-accent)"
+        }}>
           {errorMessage || statusMessage}
         </div>
       )}
@@ -399,9 +403,9 @@ export function FolderCreator() {
         <div className="workspace-section segment">
           <div className="segment-header">
             <FolderTree size={16} />
-            <span>Visual Builder</span>
+            <span style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Visual Builder</span>
           </div>
-          <div className="visual-preview premium-scroll">
+          <div className="visual-preview premium-scroll" style={{ background: "rgba(0,0,0,0.2)", border: "var(--inspector-border)", borderRadius: "var(--radius-md)" }}>
             {structure.map(node => renderNode(node))}
           </div>
         </div>
@@ -409,9 +413,9 @@ export function FolderCreator() {
         <div className="workspace-section segment">
           <div className="segment-header">
             <ChevronRight size={16} />
-            <span>Structure Review</span>
+            <span style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Structure Review</span>
           </div>
-          <div className="path-preview premium-scroll">
+          <div className="path-preview premium-scroll" style={{ background: "rgba(0,0,0,0.2)", border: "var(--inspector-border)", borderRadius: "var(--radius-md)" }}>
             <div className="path-list">
               {flattenedPaths.map((path, idx) => (
                 <div key={idx} className="path-item" style={{ animationDelay: `${idx * 0.05}s` }}>
@@ -427,12 +431,13 @@ export function FolderCreator() {
       <style>{`
         .folder-creator-container {
           padding: 32px;
-          background: var(--color-bg-alt);
-          border-radius: 16px;
-          border: 1px solid rgba(255,255,255,0.05);
-          color: var(--color-text);
+          background: var(--inspector-bg);
+          backdrop-filter: var(--inspector-glass-blur);
+          border-radius: var(--radius-lg);
+          border: var(--inspector-border);
+          color: var(--text-primary);
           animation: fadeInFolderCreator 0.36s ease;
-          box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+          box-shadow: var(--shadow-lg);
           height: calc(100vh - 180px);
           display: flex;
           flex-direction: column;
@@ -453,26 +458,28 @@ export function FolderCreator() {
         .accent-badge {
             background: var(--color-accent-soft);
             color: var(--color-accent);
-            font-size: 10px;
-            font-weight: 800;
-            padding: 4px 8px;
-            border-radius: 4px;
+            font-size: var(--inspector-label-size);
+            font-weight: var(--inspector-label-weight);
+            letter-spacing: var(--inspector-label-spacing);
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
             width: fit-content;
             margin-bottom: 12px;
-            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            border: 1px solid var(--color-accent-glow);
         }
 
         .folder-creator-header h2 {
           margin: 0;
-          font-size: 2rem;
+          font-size: 1.75rem;
           font-weight: 700;
           letter-spacing: -0.02em;
         }
 
         .folder-creator-header p {
           margin: 8px 0 0;
-          opacity: 0.5;
-          font-size: 1rem;
+          color: var(--text-secondary);
+          font-size: 0.95rem;
         }
 
         .folder-creator-workspace {
@@ -485,21 +492,8 @@ export function FolderCreator() {
         .folder-creator-status {
           margin-bottom: 18px;
           padding: 12px 14px;
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(255,255,255,0.02);
-          color: rgba(255,255,255,0.84);
+          border-radius: var(--radius-md);
           font-size: 0.92rem;
-        }
-        .folder-creator-status.error {
-          border-color: rgba(180, 82, 82, 0.28);
-          background: rgba(120, 38, 38, 0.16);
-          color: #f4c1c1;
-        }
-        .folder-creator-status.success {
-          border-color: rgba(74, 126, 126, 0.28);
-          background: rgba(28, 52, 52, 0.16);
-          color: #d0e7e7;
         }
 
         .workspace-section {
@@ -513,18 +507,11 @@ export function FolderCreator() {
             align-items: center;
             gap: 10px;
             padding: 0 4px 12px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            opacity: 0.4;
+            opacity: 0.8;
         }
 
         .visual-preview, .path-preview {
-          background: rgba(0,0,0,0.2);
-          border-radius: 12px;
           padding: 24px;
-          border: 1px solid rgba(255,255,255,0.03);
           overflow-y: auto;
           flex: 1;
         }
@@ -537,29 +524,28 @@ export function FolderCreator() {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 12px 14px;
+          padding: 10px 12px;
           background: rgba(255,255,255,0.02);
-          border-radius: 10px;
-          margin-bottom: 8px;
+          border-radius: var(--radius-md);
+          margin-bottom: 6px;
           border: 1px solid rgba(255,255,255,0.03);
-          transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+          transition: all 0.18s ease;
           animation: nodeFade 0.24s ease;
         }
 
         .root-node {
-            background: rgba(80, 146, 92, 0.12);
-            border-color: rgba(110, 188, 126, 0.22);
+            background: rgba(0, 209, 255, 0.04);
+            border-color: rgba(0, 209, 255, 0.1);
         }
 
         @keyframes nodeFade {
-          from { opacity: 0; }
-          to { opacity: 1; }
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
         }
 
         .folder-node-item:hover {
-          background: rgba(255,255,255,0.04);
-          border-color: rgba(126, 208, 143, 0.16);
-          transform: translateY(-1px);
+          background: rgba(255,255,255,0.05);
+          border-color: rgba(255,255,255,0.1);
         }
 
         .folder-node-icon {
@@ -571,11 +557,11 @@ export function FolderCreator() {
         }
 
         .folder-node-icon.folder-kind {
-          color: #79ca86;
+          color: var(--color-accent);
         }
 
         .folder-node-icon.file-kind {
-          color: rgba(255,255,255,0.48);
+          color: var(--text-muted);
         }
 
         .folder-node-content {
@@ -592,8 +578,8 @@ export function FolderCreator() {
         .folder-node-input {
           background: transparent;
           border: none;
-          color: white;
-          font-size: 0.95rem;
+          color: var(--text-primary);
+          font-size: 0.9rem;
           font-weight: 500;
           flex: 1;
           outline: none;
@@ -602,25 +588,23 @@ export function FolderCreator() {
 
         .folder-node-tier {
           padding: 2px 8px;
-          border-radius: 999px;
-          border: 1px solid rgba(126, 208, 143, 0.14);
-          background: rgba(67, 112, 76, 0.14);
-          color: rgba(205, 245, 213, 0.8);
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 0.08em;
+          border-radius: var(--radius-full);
+          border: 1px solid rgba(255,255,255,0.05);
+          background: rgba(255,255,255,0.03);
+          color: var(--text-muted);
+          font-size: var(--inspector-label-size);
+          font-weight: var(--inspector-label-weight);
+          letter-spacing: var(--inspector-label-spacing);
           text-transform: uppercase;
           white-space: nowrap;
         }
 
         .folder-node-tier.depth-primary {
-          background: rgba(56, 98, 65, 0.12);
-          color: rgba(190, 232, 198, 0.76);
+          opacity: 0.8;
         }
 
         .folder-node-tier.depth-secondary {
-          background: rgba(44, 83, 52, 0.1);
-          color: rgba(176, 219, 184, 0.72);
+          opacity: 0.6;
         }
 
         .folder-node-tier.depth-detail {
@@ -631,47 +615,46 @@ export function FolderCreator() {
           display: flex;
           gap: 6px;
           opacity: 0;
-          transform: translateX(10px);
           transition: all 0.2s ease;
         }
 
         .folder-node-item:hover .folder-node-actions {
           opacity: 1;
-          transform: translateX(0);
         }
 
         .folder-node-children {
           position: relative;
-          border-left: 1px solid rgba(120, 196, 134, 0.1);
+          border-left: 1px solid rgba(255,255,255,0.03);
           margin-left: 10px;
           padding-left: 12px;
         }
 
         .btn-glow:hover {
-            box-shadow: 0 0 20px var(--color-accent-soft);
+            box-shadow: 0 0 20px var(--color-accent-glow);
         }
 
         .btn-glass {
-            background: rgba(255,255,255,0.03);
+            background: rgba(255,255,255,0.02);
             backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.04);
         }
 
         .path-list {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 2px;
         }
 
         .path-item {
             display: flex;
             align-items: center;
-            gap: 16px;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-family: inherit;
-            font-size: 13px;
+            gap: 12px;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
             animation: fadeInPath 0.3s ease forwards;
             opacity: 0;
+            background: rgba(255,255,255,0.01);
         }
 
         @keyframes fadeInPath {
@@ -681,11 +664,11 @@ export function FolderCreator() {
         .path-index {
             opacity: 0.2;
             font-size: 10px;
-            font-weight: 700;
+            font-weight: 900;
         }
 
         .path-string {
-            opacity: 0.8;
+            opacity: 0.6;
             letter-spacing: 0.02em;
         }
 
@@ -693,7 +676,7 @@ export function FolderCreator() {
             width: 4px;
         }
         .premium-scroll::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05);
             border-radius: 10px;
         }
       `}</style>

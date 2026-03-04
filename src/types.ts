@@ -229,7 +229,7 @@ export interface ReviewCoreExtractFrameResult {
 
 export interface ReviewCoreApprovalState {
     asset_version_id: string;
-    status: "draft" | "in_review" | "approved" | "rejected";
+    status: "draft" | "in_review" | "approved" | "rejected" | "changes_requested";
     approved_at?: string | null;
     approved_by?: string | null;
 }
@@ -351,4 +351,16 @@ export interface LookPreset {
     id: string;
     name: string;
     description: string;
+}
+
+export type Phase = "pre" | "post";
+export interface PhaseData {
+    projectId: string | null;
+    projectName: string;
+    clips: ClipWithThumbnails[];
+    selectedClipIds: Set<string>;
+    scanning: boolean;
+    extracting: boolean;
+    extractProgress: { done: number; total: number };
+    thumbnailCache: Record<string, string>;
 }

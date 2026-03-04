@@ -164,11 +164,12 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
 
         <div className="export-panel-header">
           <div className="export-header-icon">
-            <FileDown size={28} />
+            <FileDown size={24} />
           </div>
-          <div className="export-header-text">
-            <h2>Delivery & Export</h2>
-            <p>Group clips into timelines or packs.</p>
+          <div className="inspector-field">
+            <div className="inspector-label">Export</div>
+            <h2 style={{ fontSize: "1.4rem", fontWeight: 700, margin: "2px 0 0" }}>Delivery & Export</h2>
+            <div className="inspector-meta" style={{ marginTop: 2 }}>Group clips into timelines or packs.</div>
           </div>
         </div>
 
@@ -208,50 +209,50 @@ export const ExportPanel: React.FC<ExportPanelProps> = ({
               </div>
               <div className="scope-grid">
                 <button onClick={() => setScope("picks")} disabled={picksCount === 0} className={`scope-item-compact ${scope === "picks" ? "active" : ""} ${picksCount === 0 ? "disabled" : ""}`}>
-                  <Check size={16} />
+                  <Check size={14} />
                   <div className="scope-meta">
                     <span className="scope-name">Picks</span>
-                    <span className="scope-val">{picksCount}</span>
+                    <span className="scope-val">{picksCount} assets</span>
                   </div>
                 </button>
 
                 <button onClick={() => setScope("rated")} disabled={ratedCount === 0} className={`scope-item-compact ${scope === "rated" ? "active" : ""} ${ratedCount === 0 ? "disabled" : ""}`}>
-                  <Star size={16} />
+                  <Star size={14} />
                   <div className="scope-meta">
                     <span className="scope-name">Rated</span>
-                    <span className="scope-val">{ratedCount}</span>
+                    <span className="scope-val">{ratedCount} assets</span>
                   </div>
                 </button>
 
                 <button onClick={() => setScope("current_filter")} className={`scope-item-compact ${scope === "current_filter" ? "active" : ""}`}>
-                  <Grid2X2 size={16} />
+                  <Grid2X2 size={14} />
                   <div className="scope-meta">
                     <span className="scope-name">Active View</span>
-                    <span className="scope-val">Match Filter</span>
+                    <span className="scope-val">Matching Filter</span>
                   </div>
                 </button>
 
                 <button onClick={() => setScope("all")} className={`scope-item-compact ${scope === "all" ? "active" : ""}`}>
-                  <Film size={16} />
+                  <Film size={14} />
                   <div className="scope-meta">
                     <span className="scope-name">All Media</span>
-                    <span className="scope-val">{allCount}</span>
+                    <span className="scope-val">{allCount} assets</span>
                   </div>
                 </button>
 
                 <button onClick={() => setScope("selected_blocks")} disabled={selectedBlockIds.length === 0} className={`scope-item-compact ${scope === "selected_blocks" ? "active" : ""} ${selectedBlockIds.length === 0 ? "disabled" : ""}`}>
-                  <Package size={16} />
+                  <Package size={14} />
                   <div className="scope-meta">
-                    <span className="scope-name">Selected Blocks</span>
-                    <span className="scope-val">{selectedBlockIds.length}</span>
+                    <span className="scope-name">Blocks</span>
+                    <span className="scope-val">{selectedBlockIds.length} selected</span>
                   </div>
                 </button>
 
                 <button onClick={() => setScope("rated_min")} disabled={ratedMinCount === 0} className={`scope-item-compact ${scope === "rated_min" ? "active" : ""} ${ratedMinCount === 0 ? "disabled" : ""}`}>
-                  <Star size={16} />
+                  <Star size={14} />
                   <div className="scope-meta">
                     <span className="scope-name">Min Rating</span>
-                    <span className="scope-val">≥ {minRating}</span>
+                    <span className="scope-val">Rating ≥ {minRating}</span>
                   </div>
                 </button>
               </div>
