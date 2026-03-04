@@ -341,6 +341,27 @@ export interface ProductionPreset {
     updated_at: string;
 }
 
+export interface ProductionQuickSetupRow {
+    key: string;
+    label: string;
+    value: string;
+    icon: string;
+    source: string[];
+    status?: "ready" | "missing";
+    badge?: string;
+}
+
+export interface ProductionDetailItem {
+    label: string;
+    text: string;
+    source: string[];
+}
+
+export interface ProductionDetailSection {
+    section: string;
+    items: ProductionDetailItem[];
+}
+
 export interface ProductionLookRecommendation {
     slot: string;
     camera_label: string;
@@ -360,6 +381,8 @@ export interface ProductionLookRecommendation {
     monitoring_class_basis: string;
     discipline_checklist: string[];
     warnings: string[];
+    quickSetup: ProductionQuickSetupRow[];
+    details: ProductionDetailSection[];
 }
 
 export interface ProductionLookOutputs {
@@ -376,6 +399,43 @@ export interface ProductionMatchPresetPayload {
         camera_label: string;
         checklist: string[];
     }>;
+}
+
+export interface CameraMatchClipInput {
+    slot: string;
+    clip_path: string;
+}
+
+export interface CameraMatchMetrics {
+    luma_histogram: number[];
+    red_histogram: number[];
+    green_histogram: number[];
+    blue_histogram: number[];
+    rgb_balance: {
+        red: number;
+        green: number;
+        blue: number;
+    };
+    highlight_threshold: number;
+    midtone_density: number;
+    luma_mid: number;
+}
+
+export interface CameraMatchAnalysis {
+    slot: string;
+    clip_path: string;
+    clip_name: string;
+    frame_path: string;
+    width: number;
+    height: number;
+    metrics: CameraMatchMetrics;
+    suggestions: string[];
+    reference: boolean;
+}
+
+export interface CameraMatchResult {
+    analyses: CameraMatchAnalysis[];
+    generated_at: string;
 }
 
 export interface CameraProfile {
