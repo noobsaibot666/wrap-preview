@@ -7,12 +7,15 @@ import {
   ProductionMatchPresetPayload,
   ProductionQuickSetupRow,
 } from "../../types";
-import { findCameraProfile, listCameraBrands, listModelsByBrand, listModes, ModeProfile } from "./cameraProfiles";
+import { findCameraProfile, listCameraBrands, listModelsByBrand, listModes, ModeProfile, SignalProfile } from "./cameraProfiles";
 
 export const PRODUCTION_SLOTS = ["A", "B", "C"] as const;
 export const LOOK_TARGETS = [
-  { id: "arri_inspired", label: "ARRI-inspired", helper: "Soft shoulder and calm highlight roll-off." },
-  { id: "fuji_inspired", label: "Fuji-inspired", helper: "Gentle separation and cleaner greens." },
+  { id: "arri_inspired", label: "ARRI-inspired", helper: "Keep highlights calm and skin neutral." },
+  { id: "kodak_inspired", label: "Kodak-inspired", helper: "Warmer print intent. Protect highlights and keep saturation restrained." },
+  { id: "fuji_inspired", label: "Fuji-inspired", helper: "Cooler greens and cleaner mixed-light control." },
+  { id: "red_style", label: "RED-style", helper: "Bold monitoring taste only after technical exposure is locked." },
+  { id: "panasonic_style", label: "Panasonic-style", helper: "Neutral WB with conservative specular control." },
   { id: "cine_neutral", label: "Clean Cine Neutral", helper: "Technical neutral baseline for the day." },
   { id: "custom", label: "Custom notes", helper: "Notes are exported and only shape outputs when Custom is selected." },
 ] as const;
@@ -23,7 +26,7 @@ export const LIGHTING_CONSTRAINTS = [
 ] as const;
 
 type LightingKey = "controlled" | "mixed" | "run_and_gun";
-type SignalProfileKey = "BMD_FILM_GEN5" | "N_LOG" | "RED_IPP2" | "REC709";
+type SignalProfileKey = Extract<SignalProfile, "BMD_FILM_GEN5" | "C_LOG2" | "F_LOG2" | "LOG_C" | "N_LOG" | "REC709" | "RED_IPP2" | "S_LOG3" | "V_LOG">;
 
 interface SignalRule {
   signalId: SignalProfileKey;
@@ -40,6 +43,56 @@ interface SignalRule {
   monitoringWarning: string;
   disciplineChecklist: string[];
 }
+
+const TARGET_LOOK_RULES: Record<string, {
+  targetRuleId: string;
+  wbBiasNote: string;
+  monitoringBias: string;
+  disciplineNote: string;
+}> = {
+  arri_inspired: {
+    targetRuleId: "RULE_LOOK_ARRI_INSPIRED_01",
+    wbBiasNote: "keep skin neutral and avoid cool drift",
+    monitoringBias: "technical-first monitoring",
+    disciplineNote: "protect the shoulder before adding more stop",
+  },
+  kodak_inspired: {
+    targetRuleId: "RULE_LOOK_KODAK_INSPIRED_01",
+    wbBiasNote: "keep warmth controlled and avoid yellow drift",
+    monitoringBias: "neutral LUT with restrained saturation",
+    disciplineNote: "keep print-like warmth out of the negative",
+  },
+  fuji_inspired: {
+    targetRuleId: "RULE_LOOK_FUJI_INSPIRED_01",
+    wbBiasNote: "hold greens clean and keep magenta trim gentle",
+    monitoringBias: "neutral LUT with softer saturation",
+    disciplineNote: "protect greens in mixed light before changing contrast",
+  },
+  red_style: {
+    targetRuleId: "RULE_LOOK_RED_STYLE_01",
+    wbBiasNote: "keep WB neutral-warm and avoid cyan drift",
+    monitoringBias: "technical LUT before bold contrast taste",
+    disciplineNote: "protect highlights before chasing punch",
+  },
+  panasonic_style: {
+    targetRuleId: "RULE_LOOK_PANASONIC_STYLE_01",
+    wbBiasNote: "keep faces neutral and prevent green drift",
+    monitoringBias: "neutral LUT with conservative highlight checks",
+    disciplineNote: "protect speculars before lifting density",
+  },
+  cine_neutral: {
+    targetRuleId: "RULE_LOOK_CINE_NEUTRAL_01",
+    wbBiasNote: "keep WB neutral and steady",
+    monitoringBias: "neutral LUT only",
+    disciplineNote: "keep every camera technically aligned first",
+  },
+  custom: {
+    targetRuleId: "RULE_LOOK_CUSTOM_01",
+    wbBiasNote: "follow the custom note without changing profile facts",
+    monitoringBias: "neutral LUT until the note is confirmed",
+    disciplineNote: "treat the note as monitoring intent, not sensor behavior",
+  },
+};
 
 const SIGNAL_RULES: Record<SignalProfileKey, SignalRule> = {
   BMD_FILM_GEN5: {
@@ -66,6 +119,30 @@ const SIGNAL_RULES: Record<SignalProfileKey, SignalRule> = {
       "Recheck kelvin whenever the source mix changes.",
     ],
   },
+  LOG_C: {
+    signalId: "LOG_C",
+    exposureRuleId: "RULE_LOGC_IRE_01",
+    wbRuleId: "RULE_LOGC_WB_01",
+    monitorRuleId: "RULE_LOGC_MON_01",
+    detailRuleId: "RULE_DETAIL_OFF_01",
+    isoRuleId: "RULE_ISO_NATIVE_01",
+    skinIre: [41, 47],
+    highlightCeiling: 94,
+    wbRange: {
+      controlled: "4300-5600K",
+      mixed: "4000-5200K",
+      run_and_gun: "3600-5600K",
+    },
+    tintBias: "neutral skin bias",
+    monitoringLabel: "Technical LUT",
+    monitoringWarning: "Don't trust Rec709",
+    disciplineChecklist: [
+      "Keep the shoulder clean before lifting faces.",
+      "Read skin off false color or waveform.",
+      "Stay neutral before creative contrast tweaks.",
+      "Reset WB as the source mix changes.",
+    ],
+  },
   N_LOG: {
     signalId: "N_LOG",
     exposureRuleId: "RULE_NLOG_IRE_01",
@@ -88,6 +165,102 @@ const SIGNAL_RULES: Record<SignalProfileKey, SignalRule> = {
       "Lock tint early when practicals go green.",
       "Use false color or waveform for exposure calls.",
       "Recheck white balance after every location shift.",
+    ],
+  },
+  S_LOG3: {
+    signalId: "S_LOG3",
+    exposureRuleId: "RULE_SLOG3_IRE_01",
+    wbRuleId: "RULE_SLOG3_WB_01",
+    monitorRuleId: "RULE_SLOG3_MON_01",
+    detailRuleId: "RULE_DETAIL_OFF_01",
+    isoRuleId: "RULE_ISO_NATIVE_01",
+    skinIre: [41, 48],
+    highlightCeiling: 94,
+    wbRange: {
+      controlled: "4300-5600K",
+      mixed: "4000-5200K",
+      run_and_gun: "3600-5600K",
+    },
+    tintBias: "slight magenta bias",
+    monitoringLabel: "Technical LUT",
+    monitoringWarning: "Don't trust Rec709",
+    disciplineChecklist: [
+      "Hold highlights before lifting midtones.",
+      "Use a technical LUT for exposure calls.",
+      "Match WB before changing contrast taste.",
+      "Keep detail and NR neutral.",
+    ],
+  },
+  C_LOG2: {
+    signalId: "C_LOG2",
+    exposureRuleId: "RULE_CLOG2_IRE_01",
+    wbRuleId: "RULE_CLOG2_WB_01",
+    monitorRuleId: "RULE_CLOG2_MON_01",
+    detailRuleId: "RULE_DETAIL_OFF_01",
+    isoRuleId: "RULE_ISO_NATIVE_01",
+    skinIre: [42, 49],
+    highlightCeiling: 93,
+    wbRange: {
+      controlled: "4300-5600K",
+      mixed: "4000-5200K",
+      run_and_gun: "3600-5600K",
+    },
+    tintBias: "slight magenta bias",
+    monitoringLabel: "Technical LUT",
+    monitoringWarning: "Don't trust Rec709",
+    disciplineChecklist: [
+      "Watch the ceiling before adding more stop.",
+      "Keep skin centered before saturation checks.",
+      "Set WB first, contrast second.",
+      "Keep in-camera texture controls neutral.",
+    ],
+  },
+  V_LOG: {
+    signalId: "V_LOG",
+    exposureRuleId: "RULE_VLOG_IRE_01",
+    wbRuleId: "RULE_VLOG_WB_01",
+    monitorRuleId: "RULE_VLOG_MON_01",
+    detailRuleId: "RULE_DETAIL_OFF_01",
+    isoRuleId: "RULE_ISO_NATIVE_01",
+    skinIre: [42, 48],
+    highlightCeiling: 92,
+    wbRange: {
+      controlled: "4300-5600K",
+      mixed: "4000-5200K",
+      run_and_gun: "3600-5600K",
+    },
+    tintBias: "neutral-warm bias",
+    monitoringLabel: "Neutral LUT",
+    monitoringWarning: "Don't trust Rec709",
+    disciplineChecklist: [
+      "Protect speculars before lifting density.",
+      "Keep WB warm-neutral on faces.",
+      "Use scopes for exposure, LUT for sanity check.",
+      "Hold sharpening and NR down.",
+    ],
+  },
+  F_LOG2: {
+    signalId: "F_LOG2",
+    exposureRuleId: "RULE_FLOG2_IRE_01",
+    wbRuleId: "RULE_FLOG2_WB_01",
+    monitorRuleId: "RULE_FLOG2_MON_01",
+    detailRuleId: "RULE_DETAIL_OFF_01",
+    isoRuleId: "RULE_ISO_NATIVE_01",
+    skinIre: [42, 49],
+    highlightCeiling: 92,
+    wbRange: {
+      controlled: "4300-5600K",
+      mixed: "4000-5200K",
+      run_and_gun: "3600-5600K",
+    },
+    tintBias: "slight magenta bias",
+    monitoringLabel: "Neutral LUT",
+    monitoringWarning: "Don't trust Rec709",
+    disciplineChecklist: [
+      "Keep skin soft and even before contrast tweaks.",
+      "Protect highlights in mixed light.",
+      "Use a neutral transform for exposure calls.",
+      "Keep detail and NR at minimum.",
     ],
   },
   RED_IPP2: {
@@ -355,9 +528,9 @@ function getSignalRule(mode: ModeProfile): SignalRule | null {
 
 function formatIsoQuick(mode: ModeProfile, selectedIso: number): string {
   if (mode.baseISO.length <= 1) {
-    return `Base ${selectedIso} (stay base)`;
+    return `Base ${selectedIso}`;
   }
-  return `${mode.baseISO.join("/")} dual native • on ${selectedIso}`;
+  return `${mode.baseISO.join("/")} dual • ${selectedIso}`;
 }
 
 function formatExposureQuick(rule: SignalRule | null): { value: string; badge?: string } {
@@ -365,7 +538,7 @@ function formatExposureQuick(rule: SignalRule | null): { value: string; badge?: 
     return { value: "—", badge: "Needs profile data" };
   }
   return {
-    value: `Skin ${rule.skinIre[0]}-${rule.skinIre[1]} IRE • Highlights < ${rule.highlightCeiling} IRE`,
+    value: `Skin ${rule.skinIre[0]}-${rule.skinIre[1]} • Hi < ${rule.highlightCeiling}`,
   };
 }
 
@@ -394,7 +567,8 @@ function buildDetails(
   discipline_checklist: string[],
   warnings: string[],
 ): ProductionDetailSection[] {
-  const targetLookRuleId = `RULE_LOOK_${setup.target_type.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_01`;
+  const targetLookRule = TARGET_LOOK_RULES[setup.target_type] ?? TARGET_LOOK_RULES.cine_neutral;
+  const targetLookRuleId = targetLookRule.targetRuleId;
   const constraintRuleId = `RULE_LIGHT_${setup.lighting.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_01`;
   const skinRuleId = setup.skin_priority ? "RULE_SKIN_PRIORITY_01" : "RULE_BALANCED_PRIORITY_01";
   const ruleSource = rule ? [rule.signalId, rule.exposureRuleId, rule.wbRuleId, rule.monitorRuleId] : ["RULE_PROFILE_DATA_MISSING_01"];
@@ -462,7 +636,8 @@ export function buildLookOutputs(setup: ProductionLookSetup, cameras: Production
     const selectedIso = getSelectedBaseIso(camera) ?? mode.baseISO[0];
     const rule = getSignalRule(mode);
     const profileSource = [profile.profileId, mode.sourceId];
-    const targetLookRuleId = `RULE_LOOK_${setup.target_type.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_01`;
+    const targetLookRule = TARGET_LOOK_RULES[setup.target_type] ?? TARGET_LOOK_RULES.cine_neutral;
+    const targetLookRuleId = targetLookRule.targetRuleId;
     const constraintRuleId = `RULE_LIGHT_${setup.lighting.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_01`;
     const skinRuleId = setup.skin_priority ? "RULE_SKIN_PRIORITY_01" : "RULE_BALANCED_PRIORITY_01";
     const cameraLabel = `${camera.brand} ${camera.model}`;
@@ -481,7 +656,7 @@ export function buildLookOutputs(setup: ProductionLookSetup, cameras: Production
       ? ` Custom note carried into the export: ${setup.custom_notes.trim()}.`
       : "";
     const white_balance_rule = wbRange && rule
-      ? `Set kelvin in the ${wbRange} band with a ${rule.tintBias}.${customInfluence}`
+      ? `Set kelvin in the ${wbRange} band with a ${rule.tintBias}; ${targetLookRule.wbBiasNote}.${customInfluence}`
       : "No white-balance rule available for this profile yet.";
     const white_balance_rule_basis = formatSource(rule ? [...profileSource, rule.wbRuleId, targetLookRuleId] : [...profileSource, "RULE_PROFILE_DATA_MISSING_01"]);
 
@@ -494,11 +669,13 @@ export function buildLookOutputs(setup: ProductionLookSetup, cameras: Production
     const exposure_target_basis = formatSource(rule ? [...profileSource, rule.exposureRuleId, skinRuleId] : [...profileSource, "RULE_PROFILE_DATA_MISSING_01"]);
 
     const monitoring_class = rule
-      ? `${rule.monitoringLabel}. ${rule.monitoringWarning}.`
+      ? `${rule.monitoringLabel}. ${targetLookRule.monitoringBias}. ${rule.monitoringWarning}.`
       : "No monitoring class available for this profile yet.";
     const monitoring_class_basis = formatSource(rule ? [...profileSource, rule.monitorRuleId, "RULE_MONITOR_REC709_WARNING_01"] : [...profileSource, "RULE_PROFILE_DATA_MISSING_01"]);
 
-    const discipline_checklist = rule?.disciplineChecklist ?? ["No discipline checklist available for this profile yet."];
+    const discipline_checklist = rule
+      ? [...rule.disciplineChecklist.slice(0, 3), targetLookRule.disciplineNote]
+      : ["No discipline checklist available for this profile yet."];
     const warnings = [
       profile.notes || `${cameraLabel}: no profile note.`,
       mode.notes || `${mode.label}: no mode note.`,
@@ -531,7 +708,7 @@ export function buildLookOutputs(setup: ProductionLookSetup, cameras: Production
       buildQuickRow(
         "texture",
         "Texture",
-        `Sharpening ${mode.texture.sharpening} • NR ${mode.texture.noiseReduction}`,
+        `Sharp ${mode.texture.sharpening} • NR ${mode.texture.noiseReduction}`,
         "texture",
         [...profileSource, "RULE_DETAIL_OFF_01"],
       ),

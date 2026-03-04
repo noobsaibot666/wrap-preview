@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Download, Save } from "lucide-react";
+import { Download, Save } from "lucide-react";
 import {
   ProductionCameraConfig,
   ProductionLookSetup,
@@ -13,10 +13,10 @@ import { buildMatchPresetPayload, parseLookOutputs } from "./productionLogic";
 
 interface MatchNormalizeAppProps {
   project: ProductionProject;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
-export function MatchNormalizeApp({ project, onBack }: MatchNormalizeAppProps) {
+export function MatchNormalizeApp({ project }: MatchNormalizeAppProps) {
   const [cameraConfigs, setCameraConfigs] = useState<ProductionCameraConfig[]>([]);
   const [setup, setSetup] = useState<ProductionLookSetup | null>(null);
   const [heroSlot, setHeroSlot] = useState("A");
@@ -87,33 +87,38 @@ export function MatchNormalizeApp({ project, onBack }: MatchNormalizeAppProps) {
 
   return (
     <div className="scrollable-view" style={{ padding: 32 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 18, marginBottom: 20 }}>
-        <div>
-          <div style={eyebrowStyle}>Production · Match & Normalize</div>
-          <h1 style={{ margin: "6px 0 8px" }}>{project.name}</h1>
-          <p style={subtleStyle}>Choose the hero camera baseline and save a repeatable preset.</p>
+      <div style={headerRowStyle}>
+        <div style={headerMetaBlockStyle}>
+          <div style={headerProjectNameStyle}>Project {project.name}</div>
+          <p style={subtleStyle}>Client {project.client_name}</p>
+          <p style={subtleHintStyle}>Choose the hero camera baseline and save a repeatable preset.</p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}><ArrowLeft size={14} /> Back</button>
+        <div style={headerActionsStyle}>
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => void exportPreset()}><Download size={14} /> Export PDF</button>
         </div>
       </div>
 
       <section style={panelStyle}>
         <div style={panelTitleStyle}>Hero Camera</div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={heroRowStyle}>
           {cameraConfigs.map((config) => (
-            <button key={config.slot} type="button" className={`btn btn-sm ${heroSlot === config.slot ? "btn-secondary" : "btn-ghost"}`} onClick={() => setHeroSlot(config.slot)}>
+            <button
+              key={config.slot}
+              type="button"
+              className={`btn btn-sm ${heroSlot === config.slot ? "btn-secondary" : "btn-ghost"}`}
+              style={heroSlot === config.slot ? heroButtonActiveStyle : heroButtonStyle}
+              onClick={() => setHeroSlot(config.slot)}
+            >
               {config.slot} · {config.brand || "Camera"} {config.model || ""}
             </button>
           ))}
         </div>
-        <div style={{ color: "var(--text-secondary)" }}>{payload.hero_summary}</div>
+        <div style={heroSummaryStyle}>{payload.hero_summary}</div>
       </section>
 
       <section style={{ ...panelStyle, marginTop: 18 }}>
         <div style={panelTitleStyle}>Match Steps</div>
-        <div style={{ display: "grid", gap: 14 }}>
+        <div style={stepGridStyle}>
           {payload.steps.map((step) => (
             <div key={step.slot} style={stepCardStyle}>
               <div style={sectionEyebrowStyle}>{step.slot} Camera</div>
@@ -128,7 +133,7 @@ export function MatchNormalizeApp({ project, onBack }: MatchNormalizeAppProps) {
 
       <section style={{ ...panelStyle, marginTop: 18 }}>
         <div style={panelTitleStyle}>Save Look Profile Preset</div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={saveRowStyle}>
           <input value={presetName} onChange={(event) => setPresetName(event.target.value)} placeholder="Preset name" style={inputStyle} />
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => void savePreset()}><Save size={14} /> Save Preset</button>
         </div>
@@ -147,12 +152,22 @@ export function MatchNormalizeApp({ project, onBack }: MatchNormalizeAppProps) {
   );
 }
 
-const eyebrowStyle: React.CSSProperties = { fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 800, color: "var(--text-muted)" };
-const subtleStyle: React.CSSProperties = { margin: 0, color: "var(--text-muted)" };
+const headerRowStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 24, alignItems: "center", marginBottom: 20, flexWrap: "wrap" };
+const headerMetaBlockStyle: React.CSSProperties = { display: "grid", gap: 4, minWidth: 0 };
+const headerProjectNameStyle: React.CSSProperties = { color: "var(--text-primary)", fontSize: "0.98rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+const subtleStyle: React.CSSProperties = { margin: 0, color: "var(--text-muted)", fontSize: "0.86rem" };
+const subtleHintStyle: React.CSSProperties = { margin: 0, color: "var(--text-muted)", fontSize: "0.82rem" };
+const headerActionsStyle: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "nowrap", justifyContent: "flex-end" };
 const panelStyle: React.CSSProperties = { padding: 18, borderRadius: 18, background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.08)" };
 const panelTitleStyle: React.CSSProperties = { marginBottom: 12, fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-muted)", fontWeight: 800 };
-const sectionEyebrowStyle: React.CSSProperties = { fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--color-accent)", fontWeight: 800, marginBottom: 8 };
+const heroRowStyle: React.CSSProperties = { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 };
+const heroButtonStyle: React.CSSProperties = { borderColor: "rgba(255,255,255,0.08)" };
+const heroButtonActiveStyle: React.CSSProperties = { borderColor: "rgba(0,209,255,0.28)", color: "var(--color-accent)" };
+const heroSummaryStyle: React.CSSProperties = { color: "var(--text-secondary)", padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)" };
+const sectionEyebrowStyle: React.CSSProperties = { fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", fontWeight: 800, marginBottom: 8 };
+const stepGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14, alignItems: "stretch" };
 const stepCardStyle: React.CSSProperties = { padding: 14, borderRadius: 14, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" };
 const bulletListStyle: React.CSSProperties = { margin: 0, paddingLeft: 18, color: "var(--text-secondary)", display: "grid", gap: 6 };
+const saveRowStyle: React.CSSProperties = { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" };
 const inputStyle: React.CSSProperties = { flex: 1, padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", color: "var(--text-primary)" };
 const savedPresetRowStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 12px", borderRadius: 12, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" };

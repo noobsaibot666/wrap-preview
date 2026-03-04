@@ -53,6 +53,7 @@ import { ProjectManager } from "./modules/Production/ProjectManager";
 import LookSetup from './modules/Production/apps/LookSetup';
 import OnSetCoach from './modules/Production/apps/OnSetCoach.tsx';
 import MatchNormalize from './modules/Production/apps/MatchNormalize.tsx';
+import CameraMatchLab from './modules/Production/apps/CameraMatchLab.tsx';
 import { useCommandPalette } from "./hooks/useCommandPalette";
 import { CommandPalette } from "./components/CommandPalette";
 import { getJumpIntervalForThumbCount, getThumbnailCacheContext } from "./utils/thumbnailIntervals";
@@ -1868,6 +1869,11 @@ function AppContent() {
                   project={activeProductionProject}
                   onBack={() => setActiveProductionApp(null)}
                 />
+              ) : activeProductionApp === "camera-match-lab" && activeProductionProject ? (
+                <CameraMatchLab
+                  project={activeProductionProject}
+                  onBack={() => setActiveProductionApp(null)}
+                />
               ) : (
                 <ProductionLanding
                   onOpenProjectPicker={() => setShowProjectManager(true)}
@@ -1879,6 +1885,9 @@ function AppContent() {
                   }}
                   onOpenMatchNormalize={() => {
                     setActiveProductionApp("match-normalize");
+                  }}
+                  onOpenCameraMatchLab={() => {
+                    setActiveProductionApp("camera-match-lab");
                   }}
                   activeProject={activeProductionProject}
                 />

@@ -406,35 +406,114 @@ export interface CameraMatchClipInput {
     clip_path: string;
 }
 
+export interface CameraMatchRgbMedians {
+    red: number;
+    green: number;
+    blue: number;
+}
+
+export interface CameraMatchFrameMetrics {
+    frame_index: number;
+    timestamp_ms: number;
+    frame_path: string;
+    width: number;
+    height: number;
+    luma_histogram: number[];
+    rgb_medians: CameraMatchRgbMedians;
+    luma_median: number;
+    highlight_percent: number;
+    midtone_density: number;
+}
+
+export interface CameraMatchAggregateMetrics {
+    luma_histogram: number[];
+    rgb_medians: CameraMatchRgbMedians;
+    luma_median: number;
+    highlight_percent: number;
+    midtone_density: number;
+}
+
+export interface CameraMatchAnalysisResult {
+    source_path: string;
+    clip_path: string;
+    clip_name: string;
+    representative_frame_path: string;
+    frame_paths: string[];
+    per_frame: CameraMatchFrameMetrics[];
+    aggregate: CameraMatchAggregateMetrics;
+}
+
+export interface ProductionMatchLabProxyResult {
+    proxy_path: string;
+    reused_proxy: boolean;
+}
+
+export interface ProductionMatchLabRunSummary {
+    run_id: string;
+    project_id: string;
+    hero_slot: string;
+    created_at: string;
+}
+
+export interface ProductionMatchLabRunResult {
+    slot: string;
+    proxy_path?: string | null;
+    representative_frame_path: string;
+    frame_paths: string[];
+    analysis: CameraMatchAnalysisResult;
+    created_at: string;
+}
+
+export interface ProductionMatchLabRun {
+    run_id: string;
+    project_id: string;
+    hero_slot: string;
+    created_at: string;
+    results: ProductionMatchLabRunResult[];
+}
+
+export interface CameraMatchDelta {
+    luma_median: number;
+    highlight_percent: number;
+    midtone_density: number;
+    red_median: number;
+    green_median: number;
+    blue_median: number;
+}
+
+export interface CameraMatchSuggestionSet {
+    exposure: string;
+    white_balance: string;
+    highlight: string;
+}
+
 export interface CameraMatchMetrics {
     luma_histogram: number[];
-    red_histogram: number[];
-    green_histogram: number[];
-    blue_histogram: number[];
-    rgb_balance: {
+    rgb_medians: {
         red: number;
         green: number;
         blue: number;
     };
-    highlight_threshold: number;
+    luma_median: number;
+    highlight_percent: number;
     midtone_density: number;
-    luma_mid: number;
 }
 
 export interface CameraMatchAnalysis {
     slot: string;
     clip_path: string;
     clip_name: string;
-    frame_path: string;
-    width: number;
-    height: number;
+    representative_frame_path: string;
+    frame_paths: string[];
+    per_frame: CameraMatchFrameMetrics[];
     metrics: CameraMatchMetrics;
-    suggestions: string[];
-    reference: boolean;
+    delta_vs_hero?: CameraMatchDelta | null;
+    suggestions?: CameraMatchSuggestionSet | null;
 }
 
 export interface CameraMatchResult {
     analyses: CameraMatchAnalysis[];
+    hero_slot: string;
     generated_at: string;
 }
 

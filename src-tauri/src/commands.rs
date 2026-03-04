@@ -2,6 +2,7 @@ use crate::audio;
 use crate::clustering;
 use crate::db::{
     Asset, AssetVersion, Clip, Database, ProductionCameraConfig, ProductionLookSetup,
+    ProductionMatchLabResultRecord, ProductionMatchLabRunRecord, ProductionMatchLabSource,
     ProductionOnsetChecks, ProductionPreset, ProductionProject, Project, ProjectRoot,
     ReviewCoreAnnotation, ReviewCoreApprovalState, ReviewCoreComment, ReviewCoreFrameNote,
     ReviewCoreProject, ReviewCoreShareLink, ReviewCoreShareSession, SceneBlock,
@@ -10,6 +11,16 @@ use crate::db::{
 use crate::ffprobe;
 use crate::jobs::{JobInfo, JobStatus};
 use crate::production::{self, CameraProfile, LookPreset};
+use crate::production_match_lab::{
+    aggregate_frames, analysis_timeout, analyze_frame, build_cache_dir, build_frame_timestamps,
+    build_proxy_decode_path, build_proxy_paths, choose_source_path_for_analysis,
+    clip_name_from_path, create_braw_proxy_via_file, create_braw_proxy_via_stdout,
+    hash_source_signature, is_braw_path, probe_braw_decoder, BrawDecoderCaps,
+    validate_proxy_output_path,
+    CameraMatchAnalysisResult, MatchLabProxyAttempt, MatchLabProxyTracker,
+    ProductionMatchLabProxyResult, ProductionMatchLabRun, ProductionMatchLabRunResult,
+    ProductionMatchLabRunResultInput, ProductionMatchLabRunSummary,
+};
 use crate::review_core;
 use crate::scanner;
 use crate::thumbnail;
@@ -42,6 +53,8 @@ pub struct AppState {
     pub perf_log: crate::perf::PerfLog,
     pub review_core_base_dir: std::path::PathBuf,
     pub review_core_server_base_url: Mutex<Option<String>>,
+    pub production_matchlab_proxy_tracker: MatchLabProxyTracker,
+    pub production_matchlab_decoder_caps: Mutex<Option<BrawDecoderCaps>>,
 }
 
 // ─── Tauri Commands ───
@@ -4855,6 +4868,490 @@ fn command_first_line(bin: &str, args: &[&str]) -> Option<String> {
     stdout.lines().next().map(|s| s.trim().to_string())
 }
 
+async fn camera_match_analyze_clip_internal(
+    project_id: &str,
+    camera_slot: &str,
+    clip_path: &str,
+    frame_count: u32,
+    analysis_source_override_path: Option<&str>,
+    app: &AppHandle,
+    state: Arc<AppState>,
+) -> Result<CameraMatchAnalysisResult, String> {
+    let clip_name = clip_name_from_path(clip_path);
+    let cache_dir = build_cache_dir(&state.cache_dir, project_id, camera_slot, clip_path);
+    std::fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create match lab cache: {}", e))?;
+
+    let job_kind = format!("camera_match_analysis_{}", camera_slot);
+    let (job_id, cancel_flag) = state.job_manager.create_job(&job_kind, None);
+    state
+        .job_manager
+        .mark_running(&job_id, &format!("Analyzing {}", clip_name));
+    emit_job_state(app, &state.job_manager, &job_id);
+
+    let result: Result<CameraMatchAnalysisResult, String> = async {
+        let source_path = if let Some(override_path) = analysis_source_override_path {
+            validate_analysis_override_path(override_path)?;
+            override_path.to_string()
+        } else if is_braw_path(clip_path) {
+            ensure_matchlab_proxy_internal(project_id, camera_slot, clip_path, app, state.clone())
+                .await?
+                .proxy_path
+        } else {
+            choose_source_path_for_analysis(clip_path)?
+        };
+        let metadata = ffprobe::probe_file(&source_path)?;
+        let timestamps = build_frame_timestamps(metadata.duration_ms, frame_count);
+        let total_steps = timestamps.len().max(1) as f32;
+        let mut per_frame = Vec::with_capacity(timestamps.len());
+
+        for (index, timestamp_ms) in timestamps.iter().enumerate() {
+            if crate::jobs::JobManager::is_cancelled(&cancel_flag) {
+                return Err("Camera Match Lab analysis cancelled".to_string());
+            }
+
+            let output_path = cache_dir.join(format!("frame_{}.jpg", index));
+            let source_path_for_task = source_path.clone();
+            let output_path_for_task = output_path.clone();
+            let timestamp_ms_for_task = *timestamp_ms;
+
+            let extraction_result = tokio::time::timeout(
+                analysis_timeout(),
+                tokio::task::spawn_blocking(move || {
+                    crate::production_match_lab::extract_jpeg_frame_with_fallbacks(
+                        &source_path_for_task,
+                        timestamp_ms_for_task,
+                        &output_path_for_task,
+                    )
+                }),
+            )
+            .await
+            .map_err(|_| "Frame extraction timed out".to_string())?
+            .map_err(|e| format!("Frame extraction task failed: {}", e))??;
+
+            let output_path_for_metrics = output_path.clone();
+            let used_timestamp_ms = extraction_result.used_timestamp_ms;
+            let extraction_strategy = extraction_result.strategy_label;
+            let frame_metric = tokio::time::timeout(
+                analysis_timeout(),
+                tokio::task::spawn_blocking(move || {
+                    analyze_frame(
+                        index as u32,
+                        used_timestamp_ms,
+                        &output_path_for_metrics,
+                        Some(extraction_strategy),
+                    )
+                }),
+            )
+            .await
+            .map_err(|_| "Frame analysis timed out".to_string())?
+            .map_err(|e| format!("Frame analysis task failed: {}", e))??;
+
+            per_frame.push(frame_metric);
+            state.job_manager.update_progress(
+                &job_id,
+                (index as f32 + 1.0) / total_steps,
+                Some(format!("Analyzed frame {} of {}", index + 1, timestamps.len())),
+            );
+            emit_job_state(app, &state.job_manager, &job_id);
+        }
+
+        if per_frame.is_empty() {
+            return Err("No frames were analyzed".to_string());
+        }
+
+        let aggregate = aggregate_frames(&per_frame);
+        let representative_index = per_frame.len() / 2;
+        let representative_frame_path = per_frame[representative_index].frame_path.clone();
+        let frame_paths = per_frame.iter().map(|item| item.frame_path.clone()).collect();
+
+        Ok(CameraMatchAnalysisResult {
+            source_path,
+            clip_path: clip_path.to_string(),
+            clip_name: clip_name.clone(),
+            representative_frame_path,
+            frame_paths,
+            per_frame,
+            aggregate,
+        })
+    }
+    .await;
+
+    match &result {
+        Ok(done) => {
+            state.job_manager.mark_done(
+                &job_id,
+                &format!("Analyzed {} frames for {}", done.per_frame.len(), done.clip_name),
+            );
+        }
+        Err(error) => {
+            state.job_manager.mark_failed(&job_id, error);
+        }
+    }
+    emit_job_state(app, &state.job_manager, &job_id);
+    result
+}
+
+async fn ensure_matchlab_proxy_internal(
+    project_id: &str,
+    slot: &str,
+    source_path: &str,
+    app: &AppHandle,
+    state: Arc<AppState>,
+) -> Result<ProductionMatchLabProxyResult, String> {
+    if !is_braw_path(source_path) {
+        return Ok(ProductionMatchLabProxyResult {
+            proxy_path: source_path.to_string(),
+            reused_proxy: true,
+        });
+    }
+
+    let source_hash = hash_source_signature(source_path);
+    let proxy_key = format!("{}:{}:{}", project_id, slot, source_hash);
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    {
+        let mut attempts = state
+            .production_matchlab_proxy_tracker
+            .attempts
+            .lock()
+            .unwrap();
+        if let Some(existing) = attempts.get_mut(&proxy_key) {
+            if existing.running {
+                if let Some(job) = state.job_manager.get_job(&existing.job_id) {
+                    if job.status == JobStatus::Running || job.status == JobStatus::Queued {
+                        return Err("Proxy is already running for this slot.".to_string());
+                    }
+                }
+                existing.running = false;
+            }
+            if let Some(last_failed_at_ms) = existing.last_failed_at_ms {
+                if now_ms - last_failed_at_ms < 120_000 {
+                    return Err("Proxy recently failed. Fix the issue and try again.".to_string());
+                }
+            }
+        }
+    }
+
+    let decoder_caps = get_cached_braw_decoder_caps(&state);
+    if !decoder_caps.found {
+        mark_proxy_attempt_failure(&state, &proxy_key, None);
+        return Err(format_matchlab_proxy_error(
+            "Proxy generation failed",
+            "BRAW decode unavailable — install braw-decode or use an MP4 proxy.",
+            &format!(
+                "Tool found: {}\nHelp: {}\nNext steps: Install braw-decode on this machine, or pick Use existing MP4 proxy.",
+                decoder_caps.found,
+                decoder_caps.help_excerpt
+            ),
+        ));
+    }
+
+    let (proxy_root, final_path, tmp_path) =
+        build_proxy_paths(&state.cache_dir, project_id, slot, source_path);
+    std::fs::create_dir_all(&proxy_root)
+        .map_err(|e| format!("Failed to prepare proxy cache: {}", e))?;
+
+    if final_path.exists() {
+        if final_path.is_dir() {
+            mark_proxy_attempt_failure(&state, &proxy_key, None);
+            return Err(format!("Proxy output path is a directory: {}", final_path.display()));
+        }
+        let size = std::fs::metadata(&final_path)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        if size > 1_000_000 {
+            return Ok(ProductionMatchLabProxyResult {
+                proxy_path: final_path.to_string_lossy().to_string(),
+                reused_proxy: true,
+            });
+        }
+    }
+    if tmp_path.exists() && tmp_path.is_dir() {
+        mark_proxy_attempt_failure(&state, &proxy_key, None);
+        return Err(format!("Proxy output path is a directory: {}", tmp_path.display()));
+    }
+    if let Err(error) = validate_proxy_output_path(source_path, &final_path) {
+        mark_proxy_attempt_failure(&state, &proxy_key, None);
+        return Err(error);
+    }
+    if let Err(error) = validate_proxy_output_path(source_path, &tmp_path) {
+        mark_proxy_attempt_failure(&state, &proxy_key, None);
+        return Err(error);
+    }
+
+    if tmp_path.exists() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+
+    let clip_name = clip_name_from_path(source_path);
+    let job_kind = format!("production_matchlab_proxy_{}", slot);
+    let (job_id, cancel_flag) = state.job_manager.create_job(&job_kind, None);
+    {
+        let mut attempts = state
+            .production_matchlab_proxy_tracker
+            .attempts
+            .lock()
+            .unwrap();
+        attempts.insert(
+            proxy_key.clone(),
+            MatchLabProxyAttempt {
+                job_id: job_id.clone(),
+                running: true,
+                last_failed_at_ms: None,
+            },
+        );
+    }
+
+    state
+        .job_manager
+        .mark_running(&job_id, &format!("Preparing proxy for {}", clip_name));
+    emit_job_state(app, &state.job_manager, &job_id);
+
+    let final_string = final_path.to_string_lossy().to_string();
+    let result: Result<ProductionMatchLabProxyResult, String> = async {
+        if crate::jobs::JobManager::is_cancelled(&cancel_flag) {
+            return Err("Proxy generation cancelled".to_string());
+        }
+
+        state.job_manager.update_progress(
+            &job_id,
+            0.1,
+            Some("Preparing proxy output".to_string()),
+        );
+        emit_job_state(app, &state.job_manager, &job_id);
+
+        let source_for_task = source_path.to_string();
+        let tmp_for_task = tmp_path.clone();
+        let decoded_for_task = build_proxy_decode_path(&proxy_root);
+        let decoder_caps_for_task = decoder_caps.clone();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(300),
+            tokio::task::spawn_blocking(move || {
+                if decoder_caps_for_task.supports_output_flag {
+                    return create_braw_proxy_via_file(
+                        &decoder_caps_for_task,
+                        &source_for_task,
+                        &decoded_for_task,
+                        &tmp_for_task,
+                    );
+                }
+                if decoder_caps_for_task.supports_stdout {
+                    return create_braw_proxy_via_stdout(
+                        &decoder_caps_for_task,
+                        &source_for_task,
+                        &tmp_for_task,
+                    );
+                }
+                Err(format!(
+                    "Tool found: {}\nHelp: {}\nVersion: {}\nNext steps: Verify braw-decode can output a file or stdout stream, or pick Use existing MP4 proxy.",
+                    decoder_caps_for_task.found,
+                    decoder_caps_for_task.help_excerpt,
+                    decoder_caps_for_task.version.unwrap_or_else(|| "unknown".to_string())
+                ))
+            }),
+        )
+        .await
+        .map_err(|_| format_matchlab_proxy_error(
+            "Proxy generation failed",
+            "BRAW decode timed out.",
+            &format!(
+                "Input: {}\nOutput: {}\nNext steps: Try a shorter clip, verify disk permissions, or use an MP4 proxy.",
+                source_path,
+                tmp_path.display()
+            ),
+        ))?
+        .map_err(|e| format_matchlab_proxy_error(
+            "Proxy generation failed",
+            "BRAW decode worker failed.",
+            &format!("Input: {}\nOutput: {}\n{}", source_path, tmp_path.display(), e),
+        ))?
+        .map_err(|details| {
+            let summary = if details.contains("Next steps:") && !decoder_caps.supports_output_flag && !decoder_caps.supports_stdout {
+                "BRAW decode unavailable — install braw-decode or use an MP4 proxy."
+            } else {
+                "ffmpeg failed writing proxy."
+            };
+            format_matchlab_proxy_error("Proxy generation failed", summary, &details)
+        })?;
+
+        state.job_manager.update_progress(
+            &job_id,
+            0.92,
+            Some("Finalizing proxy".to_string()),
+        );
+        emit_job_state(app, &state.job_manager, &job_id);
+
+        if tmp_path.is_dir() {
+            return Err(format_matchlab_proxy_error(
+                "Proxy generation failed",
+                "Proxy output path is invalid.",
+                &format!("Output path is a directory: {}", tmp_path.display()),
+            ));
+        }
+        std::fs::rename(&tmp_path, &final_path).map_err(|e| {
+            format_matchlab_proxy_error(
+                "Proxy generation failed",
+                "Failed to finalize proxy file.",
+                &format!(
+                    "Input: {}\nTemp output: {}\nFinal output: {}\n{}",
+                    source_path,
+                    tmp_path.display(),
+                    final_path.display(),
+                    e
+                ),
+            )
+        })?;
+
+        Ok(ProductionMatchLabProxyResult {
+            proxy_path: final_string,
+            reused_proxy: false,
+        })
+    }
+    .await;
+
+    match &result {
+        Ok(done) => {
+            state.job_manager.mark_done(
+                &job_id,
+                &format!("Proxy ready for {}", clip_name_from_path(&done.proxy_path)),
+            );
+            mark_proxy_attempt_success(&state, &proxy_key, &job_id);
+        }
+        Err(error) => {
+            state.job_manager.mark_failed(&job_id, error);
+            mark_proxy_attempt_failure(&state, &proxy_key, Some(&job_id));
+        }
+    }
+    emit_job_state(app, &state.job_manager, &job_id);
+    result
+}
+
+fn get_cached_braw_decoder_caps(state: &Arc<AppState>) -> BrawDecoderCaps {
+    let mut lock = state.production_matchlab_decoder_caps.lock().unwrap();
+    if let Some(caps) = lock.as_ref() {
+        return caps.clone();
+    }
+    let caps = probe_braw_decoder();
+    *lock = Some(caps.clone());
+    caps
+}
+
+fn format_matchlab_proxy_error(title: &str, summary: &str, details: &str) -> String {
+    format!(
+        "Title: {}\nSummary: {}\nDetails:\n{}",
+        title,
+        summary,
+        details
+    )
+}
+
+fn mark_proxy_attempt_success(state: &Arc<AppState>, proxy_key: &str, job_id: &str) {
+    let mut attempts = state
+        .production_matchlab_proxy_tracker
+        .attempts
+        .lock()
+        .unwrap();
+    attempts.insert(
+        proxy_key.to_string(),
+        MatchLabProxyAttempt {
+            job_id: job_id.to_string(),
+            running: false,
+            last_failed_at_ms: None,
+        },
+    );
+}
+
+fn mark_proxy_attempt_failure(state: &Arc<AppState>, proxy_key: &str, job_id: Option<&str>) {
+    let mut attempts = state
+        .production_matchlab_proxy_tracker
+        .attempts
+        .lock()
+        .unwrap();
+    attempts.insert(
+        proxy_key.to_string(),
+        MatchLabProxyAttempt {
+            job_id: job_id.unwrap_or_default().to_string(),
+            running: false,
+            last_failed_at_ms: Some(chrono::Utc::now().timestamp_millis()),
+        },
+    );
+}
+
+fn validate_analysis_override_path(path: &str) -> Result<(), String> {
+    let resolved = Path::new(path);
+    if !resolved.exists() {
+        return Err("Selected MP4 proxy does not exist.".to_string());
+    }
+    if !resolved.is_file() {
+        return Err("Selected MP4 proxy path is not a file.".to_string());
+    }
+    let is_mp4 = resolved
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("mp4"))
+        .unwrap_or(false);
+    if !is_mp4 {
+        return Err("Selected override must be an MP4 file.".to_string());
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct MatchLabOwnedPaths {
+    files: std::collections::HashSet<String>,
+    proxy_dirs: std::collections::HashSet<String>,
+}
+
+fn collect_matchlab_references(
+    results: &[ProductionMatchLabResultRecord],
+) -> MatchLabOwnedPaths {
+    let mut references = MatchLabOwnedPaths::default();
+    for result in results {
+        references
+            .files
+            .insert(result.representative_frame_path.clone());
+        if let Ok(frame_paths) = serde_json::from_str::<Vec<String>>(&result.frames_json) {
+            for frame_path in frame_paths {
+                references.files.insert(frame_path);
+            }
+        }
+        if let Some(proxy_path) = result.proxy_path.as_ref() {
+            references.files.insert(proxy_path.clone());
+            if let Some(parent) = Path::new(proxy_path).parent() {
+                references
+                    .proxy_dirs
+                    .insert(parent.to_string_lossy().to_string());
+            }
+        }
+    }
+    references
+}
+
+fn is_safe_matchlab_path(cache_root: &Path, candidate: &str) -> bool {
+    Path::new(candidate).starts_with(cache_root)
+}
+
+fn prune_empty_matchlab_parents(cache_root: &Path, path: &Path) {
+    let mut current = path.parent();
+    while let Some(dir) = current {
+        if dir == cache_root {
+            break;
+        }
+        match std::fs::remove_dir(dir) {
+            Ok(_) => current = dir.parent(),
+            Err(_) => break,
+        }
+    }
+}
+
+fn summarize_fs_error(path: &str, error: &std::io::Error) -> String {
+    let label = Path::new(path)
+        .file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string());
+    format!("{} ({})", label, error)
+}
+
 fn command_exists(bin: &str) -> bool {
     Command::new("sh")
         .args(["-lc", &format!("command -v {} >/dev/null 2>&1", bin)])
@@ -5521,4 +6018,224 @@ pub async fn production_get_preset(
         .db
         .get_production_preset(&preset_id)
         .map_err(|e| format!("Failed to get production preset: {}", e))
+}
+
+#[tauri::command]
+pub async fn production_matchlab_ensure_proxy(
+    project_id: String,
+    slot: String,
+    source_path: String,
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<ProductionMatchLabProxyResult, String> {
+    ensure_matchlab_proxy_internal(&project_id, &slot, &source_path, &app, state.inner().clone()).await
+}
+
+#[tauri::command]
+pub async fn camera_match_analyze_clip(
+    project_id: String,
+    camera_slot: String,
+    clip_path: String,
+    frame_count: u32,
+    analysis_source_override_path: Option<String>,
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<CameraMatchAnalysisResult, String> {
+    camera_match_analyze_clip_internal(
+        &project_id,
+        &camera_slot,
+        &clip_path,
+        frame_count,
+        analysis_source_override_path.as_deref(),
+        &app,
+        state.inner().clone(),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn production_matchlab_save_run(
+    project_id: String,
+    hero_slot: String,
+    results: Vec<ProductionMatchLabRunResultInput>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let run_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let run_record = ProductionMatchLabRunRecord {
+        id: run_id.clone(),
+        project_id: project_id.clone(),
+        hero_slot,
+        created_at: now.clone(),
+    };
+
+    let mut result_records = Vec::with_capacity(results.len());
+    for item in results {
+        let source_hash = hash_source_signature(&item.analysis.clip_path);
+        let source_record = ProductionMatchLabSource {
+            id: format!("{}:{}", project_id, item.slot),
+            project_id: project_id.clone(),
+            slot: item.slot.clone(),
+            source_path: item.analysis.clip_path.clone(),
+            source_hash,
+            created_at: now.clone(),
+            last_analyzed_at: now.clone(),
+        };
+        state
+            .db
+            .upsert_production_matchlab_source(&source_record)
+            .map_err(|e| format!("Failed to save match lab source: {}", e))?;
+
+        result_records.push(ProductionMatchLabResultRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            run_id: run_id.clone(),
+            slot: item.slot,
+            proxy_path: item.proxy_path,
+            representative_frame_path: item.analysis.representative_frame_path.clone(),
+            frames_json: serde_json::to_string(&item.analysis.frame_paths)
+                .map_err(|e| format!("Failed to serialize frame paths: {}", e))?,
+            metrics_json: serde_json::to_string(&item.analysis)
+                .map_err(|e| format!("Failed to serialize match lab result: {}", e))?,
+            created_at: now.clone(),
+        });
+    }
+
+    state
+        .db
+        .insert_production_matchlab_run(&run_record, &result_records)
+        .map_err(|e| format!("Failed to save match lab run: {}", e))?;
+
+    Ok(run_id)
+}
+
+#[tauri::command]
+pub async fn production_matchlab_list_runs(
+    project_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<ProductionMatchLabRunSummary>, String> {
+    state
+        .db
+        .list_production_matchlab_runs(&project_id)
+        .map(|runs| {
+            runs.into_iter()
+                .map(|run| ProductionMatchLabRunSummary {
+                    run_id: run.id,
+                    project_id: run.project_id,
+                    hero_slot: run.hero_slot,
+                    created_at: run.created_at,
+                })
+                .collect()
+        })
+        .map_err(|e| format!("Failed to list match lab runs: {}", e))
+}
+
+#[tauri::command]
+pub async fn production_matchlab_get_run(
+    run_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<ProductionMatchLabRun>, String> {
+    let record = state
+        .db
+        .get_production_matchlab_run(&run_id)
+        .map_err(|e| format!("Failed to load match lab run: {}", e))?;
+
+    let Some((run, results)) = record else {
+        return Ok(None);
+    };
+
+    let mut parsed_results = Vec::with_capacity(results.len());
+    for result in results {
+        let analysis: CameraMatchAnalysisResult = serde_json::from_str(&result.metrics_json)
+            .map_err(|e| format!("Failed to parse saved match lab metrics: {}", e))?;
+        let frame_paths: Vec<String> = serde_json::from_str(&result.frames_json)
+            .map_err(|e| format!("Failed to parse saved match lab frame paths: {}", e))?;
+        parsed_results.push(ProductionMatchLabRunResult {
+            slot: result.slot,
+            proxy_path: result.proxy_path,
+            representative_frame_path: result.representative_frame_path,
+            frame_paths,
+            analysis,
+            created_at: result.created_at,
+        });
+    }
+
+    Ok(Some(ProductionMatchLabRun {
+        run_id: run.id,
+        project_id: run.project_id,
+        hero_slot: run.hero_slot,
+        created_at: run.created_at,
+        results: parsed_results,
+    }))
+}
+
+#[tauri::command]
+pub async fn production_matchlab_delete_run(
+    run_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<String>, String> {
+    let existing = state
+        .db
+        .get_production_matchlab_run(&run_id)
+        .map_err(|e| format!("Failed to load match lab run: {}", e))?
+        .ok_or("Match lab run not found")?;
+    let (_, results) = existing;
+    let other_results = state
+        .db
+        .list_production_matchlab_results_excluding_run(&run_id)
+        .map_err(|e| format!("Failed to inspect related match lab runs: {}", e))?;
+
+    let cache_root = Path::new(&state.cache_dir)
+        .join("production")
+        .join("cache")
+        .join("match_lab");
+    let referenced_paths = collect_matchlab_references(&other_results);
+    let owned_paths = collect_matchlab_references(&results);
+
+    state
+        .db
+        .delete_production_matchlab_run(&run_id)
+        .map_err(|e| format!("Failed to delete match lab run: {}", e))?;
+
+    let mut warnings = Vec::new();
+    for file_path in owned_paths.files {
+        if referenced_paths.files.contains(&file_path) {
+            continue;
+        }
+        if !is_safe_matchlab_path(&cache_root, &file_path) {
+            continue;
+        }
+        let file = Path::new(&file_path);
+        if !file.exists() {
+            continue;
+        }
+        if let Err(error) = std::fs::remove_file(file) {
+            warnings.push(format!("Could not remove {}", summarize_fs_error(&file_path, &error)));
+            continue;
+        }
+        prune_empty_matchlab_parents(&cache_root, file);
+    }
+
+    for dir_path in owned_paths.proxy_dirs {
+        if referenced_paths.proxy_dirs.contains(&dir_path) {
+            continue;
+        }
+        if !is_safe_matchlab_path(&cache_root, &dir_path) {
+            continue;
+        }
+        let dir = Path::new(&dir_path);
+        if !dir.exists() {
+            continue;
+        }
+        if let Err(error) = std::fs::remove_dir_all(dir) {
+            warnings.push(format!("Could not remove {}", summarize_fs_error(&dir_path, &error)));
+            continue;
+        }
+        prune_empty_matchlab_parents(&cache_root, dir);
+    }
+
+    if warnings.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(warnings.join(" • ")))
+    }
 }

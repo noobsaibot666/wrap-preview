@@ -348,6 +348,37 @@ pub struct ProductionPreset {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductionMatchLabSource {
+    pub id: String,
+    pub project_id: String,
+    pub slot: String,
+    pub source_path: String,
+    pub source_hash: String,
+    pub created_at: String,
+    pub last_analyzed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductionMatchLabRunRecord {
+    pub id: String,
+    pub project_id: String,
+    pub hero_slot: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductionMatchLabResultRecord {
+    pub id: String,
+    pub run_id: String,
+    pub slot: String,
+    pub proxy_path: Option<String>,
+    pub representative_frame_path: String,
+    pub frames_json: String,
+    pub metrics_json: String,
+    pub created_at: String,
+}
+
 impl Database {
     pub fn new(db_path: &str) -> SqlResult<Self> {
         let conn = Connection::open(db_path)?;
@@ -1439,6 +1470,46 @@ impl Database {
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(project_id) REFERENCES production_projects(id)
             );
+
+            CREATE TABLE IF NOT EXISTS production_matchlab_sources (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                slot TEXT NOT NULL,
+                source_path TEXT NOT NULL,
+                source_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                last_analyzed_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES production_projects(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS production_matchlab_runs (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                hero_slot TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES production_projects(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS production_matchlab_results (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                slot TEXT NOT NULL,
+                proxy_path TEXT,
+                representative_frame_path TEXT NOT NULL,
+                frames_json TEXT NOT NULL,
+                metrics_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(run_id) REFERENCES production_matchlab_runs(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_production_matchlab_sources_project_id
+                ON production_matchlab_sources(project_id);
+            CREATE INDEX IF NOT EXISTS idx_production_matchlab_sources_project_slot
+                ON production_matchlab_sources(project_id, slot);
+            CREATE INDEX IF NOT EXISTS idx_production_matchlab_runs_project_id
+                ON production_matchlab_runs(project_id);
+            CREATE INDEX IF NOT EXISTS idx_production_matchlab_results_run_id
+                ON production_matchlab_results(run_id);
             ",
         )?;
         Ok(())
@@ -1681,6 +1752,174 @@ impl Database {
             Some(Ok(preset)) => Ok(Some(preset)),
             _ => Ok(None),
         }
+    }
+
+    pub fn upsert_production_matchlab_source(
+        &self,
+        source: &ProductionMatchLabSource,
+    ) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO production_matchlab_sources (id, project_id, slot, source_path, source_hash, created_at, last_analyzed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                source.id,
+                source.project_id,
+                source.slot,
+                source.source_path,
+                source.source_hash,
+                source.created_at,
+                source.last_analyzed_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_production_matchlab_run(
+        &self,
+        run: &ProductionMatchLabRunRecord,
+        results: &[ProductionMatchLabResultRecord],
+    ) -> SqlResult<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO production_matchlab_runs (id, project_id, hero_slot, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![run.id, run.project_id, run.hero_slot, run.created_at],
+        )?;
+        for result in results {
+            tx.execute(
+                "INSERT INTO production_matchlab_results (id, run_id, slot, proxy_path, representative_frame_path, frames_json, metrics_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    result.id,
+                    result.run_id,
+                    result.slot,
+                    result.proxy_path,
+                    result.representative_frame_path,
+                    result.frames_json,
+                    result.metrics_json,
+                    result.created_at
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_production_matchlab_runs(
+        &self,
+        project_id: &str,
+    ) -> SqlResult<Vec<ProductionMatchLabRunRecord>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, hero_slot, created_at
+             FROM production_matchlab_runs
+             WHERE project_id = ?1
+             ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(ProductionMatchLabRunRecord {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                hero_slot: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?;
+        let mut runs = Vec::new();
+        for run in rows {
+            runs.push(run?);
+        }
+        Ok(runs)
+    }
+
+    pub fn get_production_matchlab_run(
+        &self,
+        run_id: &str,
+    ) -> SqlResult<Option<(ProductionMatchLabRunRecord, Vec<ProductionMatchLabResultRecord>)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut run_stmt = conn.prepare(
+            "SELECT id, project_id, hero_slot, created_at
+             FROM production_matchlab_runs
+             WHERE id = ?1",
+        )?;
+        let mut run_rows = run_stmt.query_map(params![run_id], |row| {
+            Ok(ProductionMatchLabRunRecord {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                hero_slot: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?;
+        let run = match run_rows.next() {
+            Some(Ok(run)) => run,
+            _ => return Ok(None),
+        };
+
+        let mut result_stmt = conn.prepare(
+            "SELECT id, run_id, slot, proxy_path, representative_frame_path, frames_json, metrics_json, created_at
+             FROM production_matchlab_results
+             WHERE run_id = ?1
+             ORDER BY slot ASC",
+        )?;
+        let result_rows = result_stmt.query_map(params![run_id], |row| {
+            Ok(ProductionMatchLabResultRecord {
+                id: row.get(0)?,
+                run_id: row.get(1)?,
+                slot: row.get(2)?,
+                proxy_path: row.get(3)?,
+                representative_frame_path: row.get(4)?,
+                frames_json: row.get(5)?,
+                metrics_json: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for result in result_rows {
+            results.push(result?);
+        }
+        Ok(Some((run, results)))
+    }
+
+    pub fn list_production_matchlab_results_excluding_run(
+        &self,
+        run_id: &str,
+    ) -> SqlResult<Vec<ProductionMatchLabResultRecord>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, run_id, slot, proxy_path, representative_frame_path, frames_json, metrics_json, created_at
+             FROM production_matchlab_results
+             WHERE run_id != ?1",
+        )?;
+        let rows = stmt.query_map(params![run_id], |row| {
+            Ok(ProductionMatchLabResultRecord {
+                id: row.get(0)?,
+                run_id: row.get(1)?,
+                slot: row.get(2)?,
+                proxy_path: row.get(3)?,
+                representative_frame_path: row.get(4)?,
+                frames_json: row.get(5)?,
+                metrics_json: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for result in rows {
+            results.push(result?);
+        }
+        Ok(results)
+    }
+
+    pub fn delete_production_matchlab_run(&self, run_id: &str) -> SqlResult<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM production_matchlab_results WHERE run_id = ?1",
+            params![run_id],
+        )?;
+        tx.execute(
+            "DELETE FROM production_matchlab_runs WHERE id = ?1",
+            params![run_id],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn get_project(&self, id: &str) -> SqlResult<Option<Project>> {

@@ -9,6 +9,7 @@ mod jobs;
 mod lut;
 mod perf;
 mod production;
+mod production_match_lab;
 mod review_core;
 mod scanner;
 mod thumbnail;
@@ -67,6 +68,8 @@ pub fn run() {
         perf_log: crate::perf::PerfLog::new(500),
         review_core_base_dir,
         review_core_server_base_url: std::sync::Mutex::new(None),
+        production_matchlab_proxy_tracker: crate::production_match_lab::MatchLabProxyTracker::default(),
+        production_matchlab_decoder_caps: std::sync::Mutex::new(None),
     });
 
     tauri::Builder::default()
@@ -195,6 +198,12 @@ pub fn run() {
             commands::production_save_preset,
             commands::production_list_presets,
             commands::production_get_preset,
+            commands::production_matchlab_ensure_proxy,
+            commands::production_matchlab_save_run,
+            commands::production_matchlab_list_runs,
+            commands::production_matchlab_get_run,
+            commands::production_matchlab_delete_run,
+            commands::camera_match_analyze_clip,
             #[cfg(debug_assertions)]
             commands::dev_reset_all_data,
         ])
