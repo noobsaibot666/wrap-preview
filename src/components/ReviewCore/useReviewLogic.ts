@@ -38,7 +38,6 @@ import {
     parseAnnotationData,
 } from "./utils";
 
-const REVIEW_CORE_DEBUG = import.meta.env.DEV;
 const DEFAULT_APPROVAL: ReviewCoreApprovalState = {
     asset_version_id: "",
     status: "draft",
@@ -340,7 +339,7 @@ export function useReviewLogic({
         if (!selectedVersionId || !selectedAssetId || isShareMode) return;
         setGrabbingFrame(true);
         try {
-            const result = await invoke<ReviewCoreExtractFrameResult>("review_core_extract_frame", {
+            await invoke<ReviewCoreExtractFrameResult>("review_core_extract_frame", {
                 assetVersionId: selectedVersionId,
                 timestampMs: Math.round(currentTime * 1000),
             });
@@ -447,7 +446,7 @@ export function useReviewLogic({
         }
     }, [effectiveProjectId, isShareMode, shareVersionIds, shareExpiryLocal, sharePassword, shareAllowComments, shareAllowDownload]);
 
-    const handleAnnotationMouseMove = useCallback((point: NormalizedPoint) => {
+    const handleAnnotationMouseMove = useCallback((_point: NormalizedPoint) => {
         const drag = dragStateRef.current;
         if (!drag || isShareMode) return;
 

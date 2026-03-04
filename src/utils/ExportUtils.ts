@@ -1,10 +1,10 @@
 import { save } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
 import { jsPDF } from "jspdf";
 import { Clip, Thumbnail } from "../types";
 import { drawFooter, drawHeader } from "./ExportBranding";
 import { formatDuration, formatCodecLabel, getAudioBadge } from "./clipMetadata";
 import { getDisplayedThumbsForClip } from "./shotPlannerThumbnails";
+import { invokeGuarded } from "./tauri";
 
 interface ExportOptions {
   projectName: string;
@@ -12,6 +12,7 @@ interface ExportOptions {
   thumbnailsByClipId: Record<string, Thumbnail[]>;
   thumbnailCache: Record<string, string>;
   thumbCount: number;
+  jumpSeconds: number;
   cacheKeyContext?: string;
   projectLutHash?: string | null;
   brandName?: string;
@@ -41,7 +42,7 @@ async function readThumbAsDataUrl(urlOrPath: string): Promise<string | null> {
   try {
     if (urlOrPath.startsWith("data:")) return urlOrPath;
     const fsPath = assetUrlToPath(urlOrPath);
-    return await invoke<string>("read_thumbnail", { path: fsPath });
+    return await invokeGuarded<string>("read_thumbnail", { path: fsPath });
   } catch (e) {
     console.warn("readThumbAsDataUrl failed:", urlOrPath, e);
     return null;
@@ -96,6 +97,7 @@ async function collectMosaicAssets(
   thumbnailsByClipId: Record<string, Thumbnail[]>,
   thumbnailCache: Record<string, string>,
   thumbCount: number,
+  jumpSeconds: number,
   onWarning?: (message: string) => void,
   cacheKeyContext?: string,
 ): Promise<MosaicAsset[]> {
@@ -108,6 +110,7 @@ async function collectMosaicAssets(
       thumbnails: thumbnailsByClipId[clip.id] ?? [],
       thumbnailCache,
       thumbCount,
+      jumpSeconds,
       cacheKeyContext,
     })[0]?.src;
     if (!firstThumb) {
@@ -136,6 +139,7 @@ export async function exportPdf(options: ExportOptions): Promise<boolean> {
     thumbnailsByClipId,
     thumbnailCache,
     thumbCount,
+    jumpSeconds,
     cacheKeyContext,
     projectLutHash,
     brandName,
@@ -214,6 +218,7 @@ export async function exportPdf(options: ExportOptions): Promise<boolean> {
         thumbnails: thumbnailsByClipId[clip.id] ?? [],
         thumbnailCache,
         thumbCount,
+        jumpSeconds,
         cacheKeyContext,
       });
       const thumbW = usableW / Math.max(displayedThumbs.length, 1);
@@ -308,7 +313,7 @@ export async function exportPdf(options: ExportOptions): Promise<boolean> {
     );
   }
 
-  await invoke("save_image_data_url", { path: filePath, dataUrl: pdf.output("datauristring") });
+  await invokeGuarded("save_image_data_url", { path: filePath, dataUrl: pdf.output("datauristring") });
   return true;
 }
 
@@ -319,6 +324,7 @@ export async function exportImage(options: ExportOptions): Promise<boolean> {
     thumbnailsByClipId,
     thumbnailCache,
     thumbCount,
+    jumpSeconds,
     cacheKeyContext,
     projectLutHash,
     brandName,
@@ -395,6 +401,7 @@ export async function exportImage(options: ExportOptions): Promise<boolean> {
       thumbnails: thumbnailsByClipId[clip.id] ?? [],
       thumbnailCache,
       thumbCount,
+      jumpSeconds,
       cacheKeyContext,
     });
     const displayedCount = Math.max(displayedThumbs.length, 1);
@@ -484,13 +491,13 @@ export async function exportImage(options: ExportOptions): Promise<boolean> {
     brandName || "Wrap Preview"
   );
 
-  await invoke("save_image_data_url", { path: filePath, dataUrl: canvas.toDataURL("image/jpeg", 0.92) });
+  await invokeGuarded("save_image_data_url", { path: filePath, dataUrl: canvas.toDataURL("image/jpeg", 0.92) });
   return true;
 }
 
 export async function exportMosaicImage(options: ExportOptions): Promise<boolean> {
-  const { projectName, clips, thumbnailsByClipId, thumbnailCache, thumbCount, onWarning, cacheKeyContext } = options;
-  const assets = await collectMosaicAssets(clips, thumbnailsByClipId, thumbnailCache, thumbCount, onWarning, cacheKeyContext);
+  const { projectName, clips, thumbnailsByClipId, thumbnailCache, thumbCount, jumpSeconds, onWarning, cacheKeyContext } = options;
+  const assets = await collectMosaicAssets(clips, thumbnailsByClipId, thumbnailCache, thumbCount, jumpSeconds, onWarning, cacheKeyContext);
   if (assets.length === 0) {
     onWarning?.("Some clips had no thumbnails yet and were skipped.");
     return false;
@@ -529,20 +536,20 @@ export async function exportMosaicImage(options: ExportOptions): Promise<boolean
       drawSquareTile(ctx, img, x, y, tileSize);
     }
 
-    await invoke("save_image_data_url", { path: filePath, dataUrl: canvas.toDataURL("image/jpeg", 0.92) });
+    await invokeGuarded("save_image_data_url", { path: filePath, dataUrl: canvas.toDataURL("image/jpeg", 0.92) });
   }
   return true;
 }
 
 export async function exportMosaicPdf(options: ExportOptions): Promise<boolean> {
-  const { projectName, clips, thumbnailsByClipId, thumbnailCache, thumbCount, onWarning, cacheKeyContext } = options;
+  const { projectName, clips, thumbnailsByClipId, thumbnailCache, thumbCount, jumpSeconds, onWarning, cacheKeyContext } = options;
   const filePath = await save({
     filters: [{ name: "PDF Document", extensions: ["pdf"] }],
     defaultPath: `${projectName}_Mosaic.pdf`,
   });
   if (!filePath) return false;
 
-  const assets = await collectMosaicAssets(clips, thumbnailsByClipId, thumbnailCache, thumbCount, onWarning, cacheKeyContext);
+  const assets = await collectMosaicAssets(clips, thumbnailsByClipId, thumbnailCache, thumbCount, jumpSeconds, onWarning, cacheKeyContext);
   if (assets.length === 0) {
     onWarning?.("Some clips had no thumbnails yet and were skipped.");
     return false;
@@ -580,7 +587,7 @@ export async function exportMosaicPdf(options: ExportOptions): Promise<boolean> 
     }
   }
 
-  await invoke("save_image_data_url", { path: filePath, dataUrl: pdf.output("datauristring") });
+  await invokeGuarded("save_image_data_url", { path: filePath, dataUrl: pdf.output("datauristring") });
   return true;
 }
 

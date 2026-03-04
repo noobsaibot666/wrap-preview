@@ -1,6 +1,6 @@
 import React from "react";
-import { Folder, ChevronRight, Projector, Plus, Search, Clock } from "lucide-react";
-import { ReviewCoreProjectSummary, CommonAsset, CommonVersion } from "./types";
+import { Folder, ChevronRight, Projector, Plus, Clock } from "lucide-react";
+import { ReviewCoreProjectSummary } from "./types";
 
 interface ReviewProjectPickerProps {
     projects: ReviewCoreProjectSummary[];

@@ -89,6 +89,7 @@ pub struct SceneBlockClip {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thumbnail {
     pub clip_id: String,
+    pub jump_seconds: u32,
     pub index: u32,
     pub timestamp_ms: u64,
     pub file_path: String,
@@ -296,6 +297,7 @@ pub struct PersistentJob {
 pub struct ProductionProject {
     pub id: String,
     pub name: String,
+    pub client_name: String,
     pub created_at: String,
     pub last_opened_at: String,
 }
@@ -308,33 +310,42 @@ pub struct ProductionCameraConfig {
     pub brand: String,
     pub model: String,
     pub recording_mode: String,
+    pub log_family: String,
     pub base_iso_list_json: String,
+    pub lens_character: Option<String>,
+    pub diffusion: Option<String>,
     pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProductionLookTarget {
+pub struct ProductionLookSetup {
     pub id: String,
     pub project_id: String,
     pub target_type: String, // "arri", "fuji", "cine_neutral", "custom"
     pub custom_notes: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProductionSceneConstraint {
-    pub id: String,
-    pub project_id: String,
     pub lighting: String, // "controlled", "mixed", "run_and_gun"
     pub skin_priority: bool,
-    pub notes: Option<String>,
+    pub outputs_json: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProductionOutput {
+pub struct ProductionOnsetChecks {
     pub id: String,
     pub project_id: String,
-    pub generated_at: String,
+    pub ready_state_json: String,
+    pub lighting_checks_json: String,
+    pub failure_modes_json: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductionPreset {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
     pub payload_json: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 impl Database {
@@ -535,6 +546,32 @@ impl Database {
                 )?;
             }
 
+            let mut thumbnail_stmt = conn.prepare("PRAGMA table_info(thumbnails)")?;
+            let thumbnail_columns: Vec<String> = thumbnail_stmt
+                .query_map([], |row| row.get(1))?
+                .filter_map(|r| r.ok())
+                .collect();
+            if !thumbnail_columns.contains(&"jump_seconds".to_string()) {
+                conn.execute_batch(
+                    "
+                    ALTER TABLE thumbnails RENAME TO thumbnails_legacy;
+                    CREATE TABLE thumbnails (
+                        clip_id TEXT NOT NULL,
+                        jump_seconds INTEGER NOT NULL,
+                        idx INTEGER NOT NULL,
+                        timestamp_ms INTEGER NOT NULL,
+                        file_path TEXT NOT NULL,
+                        PRIMARY KEY (clip_id, jump_seconds, idx),
+                        FOREIGN KEY (clip_id) REFERENCES clips(id)
+                    );
+                    INSERT INTO thumbnails (clip_id, jump_seconds, idx, timestamp_ms, file_path)
+                    SELECT clip_id, 4, idx, timestamp_ms, file_path
+                    FROM thumbnails_legacy;
+                    DROP TABLE thumbnails_legacy;
+                    ",
+                )?;
+            }
+
             let mut verification_stmt = conn.prepare("PRAGMA table_info(verification_jobs)")?;
             let verification_columns: Vec<String> = verification_stmt
                 .query_map([], |row| row.get(1))?
@@ -585,6 +622,90 @@ impl Database {
             if !verification_columns.contains(&"issues_json".to_string()) {
                 conn.execute(
                     "ALTER TABLE verification_jobs ADD COLUMN issues_json TEXT",
+                    [],
+                )?;
+            }
+
+            let mut production_project_stmt =
+                conn.prepare("PRAGMA table_info(production_projects)")?;
+            let production_project_columns: Vec<String> = production_project_stmt
+                .query_map([], |row| row.get(1))?
+                .filter_map(|r| r.ok())
+                .collect();
+            if !production_project_columns.contains(&"client_name".to_string()) {
+                conn.execute(
+                    "ALTER TABLE production_projects ADD COLUMN client_name TEXT NOT NULL DEFAULT ''",
+                    [],
+                )?;
+            }
+
+            let mut production_camera_stmt =
+                conn.prepare("PRAGMA table_info(production_camera_configs)")?;
+            let production_camera_columns: Vec<String> = production_camera_stmt
+                .query_map([], |row| row.get(1))?
+                .filter_map(|r| r.ok())
+                .collect();
+            if !production_camera_columns.contains(&"log_family".to_string()) {
+                conn.execute(
+                    "ALTER TABLE production_camera_configs ADD COLUMN log_family TEXT NOT NULL DEFAULT 'rec709'",
+                    [],
+                )?;
+            }
+            if !production_camera_columns.contains(&"lens_character".to_string()) {
+                conn.execute(
+                    "ALTER TABLE production_camera_configs ADD COLUMN lens_character TEXT",
+                    [],
+                )?;
+            }
+            if !production_camera_columns.contains(&"diffusion".to_string()) {
+                conn.execute(
+                    "ALTER TABLE production_camera_configs ADD COLUMN diffusion TEXT",
+                    [],
+                )?;
+            }
+
+            conn.execute_batch(
+                "
+                CREATE TABLE IF NOT EXISTS production_look_setups (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    custom_notes TEXT,
+                    lighting TEXT NOT NULL,
+                    skin_priority INTEGER NOT NULL DEFAULT 0,
+                    outputs_json TEXT NOT NULL DEFAULT '{}',
+                    FOREIGN KEY(project_id) REFERENCES production_projects(id)
+                );
+                CREATE TABLE IF NOT EXISTS production_onset_checks (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    ready_state_json TEXT NOT NULL DEFAULT '{}',
+                    lighting_checks_json TEXT NOT NULL DEFAULT '[]',
+                    failure_modes_json TEXT NOT NULL DEFAULT '[]',
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(project_id) REFERENCES production_projects(id)
+                );
+                CREATE TABLE IF NOT EXISTS production_presets (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(project_id) REFERENCES production_projects(id)
+                );
+                ",
+            )?;
+
+            let mut legacy_look_stmt =
+                conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='production_look_targets'")?;
+            let has_legacy_look_targets = legacy_look_stmt.exists([])?;
+            if has_legacy_look_targets {
+                conn.execute(
+                    "INSERT OR IGNORE INTO production_look_setups (id, project_id, target_type, custom_notes, lighting, skin_priority, outputs_json)
+                     SELECT t.id, t.project_id, t.target_type, t.custom_notes, COALESCE(c.lighting, 'mixed'), COALESCE(c.skin_priority, 0), '{}'
+                     FROM production_look_targets t
+                     LEFT JOIN production_scene_constraints c ON c.project_id = t.project_id",
                     [],
                 )?;
             }
@@ -1028,10 +1149,11 @@ impl Database {
 
             CREATE TABLE IF NOT EXISTS thumbnails (
                 clip_id TEXT NOT NULL,
+                jump_seconds INTEGER NOT NULL,
                 idx INTEGER NOT NULL,
                 timestamp_ms INTEGER NOT NULL,
                 file_path TEXT NOT NULL,
-                PRIMARY KEY (clip_id, idx),
+                PRIMARY KEY (clip_id, jump_seconds, idx),
                 FOREIGN KEY (clip_id) REFERENCES clips(id)
             );
 
@@ -1267,6 +1389,7 @@ impl Database {
             CREATE TABLE IF NOT EXISTS production_projects (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
+                client_name TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 last_opened_at TEXT NOT NULL
             );
@@ -1278,33 +1401,42 @@ impl Database {
                 brand TEXT NOT NULL,
                 model TEXT NOT NULL,
                 recording_mode TEXT NOT NULL,
+                log_family TEXT NOT NULL DEFAULT 'rec709',
                 base_iso_list_json TEXT NOT NULL,
+                lens_character TEXT,
+                diffusion TEXT,
                 notes TEXT,
                 FOREIGN KEY(project_id) REFERENCES production_projects(id)
             );
 
-            CREATE TABLE IF NOT EXISTS production_look_targets (
+            CREATE TABLE IF NOT EXISTS production_look_setups (
                 id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL,
                 target_type TEXT NOT NULL,
                 custom_notes TEXT,
-                FOREIGN KEY(project_id) REFERENCES production_projects(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS production_scene_constraints (
-                id TEXT PRIMARY KEY,
-                project_id TEXT NOT NULL,
                 lighting TEXT NOT NULL,
                 skin_priority INTEGER NOT NULL DEFAULT 0,
-                notes TEXT,
+                outputs_json TEXT NOT NULL DEFAULT '{}',
                 FOREIGN KEY(project_id) REFERENCES production_projects(id)
             );
 
-            CREATE TABLE IF NOT EXISTS production_outputs (
+            CREATE TABLE IF NOT EXISTS production_onset_checks (
                 id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL,
-                generated_at TEXT NOT NULL,
+                ready_state_json TEXT NOT NULL DEFAULT '{}',
+                lighting_checks_json TEXT NOT NULL DEFAULT '[]',
+                failure_modes_json TEXT NOT NULL DEFAULT '[]',
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES production_projects(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS production_presets (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
                 payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
                 FOREIGN KEY(project_id) REFERENCES production_projects(id)
             );
             ",
@@ -1326,21 +1458,37 @@ impl Database {
     pub fn upsert_production_project(&self, project: &ProductionProject) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO production_projects (id, name, created_at, last_opened_at) VALUES (?1, ?2, ?3, ?4)",
-            params![project.id, project.name, project.created_at, project.last_opened_at],
+            "INSERT OR REPLACE INTO production_projects (id, name, client_name, created_at, last_opened_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                project.id,
+                project.name,
+                project.client_name,
+                project.created_at,
+                project.last_opened_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn touch_production_project(&self, project_id: &str, touched_at: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE production_projects SET last_opened_at = ?2 WHERE id = ?1",
+            params![project_id, touched_at],
         )?;
         Ok(())
     }
 
     pub fn list_production_projects(&self) -> SqlResult<Vec<ProductionProject>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, name, created_at, last_opened_at FROM production_projects ORDER BY last_opened_at DESC")?;
+        let mut stmt = conn.prepare("SELECT id, name, client_name, created_at, last_opened_at FROM production_projects ORDER BY last_opened_at DESC")?;
         let rows = stmt.query_map([], |row| {
             Ok(ProductionProject {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                created_at: row.get(2)?,
-                last_opened_at: row.get(3)?,
+                client_name: row.get(2)?,
+                created_at: row.get(3)?,
+                last_opened_at: row.get(4)?,
             })
         })?;
         let mut projects = Vec::new();
@@ -1350,33 +1498,26 @@ impl Database {
         Ok(projects)
     }
 
-    pub fn get_production_project(&self, id: &str) -> SqlResult<Option<ProductionProject>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, name, created_at, last_opened_at FROM production_projects WHERE id = ?1",
-        )?;
-        let mut rows = stmt.query_map(params![id], |row| {
-            Ok(ProductionProject {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                created_at: row.get(2)?,
-                last_opened_at: row.get(3)?,
-            })
-        })?;
-        match rows.next() {
-            Some(Ok(p)) => Ok(Some(p)),
-            _ => Ok(None),
-        }
-    }
-
     pub fn upsert_production_camera_config(
         &self,
         config: &ProductionCameraConfig,
     ) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO production_camera_configs (id, project_id, slot, brand, model, recording_mode, base_iso_list_json, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![config.id, config.project_id, config.slot, config.brand, config.model, config.recording_mode, config.base_iso_list_json, config.notes],
+            "INSERT OR REPLACE INTO production_camera_configs (id, project_id, slot, brand, model, recording_mode, log_family, base_iso_list_json, lens_character, diffusion, notes) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                config.id,
+                config.project_id,
+                config.slot,
+                config.brand,
+                config.model,
+                config.recording_mode,
+                config.log_family,
+                config.base_iso_list_json,
+                config.lens_character,
+                config.diffusion,
+                config.notes
+            ],
         )?;
         Ok(())
     }
@@ -1386,7 +1527,7 @@ impl Database {
         project_id: &str,
     ) -> SqlResult<Vec<ProductionCameraConfig>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, project_id, slot, brand, model, recording_mode, base_iso_list_json, notes FROM production_camera_configs WHERE project_id = ?1")?;
+        let mut stmt = conn.prepare("SELECT id, project_id, slot, brand, model, recording_mode, log_family, base_iso_list_json, lens_character, diffusion, notes FROM production_camera_configs WHERE project_id = ?1 ORDER BY slot ASC")?;
         let rows = stmt.query_map(params![project_id], |row| {
             Ok(ProductionCameraConfig {
                 id: row.get(0)?,
@@ -1395,8 +1536,11 @@ impl Database {
                 brand: row.get(3)?,
                 model: row.get(4)?,
                 recording_mode: row.get(5)?,
-                base_iso_list_json: row.get(6)?,
-                notes: row.get(7)?,
+                log_family: row.get(6)?,
+                base_iso_list_json: row.get(7)?,
+                lens_character: row.get(8)?,
+                diffusion: row.get(9)?,
+                notes: row.get(10)?,
             })
         })?;
         let mut configs = Vec::new();
@@ -1406,27 +1550,38 @@ impl Database {
         Ok(configs)
     }
 
-    pub fn upsert_production_look_target(&self, target: &ProductionLookTarget) -> SqlResult<()> {
+    pub fn upsert_production_look_setup(&self, target: &ProductionLookSetup) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO production_look_targets (id, project_id, target_type, custom_notes) VALUES (?1, ?2, ?3, ?4)",
-            params![target.id, target.project_id, target.target_type, target.custom_notes],
+            "INSERT OR REPLACE INTO production_look_setups (id, project_id, target_type, custom_notes, lighting, skin_priority, outputs_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                target.id,
+                target.project_id,
+                target.target_type,
+                target.custom_notes,
+                target.lighting,
+                if target.skin_priority { 1 } else { 0 },
+                target.outputs_json
+            ],
         )?;
         Ok(())
     }
 
-    pub fn get_production_look_target(
+    pub fn get_production_look_setup(
         &self,
         project_id: &str,
-    ) -> SqlResult<Option<ProductionLookTarget>> {
+    ) -> SqlResult<Option<ProductionLookSetup>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, project_id, target_type, custom_notes FROM production_look_targets WHERE project_id = ?1")?;
+        let mut stmt = conn.prepare("SELECT id, project_id, target_type, custom_notes, lighting, skin_priority, outputs_json FROM production_look_setups WHERE project_id = ?1")?;
         let mut rows = stmt.query_map(params![project_id], |row| {
-            Ok(ProductionLookTarget {
+            Ok(ProductionLookSetup {
                 id: row.get(0)?,
                 project_id: row.get(1)?,
                 target_type: row.get(2)?,
                 custom_notes: row.get(3)?,
+                lighting: row.get(4)?,
+                skin_priority: row.get::<_, i32>(5)? != 0,
+                outputs_json: row.get(6)?,
             })
         })?;
         match rows.next() {
@@ -1435,31 +1590,36 @@ impl Database {
         }
     }
 
-    pub fn upsert_production_scene_constraint(
-        &self,
-        constraint: &ProductionSceneConstraint,
-    ) -> SqlResult<()> {
+    pub fn upsert_production_onset_checks(&self, checks: &ProductionOnsetChecks) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO production_scene_constraints (id, project_id, lighting, skin_priority, notes) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![constraint.id, constraint.project_id, constraint.lighting, if constraint.skin_priority { 1 } else { 0 }, constraint.notes],
+            "INSERT OR REPLACE INTO production_onset_checks (id, project_id, ready_state_json, lighting_checks_json, failure_modes_json, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                checks.id,
+                checks.project_id,
+                checks.ready_state_json,
+                checks.lighting_checks_json,
+                checks.failure_modes_json,
+                checks.updated_at
+            ],
         )?;
         Ok(())
     }
 
-    pub fn get_production_scene_constraint(
+    pub fn get_production_onset_checks(
         &self,
         project_id: &str,
-    ) -> SqlResult<Option<ProductionSceneConstraint>> {
+    ) -> SqlResult<Option<ProductionOnsetChecks>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, project_id, lighting, skin_priority, notes FROM production_scene_constraints WHERE project_id = ?1")?;
+        let mut stmt = conn.prepare("SELECT id, project_id, ready_state_json, lighting_checks_json, failure_modes_json, updated_at FROM production_onset_checks WHERE project_id = ?1")?;
         let mut rows = stmt.query_map(params![project_id], |row| {
-            Ok(ProductionSceneConstraint {
+            Ok(ProductionOnsetChecks {
                 id: row.get(0)?,
                 project_id: row.get(1)?,
-                lighting: row.get(2)?,
-                skin_priority: row.get::<_, i32>(3)? != 0,
-                notes: row.get(4)?,
+                ready_state_json: row.get(2)?,
+                lighting_checks_json: row.get(3)?,
+                failure_modes_json: row.get(4)?,
+                updated_at: row.get(5)?,
             })
         })?;
         match rows.next() {
@@ -1468,28 +1628,57 @@ impl Database {
         }
     }
 
-    pub fn upsert_production_output(&self, output: &ProductionOutput) -> SqlResult<()> {
+    pub fn upsert_production_preset(&self, preset: &ProductionPreset) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO production_outputs (id, project_id, generated_at, payload_json) VALUES (?1, ?2, ?3, ?4)",
-            params![output.id, output.project_id, output.generated_at, output.payload_json],
+            "INSERT OR REPLACE INTO production_presets (id, project_id, name, payload_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                preset.id,
+                preset.project_id,
+                preset.name,
+                preset.payload_json,
+                preset.created_at,
+                preset.updated_at
+            ],
         )?;
         Ok(())
     }
 
-    pub fn get_production_output(&self, project_id: &str) -> SqlResult<Option<ProductionOutput>> {
+    pub fn list_production_presets(&self, project_id: &str) -> SqlResult<Vec<ProductionPreset>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, project_id, generated_at, payload_json FROM production_outputs WHERE project_id = ?1")?;
-        let mut rows = stmt.query_map(params![project_id], |row| {
-            Ok(ProductionOutput {
+        let mut stmt = conn.prepare("SELECT id, project_id, name, payload_json, created_at, updated_at FROM production_presets WHERE project_id = ?1 ORDER BY updated_at DESC")?;
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(ProductionPreset {
                 id: row.get(0)?,
                 project_id: row.get(1)?,
-                generated_at: row.get(2)?,
+                name: row.get(2)?,
                 payload_json: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?;
+        let mut presets = Vec::new();
+        for preset in rows {
+            presets.push(preset?);
+        }
+        Ok(presets)
+    }
+
+    pub fn get_production_preset(&self, preset_id: &str) -> SqlResult<Option<ProductionPreset>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, project_id, name, payload_json, created_at, updated_at FROM production_presets WHERE id = ?1")?;
+        let mut rows = stmt.query_map(params![preset_id], |row| {
+            Ok(ProductionPreset {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                name: row.get(2)?,
+                payload_json: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
             })
         })?;
         match rows.next() {
-            Some(Ok(o)) => Ok(Some(o)),
+            Some(Ok(preset)) => Ok(Some(preset)),
             _ => Ok(None),
         }
     }
@@ -2832,8 +3021,14 @@ impl Database {
     pub fn upsert_thumbnail(&self, thumb: &Thumbnail) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO thumbnails (clip_id, idx, timestamp_ms, file_path) VALUES (?1, ?2, ?3, ?4)",
-            params![thumb.clip_id, thumb.index, thumb.timestamp_ms as i64, thumb.file_path],
+            "INSERT OR REPLACE INTO thumbnails (clip_id, jump_seconds, idx, timestamp_ms, file_path) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                thumb.clip_id,
+                thumb.jump_seconds,
+                thumb.index,
+                thumb.timestamp_ms as i64,
+                thumb.file_path
+            ],
         )?;
         Ok(())
     }
@@ -2849,15 +3044,16 @@ impl Database {
     pub fn get_thumbnails(&self, clip_id: &str) -> SqlResult<Vec<Thumbnail>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT clip_id, idx, timestamp_ms, file_path FROM thumbnails WHERE clip_id = ?1 ORDER BY idx",
+            "SELECT clip_id, jump_seconds, idx, timestamp_ms, file_path FROM thumbnails WHERE clip_id = ?1 ORDER BY jump_seconds, idx",
         )?;
         let thumbs = stmt
             .query_map(params![clip_id], |row| {
                 Ok(Thumbnail {
                     clip_id: row.get(0)?,
-                    index: row.get::<_, u32>(1)?,
-                    timestamp_ms: row.get::<_, i64>(2)? as u64,
-                    file_path: row.get(3)?,
+                    jump_seconds: row.get::<_, u32>(1)?,
+                    index: row.get::<_, u32>(2)?,
+                    timestamp_ms: row.get::<_, i64>(3)? as u64,
+                    file_path: row.get(4)?,
                 })
             })?
             .filter_map(|r| r.ok())

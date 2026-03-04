@@ -37,6 +37,7 @@ export interface Clip {
 
 export interface Thumbnail {
     clip_id: string;
+    jump_seconds: number;
     index: number;
     timestamp_ms: number;
     file_path: string;
@@ -293,6 +294,7 @@ export interface ReviewCoreSharedVersionSummary {
 export interface ProductionProject {
     id: string;
     name: string;
+    client_name: string;
     created_at: string;
     last_opened_at: string;
 }
@@ -304,30 +306,76 @@ export interface ProductionCameraConfig {
     brand: string;
     model: string;
     recording_mode: string;
+    log_family: string;
     base_iso_list_json: string;
+    lens_character?: string | null;
+    diffusion?: string | null;
     notes?: string | null;
 }
 
-export interface ProductionLookTarget {
+export interface ProductionLookSetup {
     id: string;
     project_id: string;
     target_type: string; // "arri" | "fuji" | "cine_neutral" | "custom"
     custom_notes?: string | null;
-}
-
-export interface ProductionSceneConstraint {
-    id: string;
-    project_id: string;
     lighting: string; // "controlled" | "mixed" | "run_and_gun"
     skin_priority: boolean;
-    notes?: string | null;
+    outputs_json: string;
 }
 
-export interface ProductionOutput {
+export interface ProductionOnsetChecks {
     id: string;
     project_id: string;
-    generated_at: string;
+    ready_state_json: string;
+    lighting_checks_json: string;
+    failure_modes_json: string;
+    updated_at: string;
+}
+
+export interface ProductionPreset {
+    id: string;
+    project_id: string;
+    name: string;
     payload_json: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface ProductionLookRecommendation {
+    slot: string;
+    camera_label: string;
+    complete: boolean;
+    missing: string[];
+    capture_format: string;
+    capture_format_basis: string;
+    iso_strategy: string;
+    iso_strategy_basis: string;
+    white_balance_rule: string;
+    white_balance_rule_basis: string;
+    detail_rule: string;
+    detail_rule_basis: string;
+    exposure_target: string;
+    exposure_target_basis: string;
+    monitoring_class: string;
+    monitoring_class_basis: string;
+    discipline_checklist: string[];
+    warnings: string[];
+}
+
+export interface ProductionLookOutputs {
+    summary: string;
+    recommendations: ProductionLookRecommendation[];
+    generated_at: string;
+}
+
+export interface ProductionMatchPresetPayload {
+    hero_slot: string;
+    hero_summary: string;
+    steps: Array<{
+        slot: string;
+        camera_label: string;
+        checklist: string[];
+    }>;
 }
 
 export interface CameraProfile {

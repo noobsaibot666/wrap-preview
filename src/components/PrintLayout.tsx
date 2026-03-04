@@ -11,12 +11,13 @@ interface PrintLayoutProps {
   logoSrc?: string;
   appVersion?: string;
   thumbCount: number;
+  jumpSeconds: number;
+  cacheKeyContext?: string;
   onClose: () => void;
   projectLutHash?: string | null;
-
 }
 
-export function PrintLayout({ projectName, clips, thumbnailCache, brandProfile, logoSrc, appVersion = "unknown", thumbCount, onClose, projectLutHash }: PrintLayoutProps) {
+export function PrintLayout({ projectName, clips, thumbnailCache, brandProfile, logoSrc, appVersion = "unknown", thumbCount, jumpSeconds, cacheKeyContext, onClose, projectLutHash }: PrintLayoutProps) {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-GB", {
     day: "2-digit",
@@ -48,6 +49,8 @@ export function PrintLayout({ projectName, clips, thumbnailCache, brandProfile, 
                 item={item}
                 thumbnailCache={thumbnailCache}
                 thumbCount={thumbCount}
+                jumpSeconds={jumpSeconds}
+                cacheKeyContext={cacheKeyContext}
                 projectLutHash={projectLutHash}
               />
             ))}
@@ -65,11 +68,15 @@ function PrintClipRow({
   item,
   thumbnailCache,
   thumbCount,
+  jumpSeconds,
+  cacheKeyContext,
   projectLutHash,
 }: {
   item: ClipWithThumbnails;
   thumbnailCache: Record<string, string>;
   thumbCount: number;
+  jumpSeconds: number;
+  cacheKeyContext?: string;
   projectLutHash?: string | null;
 }) {
   const { clip } = item;
@@ -81,10 +88,10 @@ function PrintClipRow({
       {/* Thumbnail strip */}
       <div className="print-film-strip">
         {Array.from({ length: thumbCount }, (_, idx) => {
-          const cacheKey = `${clip.id}_${idx}`;
+          const cacheKey = `${clip.id}_${idx}|${cacheKeyContext ?? `jump=${jumpSeconds}`}`;
           let src = thumbnailCache[cacheKey];
 
-          if (src && projectLutHash && clip.lut_enabled === 1) {
+          if (src && !src.startsWith("data:") && projectLutHash && clip.lut_enabled === 1) {
             const parts = src.split('/');
             const filename = parts.pop();
             const newFilename = `lut_${projectLutHash}_${filename}`;

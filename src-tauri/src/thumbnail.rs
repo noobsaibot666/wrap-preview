@@ -10,23 +10,24 @@ const MAX_WIDTH: u32 = 640;
 /// Luminance threshold for black frame rejection (0-255)
 const BLACK_THRESHOLD: f64 = 15.0;
 
-/// Calculate smart sampling timestamps for a clip
-pub fn calculate_timestamps(duration_ms: u64, count: u32) -> Vec<u64> {
+/// Calculate fixed jump-based timestamps for a clip.
+pub fn calculate_jump_timestamps(duration_ms: u64, jump_seconds: u32) -> Vec<u64> {
     let duration_secs = duration_ms as f64 / 1000.0;
     let usable_start = SKIP_SECONDS;
     let usable_end = (duration_secs - usable_start).max(usable_start);
-    let usable_duration = (usable_end - usable_start).max(0.1);
-
-    if count <= 1 {
-        return vec![(((usable_start + usable_end) * 0.5) * 1000.0) as u64];
-    }
+    let jump = (jump_seconds.max(1)) as f64;
 
     let mut timestamps = Vec::new();
-    for i in 0..count {
-        let pos = 0.1 + (0.8 * (i as f64 / (count - 1) as f64));
-        let ts = usable_start + (usable_duration * pos);
-        timestamps.push((ts * 1000.0) as u64);
+    let mut current = usable_start;
+    while current <= usable_end {
+        timestamps.push((current * 1000.0) as u64);
+        current += jump;
     }
+
+    if timestamps.is_empty() {
+        timestamps.push((((usable_start + usable_end) * 0.5) * 1000.0) as u64);
+    }
+
     timestamps
 }
 

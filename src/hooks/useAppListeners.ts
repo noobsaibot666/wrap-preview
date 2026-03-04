@@ -6,6 +6,7 @@ import {
     Phase,
     PhaseData
 } from "../types";
+import { isTauriReloading } from "../utils/tauri";
 
 interface UseAppListenersProps {
     setPhaseState: (phase: Phase, updates: Partial<PhaseData> | ((prev: PhaseData) => PhaseData)) => void;
@@ -54,6 +55,7 @@ export function useAppListeners({
 
         async function setupThumbnailListeners() {
             unlistenProgress = await listen<ThumbnailProgress>("thumbnail-progress", (event) => {
+                if (isTauriReloading()) return;
                 const { project_id, clip_id, clip_index, total_clips, thumbnails } = event.payload;
 
                 const targetPhase = projectPhaseMapRef.current.get(project_id);
@@ -85,6 +87,7 @@ export function useAppListeners({
             });
 
             unlistenComplete = await listen("thumbnail-complete", async (event) => {
+                if (isTauriReloading()) return;
                 const payload = event.payload as { project_id: string; clip_id?: string | null };
                 const project_id = payload.project_id;
 
@@ -92,6 +95,7 @@ export function useAppListeners({
                 if (targetPhase) {
                     setPhaseState(targetPhase, { extracting: false });
                     // Note: clip_id handling was removed in the original code as well
+                    if (isTauriReloading()) return;
                     await refreshProjectClips(project_id, targetPhase);
                 }
             });

@@ -12,6 +12,7 @@ interface DisplayedThumbOptions {
   thumbnails: Thumbnail[];
   thumbnailCache: Record<string, string>;
   thumbCount: number;
+  jumpSeconds?: number;
   cacheKeyContext?: string;
 }
 
@@ -33,9 +34,11 @@ export function getDisplayedThumbsForClip({
   thumbnails,
   thumbnailCache,
   thumbCount,
+  jumpSeconds,
   cacheKeyContext,
 }: DisplayedThumbOptions): DisplayedThumbnail[] {
   const resolved: DisplayedThumbnail[] = [...thumbnails]
+    .filter((thumb) => jumpSeconds == null || thumb.jump_seconds === jumpSeconds)
     .sort((a, b) => a.index - b.index)
     .map((thumb) => {
       const src = getThumbnailCacheValue(thumbnailCache, clipId, thumb.index, cacheKeyContext);

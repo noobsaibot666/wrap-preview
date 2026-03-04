@@ -8,6 +8,7 @@ export interface CommandAction {
     category: "Navigation" | "Project" | "System" | "Recent";
     onSelect: () => void;
     shortcut?: string;
+    disabled?: boolean;
 }
 
 export function useCommandPalette() {

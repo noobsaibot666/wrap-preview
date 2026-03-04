@@ -1,11 +1,10 @@
-import { ReviewCoreAsset, ReviewCoreComment, ReviewCoreFrameNote } from "../../types";
+import { ReviewCoreAsset, ReviewCoreComment } from "../../types";
 import {
     AnnotationItem,
     AnnotationStyle,
     AnnotationTool,
     AnnotationVectorData,
     CommonAsset,
-    CommonVersion,
     FrameNoteVectorData,
     NormalizedPoint,
     OverlayFrameRect,

@@ -3184,17 +3184,23 @@ body {
 /* ─── Film Strip ─── */
 .film-strip {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 2px;
-  height: 220px;
+  height: 110px;
   padding: 2px;
   border-radius: var(--radius-sm);
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   background: var(--bg-app);
   border: 1px solid rgba(255, 255, 255, 0.05);
   box-sizing: border-box;
   scrollbar-width: thin;
+}
+
+.filmstrip {
+  height: 110px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
 }
 
 .film-strip-thumb {
@@ -3212,6 +3218,11 @@ body {
   height: 100%;
   object-fit: cover;
   transition: transform 0.4s cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+.thumb {
+  height: 100%;
+  object-fit: cover;
 }
 
 .film-strip:hover .film-strip-thumb img {

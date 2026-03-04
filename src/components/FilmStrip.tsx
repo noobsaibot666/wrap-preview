@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Thumbnail } from "../types";
 import { DisplayedThumbnail, getThumbnailCacheValue } from "../utils/shotPlannerThumbnails";
+import { invokeGuarded, isTauriReloading } from "../utils/tauri";
 
 interface FilmStripProps {
     clipId?: string;
@@ -66,6 +66,7 @@ export const FilmStrip = memo(function FilmStrip({
         renderTokenRef.current = token;
         let cancelled = false;
         void Promise.all(visibleThumbs.map(async (thumb) => {
+            if (isTauriReloading()) return thumb.src;
             const thumbPath = thumb.file_path;
             if (!thumbPath || thumbPath.startsWith("data:")) return thumb.src;
             const parts = thumbPath.split("/");
@@ -73,12 +74,12 @@ export const FilmStrip = memo(function FilmStrip({
             if (!filename) return thumb.src;
             const lutPath = [...parts, `lut_${projectLutHash}_${filename}`].join("/");
             try {
-                return await invoke<string>("read_thumbnail", { path: lutPath });
+                return await invokeGuarded<string>("read_thumbnail", { path: lutPath });
             } catch {
                 return thumb.src;
             }
         })).then((nextSources) => {
-            if (cancelled || renderTokenRef.current !== token) return;
+            if (cancelled || renderTokenRef.current !== token || isTauriReloading()) return;
             setRenderSources(nextSources);
         });
         return () => {
@@ -89,7 +90,7 @@ export const FilmStrip = memo(function FilmStrip({
     if (status === "fail") {
         return (
             <div
-                className={`film-strip ${orientationClass}`}
+                className={`film-strip filmstrip ${orientationClass}`}
                 onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(); }}
                 style={{ "--aspect-ratio": aspectRatio } as any}
             >
@@ -105,7 +106,7 @@ export const FilmStrip = memo(function FilmStrip({
     if (resolvedThumbnails.length === 0) {
         return (
             <div
-                className={`film-strip ${orientationClass}`}
+                className={`film-strip filmstrip ${orientationClass}`}
                 onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(); }}
                 style={{ "--aspect-ratio": aspectRatio, "--thumb-columns": effectivePlaceholderCount } as any}
             >
@@ -124,7 +125,7 @@ export const FilmStrip = memo(function FilmStrip({
 
     return (
         <div
-            className={`film-strip ${orientationClass}`}
+            className={`film-strip filmstrip ${orientationClass}`}
             onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(); }}
             style={{ "--aspect-ratio": aspectRatio, "--thumb-columns": effectivePlaceholderCount } as any}
         >
@@ -135,7 +136,7 @@ export const FilmStrip = memo(function FilmStrip({
                 if (src) {
                     return (
                         <div key={idx} className="film-strip-thumb">
-                            <img src={src} alt={`Frame ${idx + 1}`} onError={(e) => {
+                            <img className="thumb" src={src} alt={`Frame ${idx + 1}`} onError={(e) => {
                                 // Fallback to original thumbnail if LUT image fails to load
                                 if (thumb && projectLutHash && clipLutEnabled === 1) {
                                     (e.target as HTMLImageElement).src = fallbackThumbnailSrc ?? thumb.src;

@@ -55,6 +55,8 @@ import OnSetCoach from './modules/Production/apps/OnSetCoach.tsx';
 import MatchNormalize from './modules/Production/apps/MatchNormalize.tsx';
 import { useCommandPalette } from "./hooks/useCommandPalette";
 import { CommandPalette } from "./components/CommandPalette";
+import { getJumpIntervalForThumbCount, getThumbnailCacheContext } from "./utils/thumbnailIntervals";
+import { invokeGuarded, isTauriReloading } from "./utils/tauri";
 
 // --- Error Boundary ---
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
@@ -192,16 +194,20 @@ function AppContent() {
 
     const originalWarn = console.warn;
     const originalError = console.error;
+    const isHarmlessDevNoise = (message: string) =>
+      message.includes("Couldn't find callback id") ||
+      (message.includes("callback id") && message.includes("not found")) ||
+      message.includes("react-virtuoso: Zero-sized element");
     console.warn = (...args: unknown[]) => {
       const firstArg = typeof args[0] === "string" ? args[0] : "";
-      if (firstArg.includes("Couldn't find callback id")) {
+      if (isHarmlessDevNoise(firstArg)) {
         return;
       }
       originalWarn(...args);
     };
     console.error = (...args: unknown[]) => {
       const firstArg = typeof args[0] === "string" ? args[0] : "";
-      if (firstArg.includes("react-virtuoso: Zero-sized element")) {
+      if (isHarmlessDevNoise(firstArg)) {
         return;
       }
       originalError(...args);
@@ -316,22 +322,23 @@ function AppContent() {
     return saved ? parseInt(saved, 10) : 5;
   });
 
-  const thumbCountRef = useRef(thumbCount);
-  useEffect(() => { thumbCountRef.current = thumbCount; }, [thumbCount]);
-
   const [namingTemplate] = useState<string>(() => {
     return localStorage.getItem("wp_namingTemplate") || "ContactSheet_{PROJECT}_{DATE}";
   });
 
   const [customShotSizes, setCustomShotSizes] = useState<string[]>([]);
   const [customMovements, setCustomMovements] = useState<string[]>([]);
-  const thumbCacheContext = `count=${thumbCount}`;
+  const selectedJumpSeconds = useMemo(() => getJumpIntervalForThumbCount(thumbCount), [thumbCount]);
+  const thumbCacheContext = useMemo(
+    () => getThumbnailCacheContext(selectedJumpSeconds),
+    [selectedJumpSeconds],
+  );
 
   const safeInvoke = useCallback(async <T,>(command: string, args?: Record<string, unknown>) => {
     if (isUnloadingRef.current) {
       throw new Error("app unloading");
     }
-    return invoke<T>(command, args);
+    return invokeGuarded<T>(command, args);
   }, []);
 
   const loadCustomTaxonomy = useCallback(() => {
@@ -388,9 +395,10 @@ function AppContent() {
     if (projectId) {
       const loadBrand = async () => {
         try {
-          const p = await invoke<any>("get_project", { projectId: projectId });
+          const p = await safeInvoke<any>("get_project", { projectId: projectId });
           if (p && p.root_path) {
-            const profile = await invoke<any>("load_brand_profile", { projectPath: p.root_path });
+            const profile = await safeInvoke<any>("load_brand_profile", { projectPath: p.root_path });
+            if (isTauriReloading()) return;
             setBrandProfile(profile);
           }
         } catch (e) {
@@ -401,7 +409,7 @@ function AppContent() {
     } else {
       setBrandProfile(null);
     }
-  }, [projectId]);
+  }, [projectId, safeInvoke]);
 
   useEffect(() => {
     const seen = localStorage.getItem(TOUR_SEEN_KEY) === "true";
@@ -413,12 +421,13 @@ function AppContent() {
 
   const refreshJobs = useCallback(async () => {
     try {
-      const data = await invoke<JobInfo[]>("list_jobs");
+      const data = await safeInvoke<JobInfo[]>("list_jobs");
+      if (isTauriReloading()) return;
       setJobs(data);
     } catch (err) {
       console.error("Failed loading jobs", err);
     }
-  }, []);
+  }, [safeInvoke]);
 
   useEffect(() => {
     refreshJobs();
@@ -428,10 +437,15 @@ function AppContent() {
 
 
   useEffect(() => {
-    invoke<AppInfo>("get_app_info").then(setAppInfo).catch(console.error);
+    safeInvoke<AppInfo>("get_app_info")
+      .then((info) => {
+        if (isTauriReloading()) return;
+        setAppInfo(info);
+      })
+      .catch(console.error);
 
     // Project restoration on mount disabled for "blank canvas" start
-  }, []);
+  }, [safeInvoke]);
 
   // State for delayed actions
   const [postScanTab, setPostScanTab] = useState<"preproduction" | "shot-planner" | "media-workspace" | "clip-review" | "scene-blocks" | "contact" | "blocks" | "all" | null>(null);
@@ -444,7 +458,8 @@ function AppContent() {
 
   const fetchProjectSettings = useCallback(async (pid: string) => {
     try {
-      const settingsJson = await invoke<string>("get_project_settings", { projectId: pid });
+      const settingsJson = await safeInvoke<string>("get_project_settings", { projectId: pid });
+      if (isTauriReloading()) return;
       if (settingsJson && settingsJson !== "{}") {
         const settings = JSON.parse(settingsJson);
         if (settings.lut_path) {
@@ -463,7 +478,7 @@ function AppContent() {
       console.error("Failed to fetch project settings", e);
       setProjectLut(null);
     }
-  }, []);
+  }, [safeInvoke]);
 
   const handleLoadProjectLut = useCallback(async () => {
     if (!projectId) return;
@@ -535,15 +550,15 @@ function AppContent() {
   }, [safeInvoke]);
 
   const hydrateThumbnailCacheEntries = useCallback(async (
-    entries: Array<{ clipId: string; index: number; path: string }>
+    entries: Array<{ clipId: string; jumpSeconds: number; index: number; path: string }>
   ) => {
-    const hydrated = await Promise.all(entries.map(async ({ clipId, index, path }) => {
+    const hydrated = await Promise.all(entries.map(async ({ clipId, jumpSeconds, index, path }) => {
       const src = await hydrateThumbnailEntry(path);
       if (!src) return null;
-      return { clipId, index, src };
+      return { clipId, jumpSeconds, index, src };
     }));
 
-    return hydrated.filter((entry): entry is { clipId: string; index: number; src: string } => Boolean(entry));
+    return hydrated.filter((entry): entry is { clipId: string; jumpSeconds: number; index: number; src: string } => Boolean(entry));
   }, [hydrateThumbnailEntry]);
 
 
@@ -590,35 +605,6 @@ function AppContent() {
     }
   }, [projectId, openExportAfterScan]);
 
-  // Trigger global thumbnail extraction on count change
-  useEffect(() => {
-    if (!isShotPlannerActive || !projectId || clips.length === 0) return;
-
-    // Clear stale cache entries for this project context to force regeneration view
-    setPhaseState(currentPhase, (prev: PhaseData) => {
-      const nextCache = { ...prev.thumbnailCache };
-      let changed = false;
-      Object.keys(nextCache).forEach(key => {
-        // Only clear keys that contain project ID (approximate match for its clips)
-        if (key.includes(projectId)) {
-          delete nextCache[key];
-          changed = true;
-        }
-      });
-      return changed ? { ...prev, thumbnailCache: nextCache } : prev;
-    });
-
-    setPhaseState(currentPhase, { extracting: true });
-    safeInvoke("extract_thumbnails", {
-      projectId,
-      thumbCount,
-    }).catch((error) => {
-      console.error("Failed to apply count settings", error);
-      setPhaseState(currentPhase, { extracting: false });
-    });
-  }, [projectId, isShotPlannerActive, thumbCount]);
-
-
   useEffect(() => {
     setSelectedClipIds((prev) => {
       let changed = false;
@@ -640,7 +626,8 @@ function AppContent() {
 
   const refreshProjectClips = useCallback(async (nextProjectId: string, targetPhase?: Phase) => {
     try {
-      const clipRows = await invoke<ClipWithThumbnails[]>("get_clips", { projectId: nextProjectId });
+      const clipRows = await safeInvoke<ClipWithThumbnails[]>("get_clips", { projectId: nextProjectId });
+      if (isTauriReloading()) return;
 
       // Determine phase: use provided, or look up in map, or default to current
       const activePhase = targetPhase || projectPhaseMapRef.current.get(nextProjectId) || currentPhase;
@@ -656,6 +643,7 @@ function AppContent() {
       const thumbEntries = clipRows.flatMap((item) =>
         item.thumbnails.map((thumb) => ({
           clipId: thumb.clip_id,
+          jumpSeconds: thumb.jump_seconds,
           index: thumb.index,
           path: thumb.file_path
         }))
@@ -666,9 +654,9 @@ function AppContent() {
 
         setPhaseState(activePhase, (prev) => {
           const nextCache = { ...(prev.thumbnailCache || {}) };
-          for (const { clipId, index, src } of hydratedEntries) {
-            nextCache[`${clipId}_${index}`] = src;
-            nextCache[getThumbCacheKey(clipId, index)] = src;
+          for (const { clipId, jumpSeconds, index, src } of hydratedEntries) {
+            nextCache[`${clipId}_${index}`] = nextCache[`${clipId}_${index}`] ?? src;
+            nextCache[getThumbCacheKey(clipId, index, getThumbnailCacheContext(jumpSeconds))] = src;
           }
           return {
             ...prev,
@@ -684,7 +672,7 @@ function AppContent() {
       console.error("Failed to refresh clips:", error);
       setUiError({ title: "Could not load clip previews", hint: "Retry scan. If this persists, export diagnostics." });
     }
-  }, [setPhaseState, fetchProjectSettings, getThumbCacheKey, hydrateThumbnailCacheEntries]);
+  }, [fetchProjectSettings, getThumbCacheKey, hydrateThumbnailCacheEntries, safeInvoke, setPhaseState]);
 
 
 
@@ -785,7 +773,7 @@ function AppContent() {
 
       addRecentProject(result.project_id, result.project_name, selected as string, targetPhase);
 
-      safeInvoke("extract_thumbnails", { projectId: result.project_id, thumbCount }).catch(
+      safeInvoke("extract_thumbnails", { projectId: result.project_id }).catch(
         (e) => {
           console.error("Thumbnail extraction error:", e);
           setUiError({ title: "Thumbnail extraction failed", hint: "Retry scan or check media read permissions." });
@@ -802,7 +790,7 @@ function AppContent() {
     } finally {
       setPhaseState(targetPhase, { scanning: false });
     }
-  }, [addRecentProject, refreshProjectClips, safeInvoke, setPhaseState, thumbCount]);
+  }, [addRecentProject, refreshProjectClips, safeInvoke, setPhaseState]);
 
   useEffect(() => {
     if (!projectId) {
@@ -946,6 +934,7 @@ function AppContent() {
           thumbnailsByClipId,
           thumbnailCache,
           thumbCount,
+          jumpSeconds: selectedJumpSeconds,
           cacheKeyContext: thumbCacheContext,
           projectLutHash: projectLut?.hash || null,
           brandName: brandProfile?.name,
@@ -974,6 +963,7 @@ function AppContent() {
         thumbnailsByClipId,
         thumbnailCache,
         thumbCount,
+        jumpSeconds: selectedJumpSeconds,
         cacheKeyContext: thumbCacheContext,
         projectLutHash: projectLut?.hash || null,
         brandName: brandProfile?.name,
@@ -990,7 +980,7 @@ function AppContent() {
     } finally {
       setPreparingExport(null);
     }
-  }, [appInfo, brandProfile, getExportClips, isShotPlannerActive, projectLut, projectName, thumbCacheContext, thumbCount, thumbnailCache, thumbnailsByClipId]);
+  }, [appInfo, brandProfile, getExportClips, isShotPlannerActive, projectLut, projectName, selectedJumpSeconds, thumbCacheContext, thumbCount, thumbnailCache, thumbnailsByClipId]);
 
   const requestExport = useCallback((kind: "pdf" | "image" | "mosaic-pdf" | "mosaic-image") => {
     setShotPlannerExportMenuOpen(false);
@@ -1123,21 +1113,55 @@ function AppContent() {
       try { recent = JSON.parse(recentJson); } catch (e) { /* ignore */ }
     }
 
-    const navigationActions = [
-      { id: "nav-home", title: "Go to Modules", description: "Home screen", icon: "box", category: "Navigation" as const, onSelect: () => { setActiveTab("home"); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); } },
-      { id: "nav-shot-planner", title: "Shot Planner", description: "Pre-production planning", icon: "play", category: "Navigation" as const, onSelect: () => { setActiveTab("preproduction"); setActivePreproductionApp("shot-planner"); } },
-      { id: "nav-review", title: "Post-production Review", description: "Review and organize footage", icon: "play", category: "Navigation" as const, onSelect: () => { setActiveTab("media-workspace"); setActiveMediaWorkspaceApp("clip-review"); } },
-      { id: "nav-safe-copy", title: "Safe Copy", description: "Secure ingest and verification", icon: "nav", category: "Navigation" as const, onSelect: () => { setActiveTab("media-workspace"); setActiveMediaWorkspaceApp("safe-copy"); } },
+    const commandRegistry: Record<string, () => void | Promise<void>> = {
+      "nav-home": () => {
+        setActiveTab("home");
+        setActivePreproductionApp(null);
+        setActiveMediaWorkspaceApp(null);
+      },
+      "nav-shot-planner": () => {
+        setActiveTab("preproduction");
+        setActivePreproductionApp("shot-planner");
+      },
+      "nav-review": () => {
+        setActiveTab("media-workspace");
+        setActiveMediaWorkspaceApp("clip-review");
+      },
+      "nav-safe-copy": () => {
+        setActiveTab("media-workspace");
+        setActiveMediaWorkspaceApp("safe-copy");
+      },
+    };
+
+    const commandRefs = [
+      { id: "nav-home", title: "Go to Modules", description: "Home screen", icon: "box", category: "Navigation" as const },
+      { id: "nav-shot-planner", title: "Shot Planner", description: "Pre-production planning", icon: "play", category: "Navigation" as const },
+      { id: "nav-review", title: "Post-production Review", description: "Review and organize footage", icon: "play", category: "Navigation" as const },
+      { id: "nav-safe-copy", title: "Safe Copy", description: "Secure ingest and verification", icon: "nav", category: "Navigation" as const },
     ];
 
-    const projectActions = recent.map(p => ({
+    const navigationActions = commandRefs.map((entry) => {
+      const handler = commandRegistry[entry.id];
+      if (!handler) {
+        console.warn(`[Wrap Preview] Missing command registry entry for "${entry.id}"`);
+      }
+      return {
+        ...entry,
+        disabled: !handler,
+        onSelect: () => {
+          if (!handler) return;
+          void handler();
+        },
+      };
+    });
+
+    const projectActions = recent.map((p) => ({
       id: `project-${p.id}-${p.phase}`,
       title: p.name,
       description: p.path,
       category: "Recent" as const,
       icon: "project",
       onSelect: async () => {
-        // Logic similar to handleSelectFolder but for existing project
         const phase: Phase = p.phase as Phase;
         setPhaseState(phase, { scanning: true, projectId: null, clips: [] });
         setActiveTab(phase === "pre" ? "preproduction" : "media-workspace");
@@ -1157,7 +1181,8 @@ function AppContent() {
             extracting: true,
             extractProgress: { done: 0, total: result.clip_count }
           });
-          refreshProjectClips(result.project_id, phase);
+          void safeInvoke("extract_thumbnails", { projectId: result.project_id }).catch(console.error);
+          await refreshProjectClips(result.project_id, phase);
         } catch (e) {
           console.error("Failed to load project from palette", e);
         } finally {
@@ -1167,7 +1192,7 @@ function AppContent() {
     }));
 
     return [...navigationActions, ...projectActions];
-  }, [setActiveTab, setActivePreproductionApp, setActiveMediaWorkspaceApp, safeInvoke, setPhaseState, refreshProjectClips]);
+  }, [refreshProjectClips, safeInvoke, setActiveMediaWorkspaceApp, setActivePreproductionApp, setActiveTab, setPhaseState]);
 
   return (
     <div className="app-container">
@@ -1207,6 +1232,8 @@ function AppContent() {
                 logoSrc={appLogo}
                 appVersion={appInfo?.version || "unknown"}
                 thumbCount={thumbCount}
+                jumpSeconds={selectedJumpSeconds}
+                cacheKeyContext={thumbCacheContext}
                 onClose={() => {
                   setShowPrint(false);
                 }}
@@ -1493,6 +1520,7 @@ function AppContent() {
                       onFocusClip={focusShotPlannerClip}
                       focusedClipId={focusedClipId}
                       focusedClipScrollToken={focusedClipScrollToken}
+                      jumpSeconds={selectedJumpSeconds}
                       cacheKeyContext={thumbCacheContext}
                       shotSizeOptions={[...SHOT_SIZE_CANONICAL, ...(enableOptionalShotTags ? SHOT_SIZE_OPTIONAL : []), ...customShotSizes]}
                       movementOptions={[...MOVEMENT_CANONICAL, ...customMovements]}
@@ -1704,6 +1732,7 @@ function AppContent() {
                       onFocusClip={focusShotPlannerClip}
                       focusedClipId={focusedClipId}
                       focusedClipScrollToken={focusedClipScrollToken}
+                      jumpSeconds={selectedJumpSeconds}
                       cacheKeyContext={thumbCacheContext}
                       shotSizeOptions={[...SHOT_SIZE_CANONICAL, ...customShotSizes]}
                       movementOptions={[...MOVEMENT_CANONICAL, ...customMovements]}
@@ -1841,17 +1870,14 @@ function AppContent() {
                 />
               ) : (
                 <ProductionLanding
-                  onOpenProjectManager={() => setShowProjectManager(true)}
-                  onOpenLookSetup={(project) => {
-                    setActiveProductionProject(project);
+                  onOpenProjectPicker={() => setShowProjectManager(true)}
+                  onOpenLookSetup={() => {
                     setActiveProductionApp("look-setup");
                   }}
-                  onOpenOnSetCoach={(project) => {
-                    setActiveProductionProject(project);
+                  onOpenOnSetCoach={() => {
                     setActiveProductionApp("onset-coach");
                   }}
-                  onOpenMatchNormalize={(project: ProductionProject) => {
-                    setActiveProductionProject(project);
+                  onOpenMatchNormalize={() => {
                     setActiveProductionApp("match-normalize");
                   }}
                   activeProject={activeProductionProject}

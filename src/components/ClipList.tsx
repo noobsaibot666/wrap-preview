@@ -57,6 +57,7 @@ interface ClipListProps {
     onPlayClip: (id: string | null) => void;
     playingClipId: string | null;
     playingProgress: number;
+    jumpSeconds?: number;
     cacheKeyContext?: string;
     shotSizeOptions: string[];
     movementOptions: string[];
@@ -92,6 +93,7 @@ export const ClipList = memo(function ClipList({
     onPlayClip,
     playingClipId,
     playingProgress,
+    jumpSeconds,
     cacheKeyContext,
     shotSizeOptions,
     movementOptions,
@@ -330,6 +332,7 @@ export const ClipList = memo(function ClipList({
                                         onPlayClip={onPlayClip}
                                         isPlaying={playingClipId === item.clip.id}
                                         progress={playingClipId === item.clip.id ? playingProgress : 0}
+                                        jumpSeconds={jumpSeconds}
                                         cacheKeyContext={cacheKeyContext}
                                         isFocused={focusedClipId === item.clip.id}
                                         projectLutHash={projectLutHash}
@@ -400,5 +403,4 @@ export const ClipList = memo(function ClipList({
         </div>
     );
 });
-
 

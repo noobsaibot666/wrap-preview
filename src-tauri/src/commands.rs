@@ -1,8 +1,8 @@
 use crate::audio;
 use crate::clustering;
 use crate::db::{
-    Asset, AssetVersion, Clip, Database, ProductionCameraConfig, ProductionLookTarget,
-    ProductionOutput, ProductionProject, ProductionSceneConstraint, Project, ProjectRoot,
+    Asset, AssetVersion, Clip, Database, ProductionCameraConfig, ProductionLookSetup,
+    ProductionOnsetChecks, ProductionPreset, ProductionProject, Project, ProjectRoot,
     ReviewCoreAnnotation, ReviewCoreApprovalState, ReviewCoreComment, ReviewCoreFrameNote,
     ReviewCoreProject, ReviewCoreShareLink, ReviewCoreShareSession, SceneBlock,
     SceneDetectionCache, Thumbnail, VerificationItem, VerificationJob, VerificationQueueItem,
@@ -214,7 +214,7 @@ pub async fn get_clips(
 #[tauri::command]
 pub async fn extract_thumbnails(
     project_id: String,
-    thumb_count: Option<u32>,
+    _thumb_count: Option<u32>,
     clip_id: Option<String>,
 
     app: AppHandle,
@@ -288,79 +288,85 @@ pub async fn extract_thumbnails(
 
                 let _permit = semaphore_inner.acquire_owned().await.ok();
 
-                let thumb_target = thumb_count.unwrap_or(7);
-
-                let timestamps = thumbnail::calculate_timestamps(clip.duration_ms, thumb_target);
-                let clip_cache_dir =
-                    format!("{}/{}/count_{}", cache_dir_clone, clip.id, thumb_target);
-
+                let jump_intervals = [2_u32, 4_u32, 6_u32];
                 let _ = state_inner.db.delete_thumbnails_for_clip(&clip.id);
-                std::fs::create_dir_all(&clip_cache_dir).ok();
-
                 let mut thumb_results: Vec<Thumbnail> = Vec::new();
 
-                for (idx, &ts) in timestamps.iter().enumerate() {
-                    let thumb_ext = if Path::new(&clip.file_path)
-                        .extension()
-                        .map(|e| e.to_string_lossy().eq_ignore_ascii_case("braw"))
-                        .unwrap_or(false)
-                    {
-                        "png"
-                    } else {
-                        "jpg"
-                    };
-                    let output_path = format!("{}/thumb_{}.{}", clip_cache_dir, idx, thumb_ext);
+                for jump_seconds in jump_intervals {
+                    let timestamps =
+                        thumbnail::calculate_jump_timestamps(clip.duration_ms, jump_seconds);
+                    let clip_cache_dir = format!(
+                        "{}/thumbnails/{}/jump_{}",
+                        cache_dir_clone, clip.id, jump_seconds
+                    );
+                    std::fs::create_dir_all(&clip_cache_dir).ok();
 
-                    if Path::new(&output_path).exists() {
-                        let thumb = Thumbnail {
-                            clip_id: clip.id.clone(),
-                            index: idx as u32,
-                            timestamp_ms: ts,
-                            file_path: output_path.clone(),
+                    for (idx, &ts) in timestamps.iter().enumerate() {
+                        let thumb_ext = if Path::new(&clip.file_path)
+                            .extension()
+                            .map(|e| e.to_string_lossy().eq_ignore_ascii_case("braw"))
+                            .unwrap_or(false)
+                        {
+                            "png"
+                        } else {
+                            "jpg"
                         };
-                        let _ = state_inner.db.upsert_thumbnail(&thumb);
-                        thumb_results.push(thumb);
-                        continue;
-                    }
+                        let output_path =
+                            format!("{}/thumb_{}.{}", clip_cache_dir, idx, thumb_ext);
 
-                    let file_path = clip.file_path.clone();
-                    let output_path_clone = output_path.clone();
-                    let duration_ms = clip.duration_ms;
-
-                    let cancel_flag_inner = cancel_flag_clone.clone();
-                    let result = tokio::task::spawn_blocking(move || {
-                        thumbnail::extract_with_fallback(
-                            &file_path,
-                            &output_path_clone,
-                            ts,
-                            duration_ms,
-                            Some(&cancel_flag_inner),
-                        )
-                    })
-                    .await;
-
-                    match result {
-                        Ok(Ok(actual_ts)) => {
+                        if Path::new(&output_path).exists() {
                             let thumb = Thumbnail {
                                 clip_id: clip.id.clone(),
+                                jump_seconds,
                                 index: idx as u32,
-                                timestamp_ms: actual_ts,
-                                file_path: output_path,
+                                timestamp_ms: ts,
+                                file_path: output_path.clone(),
                             };
                             let _ = state_inner.db.upsert_thumbnail(&thumb);
                             thumb_results.push(thumb);
+                            continue;
                         }
-                        Ok(Err(e)) => {
-                            eprintln!(
-                                "Thumbnail extraction failed for clip {}: {}",
-                                clip.file_path, e
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!(
-                                "Thumbnail extraction task panicked for clip {}: {}",
-                                clip.file_path, e
-                            );
+
+                        let file_path = clip.file_path.clone();
+                        let output_path_clone = output_path.clone();
+                        let duration_ms = clip.duration_ms;
+
+                        let cancel_flag_inner = cancel_flag_clone.clone();
+                        let result = tokio::task::spawn_blocking(move || {
+                            thumbnail::extract_with_fallback(
+                                &file_path,
+                                &output_path_clone,
+                                ts,
+                                duration_ms,
+                                Some(&cancel_flag_inner),
+                            )
+                        })
+                        .await;
+
+                        match result {
+                            Ok(Ok(actual_ts)) => {
+                                let thumb = Thumbnail {
+                                    clip_id: clip.id.clone(),
+                                    jump_seconds,
+                                    index: idx as u32,
+                                    timestamp_ms: actual_ts,
+                                    file_path: output_path,
+                                };
+                                let _ = state_inner.db.upsert_thumbnail(&thumb);
+                                thumb_results.push(thumb);
+                            }
+                            Ok(Err(e)) => {
+                                eprintln!(
+                                    "Thumbnail extraction failed for clip {}: {}",
+                                    clip.file_path, e
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "Thumbnail extraction task panicked for clip {}: {}",
+                                    clip.file_path, e
+                                );
+                            }
                         }
                     }
                 }
@@ -397,7 +403,6 @@ pub async fn extract_thumbnails(
             serde_json::json!({
                 "project_id": project_id_clone,
                 "clip_id": clip_id,
-                "thumb_count": thumb_count,
             }),
         );
 
@@ -5364,8 +5369,9 @@ fn count_files(path: &std::path::Path) -> std::io::Result<u64> {
 // --- Production Module Commands ---
 
 #[tauri::command]
-pub async fn create_production_project(
+pub async fn production_create_project(
     name: String,
+    client_name: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<ProductionProject, String> {
     let id = uuid::Uuid::new_v4().to_string();
@@ -5373,6 +5379,7 @@ pub async fn create_production_project(
     let project = ProductionProject {
         id,
         name,
+        client_name,
         created_at: now.clone(),
         last_opened_at: now,
     };
@@ -5386,7 +5393,7 @@ pub async fn create_production_project(
 }
 
 #[tauri::command]
-pub async fn list_production_projects(
+pub async fn production_list_projects(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<ProductionProject>, String> {
     state
@@ -5396,14 +5403,15 @@ pub async fn list_production_projects(
 }
 
 #[tauri::command]
-pub async fn get_production_project(
-    id: String,
+pub async fn production_touch_project(
+    project_id: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<Option<ProductionProject>, String> {
+) -> Result<(), String> {
+    let now = chrono::Utc::now().to_rfc3339();
     state
         .db
-        .get_production_project(&id)
-        .map_err(|e| format!("Failed to get production project: {}", e))
+        .touch_production_project(&project_id, &now)
+        .map_err(|e| format!("Failed to touch production project: {}", e))
 }
 
 #[tauri::command]
@@ -5439,67 +5447,78 @@ pub async fn list_production_camera_configs(
 }
 
 #[tauri::command]
-pub async fn save_production_look_target(
-    target: ProductionLookTarget,
+pub async fn production_save_look_setup(
+    setup: ProductionLookSetup,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     state
         .db
-        .upsert_production_look_target(&target)
-        .map_err(|e| format!("Failed to save look target: {}", e))
+        .upsert_production_look_setup(&setup)
+        .map_err(|e| format!("Failed to save production look setup: {}", e))
 }
 
 #[tauri::command]
-pub async fn get_production_look_target(
+pub async fn production_get_look_setup(
     project_id: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<Option<ProductionLookTarget>, String> {
+) -> Result<Option<ProductionLookSetup>, String> {
     state
         .db
-        .get_production_look_target(&project_id)
-        .map_err(|e| format!("Failed to get look target: {}", e))
+        .get_production_look_setup(&project_id)
+        .map_err(|e| format!("Failed to get production look setup: {}", e))
 }
 
 #[tauri::command]
-pub async fn save_production_scene_constraint(
-    constraint: ProductionSceneConstraint,
+pub async fn production_save_onset_checks(
+    checks: ProductionOnsetChecks,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     state
         .db
-        .upsert_production_scene_constraint(&constraint)
-        .map_err(|e| format!("Failed to save scene constraint: {}", e))
+        .upsert_production_onset_checks(&checks)
+        .map_err(|e| format!("Failed to save onset checks: {}", e))
 }
 
 #[tauri::command]
-pub async fn get_production_scene_constraint(
+pub async fn production_get_onset_checks(
     project_id: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<Option<ProductionSceneConstraint>, String> {
+) -> Result<Option<ProductionOnsetChecks>, String> {
     state
         .db
-        .get_production_scene_constraint(&project_id)
-        .map_err(|e| format!("Failed to get scene constraint: {}", e))
+        .get_production_onset_checks(&project_id)
+        .map_err(|e| format!("Failed to get onset checks: {}", e))
 }
 
 #[tauri::command]
-pub async fn save_production_output(
-    output: ProductionOutput,
+pub async fn production_save_preset(
+    preset: ProductionPreset,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     state
         .db
-        .upsert_production_output(&output)
-        .map_err(|e| format!("Failed to save production output: {}", e))
+        .upsert_production_preset(&preset)
+        .map_err(|e| format!("Failed to save production preset: {}", e))
 }
 
 #[tauri::command]
-pub async fn get_production_output(
+pub async fn production_list_presets(
     project_id: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<Option<ProductionOutput>, String> {
+) -> Result<Vec<ProductionPreset>, String> {
     state
         .db
-        .get_production_output(&project_id)
-        .map_err(|e| format!("Failed to get production output: {}", e))
+        .list_production_presets(&project_id)
+        .map_err(|e| format!("Failed to list production presets: {}", e))
+}
+
+#[tauri::command]
+pub async fn production_get_preset(
+    preset_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<ProductionPreset>, String> {
+    state
+        .db
+        .get_production_preset(&preset_id)
+        .map_err(|e| format!("Failed to get production preset: {}", e))
 }

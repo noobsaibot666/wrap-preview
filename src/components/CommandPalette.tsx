@@ -47,7 +47,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 setSelectedIndex((i) => (i - 1 + filteredActions.length) % filteredActions.length);
             } else if (e.key === "Enter") {
                 e.preventDefault();
-                if (filteredActions[selectedIndex]) {
+                if (filteredActions[selectedIndex] && !filteredActions[selectedIndex].disabled) {
                     filteredActions[selectedIndex].onSelect();
                     onClose();
                 }
@@ -124,10 +124,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                                         return (
                                             <div
                                                 key={action.id}
-                                                onClick={() => { action.onSelect(); onClose(); }}
+                                                onClick={() => {
+                                                    if (action.disabled) return;
+                                                    action.onSelect();
+                                                    onClose();
+                                                }}
                                                 className={`
-                                                    group flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-150
-                                                    ${isSelected ? "bg-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.4)]" : "hover:bg-white/[0.03]"}
+                                                    group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150
+                                                    ${action.disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer"}
+                                                    ${isSelected ? "bg-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.4)]" : action.disabled ? "" : "hover:bg-white/[0.03]"}
                                                 `}
                                             >
                                                 <div className={`

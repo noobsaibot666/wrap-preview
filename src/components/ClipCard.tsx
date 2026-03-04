@@ -48,6 +48,7 @@ interface ClipCardProps {
     onPlayClip: (id: string) => void;
     isPlaying: boolean;
     progress: number;
+    jumpSeconds?: number;
     cacheKeyContext?: string;
     isFocused: boolean;
     projectLutHash: string | null;
@@ -76,6 +77,7 @@ export const ClipCard = memo(function ClipCard({
     onPlayClip,
     isPlaying,
     progress,
+    jumpSeconds,
     cacheKeyContext,
     isFocused,
     projectLutHash,
@@ -203,8 +205,9 @@ export const ClipCard = memo(function ClipCard({
         thumbnails,
         thumbnailCache,
         thumbCount: MAX_FILMSTRIP_PREVIEW_COUNT,
+        jumpSeconds,
         cacheKeyContext,
-    }), [clip.id, thumbnails, thumbnailCache, cacheKeyContext]);
+    }), [cacheKeyContext, clip.id, jumpSeconds, thumbnailCache, thumbnails]);
 
     return (
         <div

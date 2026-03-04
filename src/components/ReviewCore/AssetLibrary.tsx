@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Film, Search, Filter, ChevronDown, Clock } from "lucide-react";
+import { Film, Search, Clock } from "lucide-react";
 import { Virtuoso } from "react-virtuoso";
 import { CommonAsset } from "./types";
 import { formatDuration, formatResolution, formatFps } from "./utils";
