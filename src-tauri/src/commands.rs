@@ -13,6 +13,7 @@ use crate::jobs::{JobInfo, JobStatus};
 use crate::production::{self, CameraProfile, LookPreset};
 use crate::production_match_lab::{
     aggregate_frames, analysis_timeout, analyze_frame, build_cache_dir, build_frame_timestamps,
+    build_measurement_bundle,
     build_proxy_decode_path, build_proxy_paths, choose_source_path_for_analysis,
     classify_source_format, clip_name_from_path, create_braw_proxy_via_file, create_braw_proxy_via_stdout,
     hash_source_signature, is_braw_path, is_proxy_only_raw_path, probe_braw_decoder, BrawDecoderCaps,
@@ -21,7 +22,7 @@ use crate::production_match_lab::{
     ProductionMatchLabProxyResult, ProductionMatchLabRun, ProductionMatchLabRunResult,
     ProductionMatchLabRunResultInput, ProductionMatchLabRunSummary,
 };
-use crate::production_calibration::CalibrationChartDetection;
+use crate::production_calibration::{CalibrationChartDetection, CalibrationCropRectNormalized};
 use crate::review_core;
 use crate::scanner;
 use crate::thumbnail;
@@ -5181,6 +5182,17 @@ async fn camera_match_analyze_clip_internal(
         let frame_paths = per_frame.iter().map(|item| item.frame_path.clone()).collect();
 
         Ok(CameraMatchAnalysisResult {
+            measurement_bundle: build_measurement_bundle(
+                &source_path,
+                Some(if analysis_source_override_path.is_some() || is_braw_path(clip_path) || is_proxy_only_raw_path(clip_path) {
+                    "proxy".to_string()
+                } else {
+                    "original".to_string()
+                }),
+                Some(classify_source_format(clip_path)),
+                &metadata,
+                &aggregate,
+            ),
             source_path,
             source_kind: Some(if analysis_source_override_path.is_some() || is_braw_path(clip_path) || is_proxy_only_raw_path(clip_path) {
                 "proxy".to_string()
@@ -6514,6 +6526,7 @@ pub async fn production_matchlab_detect_calibration(
     project_id: String,
     slot: String,
     frame_path: String,
+    crop_rect_normalized: Option<CalibrationCropRectNormalized>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<CalibrationChartDetection, String> {
     crate::production_calibration::detect_spydercheckr(
@@ -6521,6 +6534,7 @@ pub async fn production_matchlab_detect_calibration(
         &project_id,
         &slot,
         Path::new(&frame_path),
+        crop_rect_normalized.as_ref(),
     )
 }
 

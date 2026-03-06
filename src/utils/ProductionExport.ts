@@ -511,9 +511,13 @@ function buildCalibrationLines(
   heroSlot: string,
 ): string[] {
   if (!calibration?.chart_detected) {
-    return [];
+    return [
+      "Mode Signal analysis only",
+      "No chart calibration used",
+    ];
   }
   const lines = [
+    "Mode Chart calibrated",
     `dE ${calibration.mean_delta_e_before.toFixed(1)} → ${calibration.mean_delta_e_after?.toFixed(1) ?? "—"}`,
     slot === heroSlot
       ? "Hero baseline"

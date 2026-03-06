@@ -8,14 +8,14 @@ use std::sync::Mutex;
 use std::time::Duration;
 use crate::production_calibration::CalibrationChartDetection;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CameraMatchRgbMedians {
     pub red: f64,
     pub green: f64,
     pub blue: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CameraMatchFrameMetrics {
     pub frame_index: u32,
     pub timestamp_ms: u64,
@@ -28,21 +28,82 @@ pub struct CameraMatchFrameMetrics {
     pub luma_median: f64,
     pub highlight_percent: f64,
     pub midtone_density: f64,
+    #[serde(default)]
+    pub shadow_percent: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CameraMatchAggregateMetrics {
     pub luma_histogram: Vec<f64>,
     pub rgb_medians: CameraMatchRgbMedians,
     pub luma_median: f64,
     pub highlight_percent: f64,
     pub midtone_density: f64,
+    #[serde(default)]
+    pub shadow_percent: f64,
     pub luma_variance: f64,
     pub red_variance: f64,
     pub green_variance: f64,
     pub blue_variance: f64,
     pub highlight_variance: f64,
     pub midtone_variance: f64,
+    #[serde(default)]
+    pub shadow_variance: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MeasurementWaveformSummary {
+    pub median_luma: f64,
+    pub top_band_density: f64,
+    pub bottom_band_density: f64,
+    pub skin_band_estimate: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MeasurementFalseColorSummary {
+    pub clipped: f64,
+    pub near_clip: f64,
+    pub skin_zone: f64,
+    pub mids: f64,
+    pub shadows: f64,
+    pub crushed: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MeasurementRgbBalanceSummary {
+    pub red_vs_green: f64,
+    pub blue_vs_green: f64,
+    pub green_magenta_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MeasurementLumaSummary {
+    pub min_luma: f64,
+    pub max_luma: f64,
+    pub median_luma: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProductionMeasurementBundle {
+    pub source_path: String,
+    pub original_format_kind: Option<String>,
+    pub analysis_source_kind: Option<String>,
+    pub codec_name: Option<String>,
+    pub resolution: Option<String>,
+    pub fps: Option<f64>,
+    pub iso_metadata: Option<String>,
+    pub wb_metadata: Option<String>,
+    pub waveform_summary: MeasurementWaveformSummary,
+    pub false_color_summary: MeasurementFalseColorSummary,
+    pub rgb_balance_summary: MeasurementRgbBalanceSummary,
+    pub luma_summary: MeasurementLumaSummary,
+    pub highlight_percentage: f64,
+    pub midtone_percentage: f64,
+    pub shadow_percentage: f64,
+    pub calibration_available: Option<bool>,
+    pub calibration_quality: Option<String>,
+    pub calibration_neutral_bias: Option<String>,
+    pub calibration_mean_delta_e: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +123,8 @@ pub struct CameraMatchAnalysisResult {
     pub proxy_info: Option<String>,
     #[serde(default)]
     pub warnings: Vec<String>,
+    #[serde(default)]
+    pub measurement_bundle: ProductionMeasurementBundle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -546,6 +609,7 @@ pub fn analyze_frame(
     let mut blue_histogram = vec![0u64; 256];
     let mut highlight_pixels = 0u64;
     let mut midtone_pixels = 0u64;
+    let mut shadow_pixels = 0u64;
 
     for pixel in image.pixels() {
         let red = pixel[0] as usize;
@@ -567,6 +631,9 @@ pub fn analyze_frame(
         if (0.4..=0.7).contains(&luma_normalized) {
             midtone_pixels += 1;
         }
+        if luma_normalized < 0.18 {
+            shadow_pixels += 1;
+        }
     }
 
     let luma_median = histogram_median_u32(&image_hist_to_u64(&luma_histogram));
@@ -587,6 +654,7 @@ pub fn analyze_frame(
         luma_median,
         highlight_percent: highlight_pixels as f64 / total_pixels_f64,
         midtone_density: midtone_pixels as f64 / total_pixels_f64,
+        shadow_percent: shadow_pixels as f64 / total_pixels_f64,
     })
 }
 
@@ -599,6 +667,7 @@ pub fn aggregate_frames(per_frame: &[CameraMatchFrameMetrics]) -> CameraMatchAgg
     let mut luma_values = Vec::with_capacity(per_frame.len());
     let mut highlight_values = Vec::with_capacity(per_frame.len());
     let mut midtone_values = Vec::with_capacity(per_frame.len());
+    let mut shadow_values = Vec::with_capacity(per_frame.len());
 
     for frame in per_frame {
         for (index, bin) in frame.luma_histogram.iter().enumerate() {
@@ -610,6 +679,7 @@ pub fn aggregate_frames(per_frame: &[CameraMatchFrameMetrics]) -> CameraMatchAgg
         luma_values.push(frame.luma_median);
         highlight_values.push(frame.highlight_percent);
         midtone_values.push(frame.midtone_density);
+        shadow_values.push(frame.shadow_percent);
     }
 
     CameraMatchAggregateMetrics {
@@ -622,12 +692,71 @@ pub fn aggregate_frames(per_frame: &[CameraMatchFrameMetrics]) -> CameraMatchAgg
         luma_median: median_of_values(&mut luma_values),
         highlight_percent: mean_of_values(&highlight_values),
         midtone_density: mean_of_values(&midtone_values),
+        shadow_percent: mean_of_values(&shadow_values),
         luma_variance: variance_of_values(&luma_values),
         red_variance: variance_of_values(&red_values),
         green_variance: variance_of_values(&green_values),
         blue_variance: variance_of_values(&blue_values),
         highlight_variance: variance_of_values(&highlight_values),
         midtone_variance: variance_of_values(&midtone_values),
+        shadow_variance: variance_of_values(&shadow_values),
+    }
+}
+
+pub fn build_measurement_bundle(
+    source_path: &str,
+    source_kind: Option<String>,
+    original_format_kind: Option<String>,
+    metadata: &crate::ffprobe::ClipMetadata,
+    aggregate: &CameraMatchAggregateMetrics,
+) -> ProductionMeasurementBundle {
+    let luma_summary = MeasurementLumaSummary {
+        min_luma: first_nonzero_histogram_bin(&aggregate.luma_histogram),
+        max_luma: last_nonzero_histogram_bin(&aggregate.luma_histogram),
+        median_luma: aggregate.luma_median,
+    };
+    let false_color_summary = MeasurementFalseColorSummary {
+        clipped: histogram_band_density(&aggregate.luma_histogram, 248, 255),
+        near_clip: histogram_band_density(&aggregate.luma_histogram, 225, 247),
+        skin_zone: histogram_band_density(&aggregate.luma_histogram, 117, 161),
+        mids: histogram_band_density(&aggregate.luma_histogram, 72, 116),
+        shadows: histogram_band_density(&aggregate.luma_histogram, 11, 45),
+        crushed: histogram_band_density(&aggregate.luma_histogram, 0, 10),
+    };
+    let rgb_balance_summary = MeasurementRgbBalanceSummary {
+        red_vs_green: aggregate.rgb_medians.red - aggregate.rgb_medians.green,
+        blue_vs_green: aggregate.rgb_medians.blue - aggregate.rgb_medians.green,
+        green_magenta_hint: green_magenta_hint(
+            aggregate.rgb_medians.red,
+            aggregate.rgb_medians.green,
+            aggregate.rgb_medians.blue,
+        ),
+    };
+    ProductionMeasurementBundle {
+        source_path: source_path.to_string(),
+        original_format_kind,
+        analysis_source_kind: source_kind,
+        codec_name: Some(metadata.video_codec.clone()),
+        resolution: Some(format!("{}x{}", metadata.width, metadata.height)),
+        fps: (metadata.fps > 0.0).then_some(metadata.fps),
+        iso_metadata: metadata.camera_iso.clone(),
+        wb_metadata: metadata.camera_white_balance.clone(),
+        waveform_summary: MeasurementWaveformSummary {
+            median_luma: aggregate.luma_median,
+            top_band_density: histogram_band_density(&aggregate.luma_histogram, 204, 255),
+            bottom_band_density: histogram_band_density(&aggregate.luma_histogram, 0, 51),
+            skin_band_estimate: Some(false_color_summary.skin_zone),
+        },
+        false_color_summary,
+        rgb_balance_summary,
+        luma_summary,
+        highlight_percentage: aggregate.highlight_percent,
+        midtone_percentage: aggregate.midtone_density,
+        shadow_percentage: aggregate.shadow_percent,
+        calibration_available: None,
+        calibration_quality: None,
+        calibration_neutral_bias: None,
+        calibration_mean_delta_e: None,
     }
 }
 
@@ -645,6 +774,44 @@ fn histogram_median(histogram: &[u64]) -> f64 {
         }
     }
     1.0
+}
+
+fn histogram_band_density(histogram: &[f64], start: usize, end: usize) -> f64 {
+    let total = histogram.iter().sum::<f64>().max(1.0);
+    histogram
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index >= start && *index <= end)
+        .map(|(_, value)| *value)
+        .sum::<f64>()
+        / total
+}
+
+fn first_nonzero_histogram_bin(histogram: &[f64]) -> f64 {
+    histogram
+        .iter()
+        .position(|value| *value > 0.0)
+        .map(|index| index as f64 / 255.0)
+        .unwrap_or(0.0)
+}
+
+fn last_nonzero_histogram_bin(histogram: &[f64]) -> f64 {
+    histogram
+        .iter()
+        .rposition(|value| *value > 0.0)
+        .map(|index| index as f64 / 255.0)
+        .unwrap_or(0.0)
+}
+
+fn green_magenta_hint(red: f64, green: f64, blue: f64) -> Option<String> {
+    let green_delta = green - ((red + blue) * 0.5);
+    if green_delta > 0.03 {
+        Some("Green".to_string())
+    } else if green_delta < -0.03 {
+        Some("Magenta".to_string())
+    } else {
+        Some("Neutral".to_string())
+    }
 }
 
 fn histogram_median_u32(histogram: &[u64]) -> f64 {

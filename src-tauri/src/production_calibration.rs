@@ -19,10 +19,45 @@ const MIN_AREA_RATIO: f64 = 0.04;
 const NEUTRAL_PATCHES: [usize; 6] = [18, 19, 20, 21, 22, 23];
 const SKIN_PATCHES: [usize; 3] = [0, 1, 8];
 
+#[derive(Debug, Clone, Copy)]
+struct DetectionAttemptConfig {
+    canny_low: f64,
+    canny_high: f64,
+    blur_size: i32,
+    contrast_normalize: bool,
+    downscale_ratio: f64,
+    aspect_min: f64,
+    aspect_max: f64,
+    central_bias: bool,
+    fallback_used: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+struct DetectionDebugInfo {
+    detection_attempts: usize,
+    candidate_count: usize,
+    best_aspect_ratio: Option<f64>,
+    best_area_ratio: Option<f64>,
+    fallback_used: bool,
+}
+
+struct CropContext {
+    detection_frame: Mat,
+    offset: Option<Point2f>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalibrationPoint {
     pub x: f64,
     pub y: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CalibrationCropRectNormalized {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +75,16 @@ pub struct CalibrationPatchSample {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalibrationChartDetection {
     pub chart_detected: bool,
+    #[serde(default)]
+    pub detection_attempts: usize,
+    #[serde(default)]
+    pub candidate_count: usize,
+    #[serde(default)]
+    pub best_aspect_ratio: Option<f64>,
+    #[serde(default)]
+    pub best_area_ratio: Option<f64>,
+    #[serde(default)]
+    pub fallback_used: bool,
     pub frame_width: u32,
     pub frame_height: u32,
     pub chart_corners: Vec<CalibrationPoint>,
@@ -122,6 +167,7 @@ pub fn detect_spydercheckr(
     project_id: &str,
     slot: &str,
     frame_path: &Path,
+    crop_rect: Option<&CalibrationCropRectNormalized>,
 ) -> Result<CalibrationChartDetection, String> {
     let frame_path_str = frame_path
         .to_str()
@@ -138,8 +184,14 @@ pub fn detect_spydercheckr(
         return Err("Frame is too small for SpyderCHECKR detection.".to_string());
     }
 
-    let corners = detect_chart_corners(&frame)?;
-    let normalized = normalize_chart(&frame, &corners)?;
+    let crop_context = build_crop_context(&frame, crop_rect)?;
+    let (cropped_corners, debug_info) = detect_chart_corners(&crop_context.detection_frame)?;
+    let corners = if let Some(offset) = crop_context.offset {
+        cropped_corners.map(|point| Point2f::new(point.x + offset.x, point.y + offset.y))
+    } else {
+        cropped_corners
+    };
+    let normalized = normalize_chart(&crop_context.detection_frame, &cropped_corners)?;
     let patch_samples = sample_patch_colors(&normalized)?;
     let delta_e = patch_samples.iter().map(|patch| patch.delta_e).collect::<Vec<_>>();
     let mean_delta_e = if delta_e.is_empty() {
@@ -162,8 +214,10 @@ pub fn detect_spydercheckr(
         tint_shift,
         &patch_samples,
     )?;
-    let detection_score = score_detection(&corners, frame_width as f64, frame_height as f64);
-    let chart_area_ratio = compute_chart_area_ratio(&corners, frame_width as f64, frame_height as f64);
+    let detection_width = crop_context.detection_frame.cols() as f64;
+    let detection_height = crop_context.detection_frame.rows() as f64;
+    let detection_score = score_detection(&cropped_corners, detection_width, detection_height);
+    let chart_area_ratio = compute_chart_area_ratio(&cropped_corners, detection_width, detection_height);
     let chart_skew_score = compute_chart_skew_score(&corners);
     let clipped_patch_count = count_clipped_patches(&patch_samples);
     let crushed_patch_count = count_crushed_patches(&patch_samples);
@@ -188,6 +242,11 @@ pub fn detect_spydercheckr(
 
     Ok(CalibrationChartDetection {
         chart_detected: true,
+        detection_attempts: debug_info.detection_attempts,
+        candidate_count: debug_info.candidate_count,
+        best_aspect_ratio: debug_info.best_aspect_ratio,
+        best_area_ratio: debug_info.best_area_ratio,
+        fallback_used: debug_info.fallback_used,
         frame_width,
         frame_height,
         chart_corners: corners
@@ -979,7 +1038,7 @@ fn delta_color_rgb(delta: f64) -> image::Rgb<u8> {
     }
 }
 
-fn detect_chart_corners(frame: &Mat) -> Result<[Point2f; 4], String> {
+fn detect_chart_corners(frame: &Mat) -> Result<([Point2f; 4], DetectionDebugInfo), String> {
     let mut gray = Mat::default();
     imgproc::cvt_color(
         frame,
@@ -990,64 +1049,135 @@ fn detect_chart_corners(frame: &Mat) -> Result<[Point2f; 4], String> {
     )
     .map_err(|error| format!("Failed converting frame to grayscale: {}", error))?;
 
-    let mut blurred = Mat::default();
-    imgproc::gaussian_blur(
-        &gray,
-        &mut blurred,
-        Size::new(5, 5),
-        0.0,
-        0.0,
-        core::BORDER_DEFAULT,
-        core::AlgorithmHint::ALGO_HINT_DEFAULT,
-    )
-    .map_err(|error| format!("Failed blurring grayscale frame: {}", error))?;
+    let attempts = [
+        DetectionAttemptConfig {
+            canny_low: 75.0,
+            canny_high: 180.0,
+            blur_size: 5,
+            contrast_normalize: false,
+            downscale_ratio: 1.0,
+            aspect_min: 1.25,
+            aspect_max: 1.9,
+            central_bias: false,
+            fallback_used: false,
+        },
+        DetectionAttemptConfig {
+            canny_low: 50.0,
+            canny_high: 140.0,
+            blur_size: 5,
+            contrast_normalize: false,
+            downscale_ratio: 1.0,
+            aspect_min: 1.25,
+            aspect_max: 1.9,
+            central_bias: false,
+            fallback_used: true,
+        },
+        DetectionAttemptConfig {
+            canny_low: 50.0,
+            canny_high: 140.0,
+            blur_size: 5,
+            contrast_normalize: true,
+            downscale_ratio: 1.0,
+            aspect_min: 1.25,
+            aspect_max: 1.9,
+            central_bias: false,
+            fallback_used: true,
+        },
+        DetectionAttemptConfig {
+            canny_low: 55.0,
+            canny_high: 150.0,
+            blur_size: 7,
+            contrast_normalize: false,
+            downscale_ratio: 0.8,
+            aspect_min: 1.18,
+            aspect_max: 2.0,
+            central_bias: false,
+            fallback_used: true,
+        },
+        DetectionAttemptConfig {
+            canny_low: 55.0,
+            canny_high: 150.0,
+            blur_size: 7,
+            contrast_normalize: true,
+            downscale_ratio: 0.8,
+            aspect_min: 1.18,
+            aspect_max: 2.0,
+            central_bias: true,
+            fallback_used: true,
+        },
+    ];
 
-    let mut edges = Mat::default();
-    imgproc::canny(&blurred, &mut edges, 75.0, 180.0, 3, false)
-        .map_err(|error| format!("Failed running Canny edge detector: {}", error))?;
+    let mut debug = DetectionDebugInfo::default();
+    let mut best_failure_candidate: Option<(f64, f64)> = None;
 
-    let mut contours = Vector::<Vector<Point>>::new();
-    imgproc::find_contours(
-        &edges,
-        &mut contours,
-        imgproc::RETR_LIST,
-        imgproc::CHAIN_APPROX_SIMPLE,
-        Point::new(0, 0),
-    )
-    .map_err(|error| format!("Failed finding chart contours: {}", error))?;
-
-    let frame_area = (frame.cols() * frame.rows()) as f64;
-    let mut best: Option<([Point2f; 4], f64)> = None;
-
-    for contour in contours {
-        let perimeter = imgproc::arc_length(&contour, true)
-            .map_err(|error| format!("Failed measuring contour perimeter: {}", error))?;
-        let mut approx = Vector::<Point>::new();
-        imgproc::approx_poly_dp(&contour, &mut approx, 0.02 * perimeter, true)
-            .map_err(|error| format!("Failed approximating contour polygon: {}", error))?;
-        if approx.len() != 4 {
-            continue;
+    for attempt in attempts {
+        debug.detection_attempts += 1;
+        if attempt.fallback_used {
+            debug.fallback_used = true;
         }
-        let area = imgproc::contour_area(&approx, false)
-            .map_err(|error| format!("Failed measuring contour area: {}", error))?;
-        if area < frame_area * MIN_AREA_RATIO {
-            continue;
+        let prepared = prepare_detection_frame(&gray, &attempt)
+            .map_err(|error| format!("Failed preparing calibration detection frame: {}", error))?;
+        let mut edges = Mat::default();
+        imgproc::canny(&prepared, &mut edges, attempt.canny_low, attempt.canny_high, 3, false)
+            .map_err(|error| format!("Failed running Canny edge detector: {}", error))?;
+
+        let mut contours = Vector::<Vector<Point>>::new();
+        imgproc::find_contours(
+            &edges,
+            &mut contours,
+            imgproc::RETR_LIST,
+            imgproc::CHAIN_APPROX_SIMPLE,
+            Point::new(0, 0),
+        )
+        .map_err(|error| format!("Failed finding chart contours: {}", error))?;
+
+        let frame_area = (prepared.cols() * prepared.rows()) as f64;
+        let mut best: Option<([Point2f; 4], f64)> = None;
+
+        for contour in contours {
+            let perimeter = imgproc::arc_length(&contour, true)
+                .map_err(|error| format!("Failed measuring contour perimeter: {}", error))?;
+            let mut approx = Vector::<Point>::new();
+            imgproc::approx_poly_dp(&contour, &mut approx, 0.02 * perimeter, true)
+                .map_err(|error| format!("Failed approximating contour polygon: {}", error))?;
+            if approx.len() != 4 {
+                continue;
+            }
+            debug.candidate_count += 1;
+            let area = imgproc::contour_area(&approx, false)
+                .map_err(|error| format!("Failed measuring contour area: {}", error))?;
+            let area_ratio = (area / frame_area).clamp(0.0, 1.0);
+            let rect = imgproc::bounding_rect(&approx)
+                .map_err(|error| format!("Failed computing contour bounds: {}", error))?;
+            let aspect_ratio = rect.width as f64 / rect.height.max(1) as f64;
+
+            update_best_candidate_debug(&mut debug, aspect_ratio, area_ratio, &mut best_failure_candidate);
+
+            if area < frame_area * MIN_AREA_RATIO {
+              continue;
+            }
+            if !(attempt.aspect_min..=attempt.aspect_max).contains(&aspect_ratio) {
+              continue;
+            }
+            let ordered = order_quad_points(&approx)?;
+            let scale_back = if (attempt.downscale_ratio - 1.0).abs() > f64::EPSILON {
+                1.0 / attempt.downscale_ratio as f32
+            } else {
+                1.0
+            };
+            let scaled = ordered.map(|point| Point2f::new(point.x * scale_back, point.y * scale_back));
+            let score = score_candidate_with_bias(area, aspect_ratio, &rect, prepared.cols(), prepared.rows(), attempt.central_bias);
+            if best.map(|(_, current)| score > current).unwrap_or(true) {
+                best = Some((scaled, score));
+            }
         }
-        let rect = imgproc::bounding_rect(&approx)
-            .map_err(|error| format!("Failed computing contour bounds: {}", error))?;
-        let aspect_ratio = rect.width as f64 / rect.height.max(1) as f64;
-        if !(1.25..=1.9).contains(&aspect_ratio) {
-            continue;
-        }
-        let ordered = order_quad_points(&approx)?;
-        let score = score_candidate(area, aspect_ratio, &rect, frame.cols(), frame.rows());
-        if best.map(|(_, current)| score > current).unwrap_or(true) {
-            best = Some((ordered, score));
+
+        if let Some((corners, _)) = best {
+            return Ok((corners, debug));
         }
     }
 
-    best.map(|(corners, _)| corners)
-        .ok_or("SpyderCHECKR chart not detected in frame.".to_string())
+    Err(format_detection_failure(&debug, best_failure_candidate))
 }
 
 fn score_candidate(area: f64, aspect_ratio: f64, rect: &Rect, frame_width: i32, frame_height: i32) -> f64 {
@@ -1061,6 +1191,131 @@ fn score_candidate(area: f64, aspect_ratio: f64, rect: &Rect, frame_width: i32, 
     let dx = (center_x - frame_center_x).abs() / frame_width as f64;
     let dy = (center_y - frame_center_y).abs() / frame_height as f64;
     area_score * 0.7 + (1.0 - ratio_penalty.clamp(0.0, 1.0)) * 0.2 + (1.0 - (dx + dy).clamp(0.0, 1.0)) * 0.1
+}
+
+fn score_candidate_with_bias(
+    area: f64,
+    aspect_ratio: f64,
+    rect: &Rect,
+    frame_width: i32,
+    frame_height: i32,
+    central_bias: bool,
+) -> f64 {
+    let mut score = score_candidate(area, aspect_ratio, rect, frame_width, frame_height);
+    if central_bias {
+        let center_x = rect.x as f64 + rect.width as f64 * 0.5;
+        let center_y = rect.y as f64 + rect.height as f64 * 0.5;
+        let dx = (center_x - frame_width as f64 * 0.5).abs() / frame_width as f64;
+        let dy = (center_y - frame_height as f64 * 0.5).abs() / frame_height as f64;
+        score += (1.0 - (dx + dy).clamp(0.0, 1.0)) * 0.12;
+    }
+    score
+}
+
+fn prepare_detection_frame(gray: &Mat, attempt: &DetectionAttemptConfig) -> opencv::Result<Mat> {
+    let mut working = gray.clone();
+    if (attempt.downscale_ratio - 1.0).abs() > f64::EPSILON {
+        let width = ((gray.cols() as f64) * attempt.downscale_ratio).round().max(64.0) as i32;
+        let height = ((gray.rows() as f64) * attempt.downscale_ratio).round().max(64.0) as i32;
+        let mut resized = Mat::default();
+        imgproc::resize(
+            gray,
+            &mut resized,
+            Size::new(width, height),
+            0.0,
+            0.0,
+            imgproc::INTER_AREA,
+        )?;
+        working = resized;
+    }
+    if attempt.contrast_normalize {
+        let mut normalized = Mat::default();
+        imgproc::equalize_hist(&working, &mut normalized)?;
+        working = normalized;
+    }
+    let kernel = if attempt.blur_size % 2 == 0 { attempt.blur_size + 1 } else { attempt.blur_size };
+    let mut blurred = Mat::default();
+    imgproc::gaussian_blur(
+        &working,
+        &mut blurred,
+        Size::new(kernel, kernel),
+        0.0,
+        0.0,
+        core::BORDER_DEFAULT,
+        core::AlgorithmHint::ALGO_HINT_DEFAULT,
+    )?;
+    Ok(blurred)
+}
+
+fn update_best_candidate_debug(
+    debug: &mut DetectionDebugInfo,
+    aspect_ratio: f64,
+    area_ratio: f64,
+    best_failure_candidate: &mut Option<(f64, f64)>,
+) {
+    match best_failure_candidate {
+        Some((best_area, _)) if area_ratio <= *best_area => {}
+        _ => {
+            *best_failure_candidate = Some((area_ratio, aspect_ratio));
+            debug.best_area_ratio = Some(area_ratio);
+            debug.best_aspect_ratio = Some(aspect_ratio);
+        }
+    }
+}
+
+fn format_detection_failure(
+    debug: &DetectionDebugInfo,
+    best_failure_candidate: Option<(f64, f64)>,
+) -> String {
+    let best_area = best_failure_candidate
+        .map(|(area, _)| area * 100.0)
+        .unwrap_or(0.0);
+    let best_aspect = best_failure_candidate
+        .map(|(_, aspect)| aspect)
+        .unwrap_or(0.0);
+    format!(
+        "Summary: Chart not detected\nDetails:\nDetection attempts: {}\nCandidate count: {}\nBest candidate area: {:.1}%\nBest aspect ratio: {:.2}\nFallback used: {}\nDetection remained below threshold.",
+        debug.detection_attempts,
+        debug.candidate_count,
+        best_area,
+        best_aspect,
+        if debug.fallback_used { "yes" } else { "no" },
+    )
+}
+
+fn build_crop_context(
+    frame: &Mat,
+    crop_rect: Option<&CalibrationCropRectNormalized>,
+) -> Result<CropContext, String> {
+    let Some(crop_rect) = crop_rect else {
+        return Ok(CropContext {
+            detection_frame: frame.clone(),
+            offset: None,
+        });
+    };
+
+    let frame_width = frame.cols().max(1);
+    let frame_height = frame.rows().max(1);
+    let crop_x = (crop_rect.x.clamp(0.0, 0.98) * frame_width as f64).round() as i32;
+    let crop_y = (crop_rect.y.clamp(0.0, 0.98) * frame_height as f64).round() as i32;
+    let crop_width = (crop_rect.width.clamp(0.02, 1.0) * frame_width as f64).round() as i32;
+    let crop_height = (crop_rect.height.clamp(0.02, 1.0) * frame_height as f64).round() as i32;
+
+    let width = crop_width.clamp(64, frame_width.max(64));
+    let height = crop_height.clamp(64, frame_height.max(64));
+    let x = crop_x.clamp(0, (frame_width - width).max(0));
+    let y = crop_y.clamp(0, (frame_height - height).max(0));
+    let roi = Rect::new(x, y, width.max(1), height.max(1));
+    let cropped = Mat::roi(frame, roi)
+        .map_err(|error| format!("Failed creating calibration crop ROI: {}", error))?;
+    let mut detection_frame = Mat::default();
+    cropped
+        .copy_to(&mut detection_frame)
+        .map_err(|error| format!("Failed copying calibration crop ROI: {}", error))?;
+    Ok(CropContext {
+        detection_frame,
+        offset: Some(Point2f::new(x as f32, y as f32)),
+    })
 }
 
 fn order_quad_points(points: &Vector<Point>) -> Result<[Point2f; 4], String> {

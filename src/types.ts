@@ -433,6 +433,7 @@ export interface CameraMatchFrameMetrics {
     luma_median: number;
     highlight_percent: number;
     midtone_density: number;
+    shadow_percent: number;
 }
 
 export interface CameraMatchAggregateMetrics {
@@ -441,12 +442,64 @@ export interface CameraMatchAggregateMetrics {
     luma_median: number;
     highlight_percent: number;
     midtone_density: number;
+    shadow_percent: number;
     luma_variance: number;
     red_variance: number;
     green_variance: number;
     blue_variance: number;
     highlight_variance: number;
     midtone_variance: number;
+    shadow_variance: number;
+}
+
+export interface MeasurementWaveformSummary {
+    median_luma: number;
+    top_band_density: number;
+    bottom_band_density: number;
+    skin_band_estimate?: number | null;
+}
+
+export interface MeasurementFalseColorSummary {
+    clipped: number;
+    near_clip: number;
+    skin_zone: number;
+    mids: number;
+    shadows: number;
+    crushed: number;
+}
+
+export interface MeasurementRgbBalanceSummary {
+    red_vs_green: number;
+    blue_vs_green: number;
+    green_magenta_hint?: string | null;
+}
+
+export interface MeasurementLumaSummary {
+    min_luma: number;
+    max_luma: number;
+    median_luma: number;
+}
+
+export interface ProductionMeasurementBundle {
+    source_path: string;
+    original_format_kind?: string | null;
+    analysis_source_kind?: string | null;
+    codec_name?: string | null;
+    resolution?: string | null;
+    fps?: number | null;
+    iso_metadata?: string | null;
+    wb_metadata?: string | null;
+    waveform_summary: MeasurementWaveformSummary;
+    false_color_summary: MeasurementFalseColorSummary;
+    rgb_balance_summary: MeasurementRgbBalanceSummary;
+    luma_summary: MeasurementLumaSummary;
+    highlight_percentage: number;
+    midtone_percentage: number;
+    shadow_percentage: number;
+    calibration_available?: boolean | null;
+    calibration_quality?: string | null;
+    calibration_neutral_bias?: string | null;
+    calibration_mean_delta_e?: number | null;
 }
 
 export interface CameraMatchAnalysisResult {
@@ -461,6 +514,7 @@ export interface CameraMatchAnalysisResult {
     aggregate: CameraMatchAggregateMetrics;
     proxy_info?: string | null;
     warnings?: string[];
+    measurement_bundle: ProductionMeasurementBundle;
 }
 
 export interface CalibrationPatchSample {
@@ -479,8 +533,20 @@ export interface CalibrationPoint {
     y: number;
 }
 
+export interface CalibrationCropRectNormalized {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
 export interface CalibrationChartDetection {
     chart_detected: boolean;
+    detection_attempts: number;
+    candidate_count: number;
+    best_aspect_ratio?: number | null;
+    best_area_ratio?: number | null;
+    fallback_used: boolean;
     frame_width: number;
     frame_height: number;
     chart_corners: CalibrationPoint[];
