@@ -83,7 +83,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 }
 
 function AppContent() {
-  const TOUR_VERSION = "1.0.0-beta.1";
+  const TOUR_VERSION = "1.0.0-beta.4";
   const TOUR_SEEN_KEY = "wp_has_seen_tour";
   const TOUR_VERSION_KEY = "wp_tour_version";
   const DEV_BOOT_RESET_KEY = "wrap_preview:dev_boot_reset_done";

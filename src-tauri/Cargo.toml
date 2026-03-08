@@ -1,6 +1,6 @@
 [package]
 name = "wrap-preview"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.4"
 description = "Wrap Preview — Video Contact Sheet Generator"
 authors = ["you"]
 edition = "2021"

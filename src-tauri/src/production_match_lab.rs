@@ -25,7 +25,15 @@ pub struct CameraMatchFrameMetrics {
     pub height: u32,
     pub luma_histogram: Vec<u32>,
     pub rgb_medians: CameraMatchRgbMedians,
+    #[serde(default)]
+    pub midtone_rgb_medians: CameraMatchRgbMedians,
+    #[serde(default)]
+    pub skin_rgb_medians: CameraMatchRgbMedians,
     pub luma_median: f64,
+    #[serde(default)]
+    pub midtone_luma_median: f64,
+    #[serde(default)]
+    pub skin_luma_median: f64,
     pub highlight_percent: f64,
     pub midtone_density: f64,
     #[serde(default)]
@@ -36,7 +44,15 @@ pub struct CameraMatchFrameMetrics {
 pub struct CameraMatchAggregateMetrics {
     pub luma_histogram: Vec<f64>,
     pub rgb_medians: CameraMatchRgbMedians,
+    #[serde(default)]
+    pub midtone_rgb_medians: CameraMatchRgbMedians,
+    #[serde(default)]
+    pub skin_rgb_medians: CameraMatchRgbMedians,
     pub luma_median: f64,
+    #[serde(default)]
+    pub midtone_luma_median: f64,
+    #[serde(default)]
+    pub skin_luma_median: f64,
     pub highlight_percent: f64,
     pub midtone_density: f64,
     #[serde(default)]
@@ -54,6 +70,10 @@ pub struct CameraMatchAggregateMetrics {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MeasurementWaveformSummary {
     pub median_luma: f64,
+    #[serde(default)]
+    pub midtone_band_median_luma: Option<f64>,
+    #[serde(default)]
+    pub skin_band_median_luma: Option<f64>,
     pub top_band_density: f64,
     pub bottom_band_density: f64,
     pub skin_band_estimate: Option<f64>,
@@ -73,6 +93,14 @@ pub struct MeasurementFalseColorSummary {
 pub struct MeasurementRgbBalanceSummary {
     pub red_vs_green: f64,
     pub blue_vs_green: f64,
+    #[serde(default)]
+    pub midtone_red_vs_green: Option<f64>,
+    #[serde(default)]
+    pub midtone_blue_vs_green: Option<f64>,
+    #[serde(default)]
+    pub skin_red_vs_green: Option<f64>,
+    #[serde(default)]
+    pub skin_blue_vs_green: Option<f64>,
     pub green_magenta_hint: Option<String>,
 }
 
@@ -619,6 +647,14 @@ pub fn analyze_frame(
     let mut red_histogram = vec![0u64; 256];
     let mut green_histogram = vec![0u64; 256];
     let mut blue_histogram = vec![0u64; 256];
+    let mut midtone_luma_histogram = vec![0u64; 256];
+    let mut midtone_red_histogram = vec![0u64; 256];
+    let mut midtone_green_histogram = vec![0u64; 256];
+    let mut midtone_blue_histogram = vec![0u64; 256];
+    let mut skin_luma_histogram = vec![0u64; 256];
+    let mut skin_red_histogram = vec![0u64; 256];
+    let mut skin_green_histogram = vec![0u64; 256];
+    let mut skin_blue_histogram = vec![0u64; 256];
     let mut highlight_pixels = 0u64;
     let mut midtone_pixels = 0u64;
     let mut shadow_pixels = 0u64;
@@ -643,6 +679,18 @@ pub fn analyze_frame(
         if (0.4..=0.7).contains(&luma_normalized) {
             midtone_pixels += 1;
         }
+        if (0.2..=0.7).contains(&luma_normalized) {
+            midtone_luma_histogram[luma] += 1;
+            midtone_red_histogram[red] += 1;
+            midtone_green_histogram[green] += 1;
+            midtone_blue_histogram[blue] += 1;
+        }
+        if (0.45..=0.64).contains(&luma_normalized) {
+            skin_luma_histogram[luma] += 1;
+            skin_red_histogram[red] += 1;
+            skin_green_histogram[green] += 1;
+            skin_blue_histogram[blue] += 1;
+        }
         if luma_normalized < 0.18 {
             shadow_pixels += 1;
         }
@@ -663,7 +711,19 @@ pub fn analyze_frame(
             green: histogram_median(&green_histogram),
             blue: histogram_median(&blue_histogram),
         },
+        midtone_rgb_medians: CameraMatchRgbMedians {
+            red: histogram_median(&midtone_red_histogram),
+            green: histogram_median(&midtone_green_histogram),
+            blue: histogram_median(&midtone_blue_histogram),
+        },
+        skin_rgb_medians: CameraMatchRgbMedians {
+            red: histogram_median(&skin_red_histogram),
+            green: histogram_median(&skin_green_histogram),
+            blue: histogram_median(&skin_blue_histogram),
+        },
         luma_median,
+        midtone_luma_median: histogram_median(&midtone_luma_histogram),
+        skin_luma_median: histogram_median(&skin_luma_histogram),
         highlight_percent: highlight_pixels as f64 / total_pixels_f64,
         midtone_density: midtone_pixels as f64 / total_pixels_f64,
         shadow_percent: shadow_pixels as f64 / total_pixels_f64,
@@ -676,7 +736,15 @@ pub fn aggregate_frames(per_frame: &[CameraMatchFrameMetrics]) -> CameraMatchAgg
     let mut red_values = Vec::with_capacity(per_frame.len());
     let mut green_values = Vec::with_capacity(per_frame.len());
     let mut blue_values = Vec::with_capacity(per_frame.len());
+    let mut midtone_red_values = Vec::with_capacity(per_frame.len());
+    let mut midtone_green_values = Vec::with_capacity(per_frame.len());
+    let mut midtone_blue_values = Vec::with_capacity(per_frame.len());
+    let mut skin_red_values = Vec::with_capacity(per_frame.len());
+    let mut skin_green_values = Vec::with_capacity(per_frame.len());
+    let mut skin_blue_values = Vec::with_capacity(per_frame.len());
     let mut luma_values = Vec::with_capacity(per_frame.len());
+    let mut midtone_luma_values = Vec::with_capacity(per_frame.len());
+    let mut skin_luma_values = Vec::with_capacity(per_frame.len());
     let mut highlight_values = Vec::with_capacity(per_frame.len());
     let mut midtone_values = Vec::with_capacity(per_frame.len());
     let mut shadow_values = Vec::with_capacity(per_frame.len());
@@ -688,7 +756,15 @@ pub fn aggregate_frames(per_frame: &[CameraMatchFrameMetrics]) -> CameraMatchAgg
         red_values.push(frame.rgb_medians.red);
         green_values.push(frame.rgb_medians.green);
         blue_values.push(frame.rgb_medians.blue);
+        midtone_red_values.push(frame.midtone_rgb_medians.red);
+        midtone_green_values.push(frame.midtone_rgb_medians.green);
+        midtone_blue_values.push(frame.midtone_rgb_medians.blue);
+        skin_red_values.push(frame.skin_rgb_medians.red);
+        skin_green_values.push(frame.skin_rgb_medians.green);
+        skin_blue_values.push(frame.skin_rgb_medians.blue);
         luma_values.push(frame.luma_median);
+        midtone_luma_values.push(frame.midtone_luma_median);
+        skin_luma_values.push(frame.skin_luma_median);
         highlight_values.push(frame.highlight_percent);
         midtone_values.push(frame.midtone_density);
         shadow_values.push(frame.shadow_percent);
@@ -701,7 +777,19 @@ pub fn aggregate_frames(per_frame: &[CameraMatchFrameMetrics]) -> CameraMatchAgg
             green: median_of_values(&mut green_values),
             blue: median_of_values(&mut blue_values),
         },
+        midtone_rgb_medians: CameraMatchRgbMedians {
+            red: median_of_values(&mut midtone_red_values),
+            green: median_of_values(&mut midtone_green_values),
+            blue: median_of_values(&mut midtone_blue_values),
+        },
+        skin_rgb_medians: CameraMatchRgbMedians {
+            red: median_of_values(&mut skin_red_values),
+            green: median_of_values(&mut skin_green_values),
+            blue: median_of_values(&mut skin_blue_values),
+        },
         luma_median: median_of_values(&mut luma_values),
+        midtone_luma_median: median_of_values(&mut midtone_luma_values),
+        skin_luma_median: median_of_values(&mut skin_luma_values),
         highlight_percent: mean_of_values(&highlight_values),
         midtone_density: mean_of_values(&midtone_values),
         shadow_percent: mean_of_values(&shadow_values),
@@ -738,6 +826,10 @@ pub fn build_measurement_bundle(
     let rgb_balance_summary = MeasurementRgbBalanceSummary {
         red_vs_green: aggregate.rgb_medians.red - aggregate.rgb_medians.green,
         blue_vs_green: aggregate.rgb_medians.blue - aggregate.rgb_medians.green,
+        midtone_red_vs_green: Some(aggregate.midtone_rgb_medians.red - aggregate.midtone_rgb_medians.green),
+        midtone_blue_vs_green: Some(aggregate.midtone_rgb_medians.blue - aggregate.midtone_rgb_medians.green),
+        skin_red_vs_green: Some(aggregate.skin_rgb_medians.red - aggregate.skin_rgb_medians.green),
+        skin_blue_vs_green: Some(aggregate.skin_rgb_medians.blue - aggregate.skin_rgb_medians.green),
         green_magenta_hint: green_magenta_hint(
             aggregate.rgb_medians.red,
             aggregate.rgb_medians.green,
@@ -755,6 +847,8 @@ pub fn build_measurement_bundle(
         wb_metadata: metadata.camera_white_balance.clone(),
         waveform_summary: MeasurementWaveformSummary {
             median_luma: aggregate.luma_median,
+            midtone_band_median_luma: Some(aggregate.midtone_luma_median),
+            skin_band_median_luma: Some(aggregate.skin_luma_median),
             top_band_density: histogram_band_density(&aggregate.luma_histogram, 204, 255),
             bottom_band_density: histogram_band_density(&aggregate.luma_histogram, 0, 51),
             skin_band_estimate: Some(false_color_summary.skin_zone),

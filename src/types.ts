@@ -431,7 +431,11 @@ export interface CameraMatchFrameMetrics {
     height: number;
     luma_histogram: number[];
     rgb_medians: CameraMatchRgbMedians;
+    midtone_rgb_medians: CameraMatchRgbMedians;
+    skin_rgb_medians: CameraMatchRgbMedians;
     luma_median: number;
+    midtone_luma_median: number;
+    skin_luma_median: number;
     highlight_percent: number;
     midtone_density: number;
     shadow_percent: number;
@@ -440,7 +444,11 @@ export interface CameraMatchFrameMetrics {
 export interface CameraMatchAggregateMetrics {
     luma_histogram: number[];
     rgb_medians: CameraMatchRgbMedians;
+    midtone_rgb_medians: CameraMatchRgbMedians;
+    skin_rgb_medians: CameraMatchRgbMedians;
     luma_median: number;
+    midtone_luma_median: number;
+    skin_luma_median: number;
     highlight_percent: number;
     midtone_density: number;
     shadow_percent: number;
@@ -455,6 +463,8 @@ export interface CameraMatchAggregateMetrics {
 
 export interface MeasurementWaveformSummary {
     median_luma: number;
+    midtone_band_median_luma?: number | null;
+    skin_band_median_luma?: number | null;
     top_band_density: number;
     bottom_band_density: number;
     skin_band_estimate?: number | null;
@@ -472,6 +482,10 @@ export interface MeasurementFalseColorSummary {
 export interface MeasurementRgbBalanceSummary {
     red_vs_green: number;
     blue_vs_green: number;
+    midtone_red_vs_green?: number | null;
+    midtone_blue_vs_green?: number | null;
+    skin_red_vs_green?: number | null;
+    skin_blue_vs_green?: number | null;
     green_magenta_hint?: string | null;
 }
 
@@ -633,6 +647,7 @@ export interface CameraMatchDelta {
 }
 
 export interface CameraMatchSuggestionSet {
+    match_engine_version?: string | null;
     exposure: string;
     white_balance: string;
     highlight: string;
@@ -647,7 +662,19 @@ export interface CameraMatchMetrics {
         green: number;
         blue: number;
     };
+    midtone_rgb_medians: {
+        red: number;
+        green: number;
+        blue: number;
+    };
+    skin_rgb_medians: {
+        red: number;
+        green: number;
+        blue: number;
+    };
     luma_median: number;
+    midtone_luma_median: number;
+    skin_luma_median: number;
     highlight_percent: number;
     midtone_density: number;
 }

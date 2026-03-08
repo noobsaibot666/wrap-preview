@@ -1,7 +1,7 @@
 # Resolve Import Test Matrix
 
 ## Version Scope
-- App target: `1.0.0-beta.1`
+- App target: `1.0.0-beta.4`
 - Export format: structured FCPXML
 - Events encoded: `01_BLOCKS`, `02_CAMERAS`, `03_SELECTS`, optional `04_MASTER`
 

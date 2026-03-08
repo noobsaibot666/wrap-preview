@@ -24,6 +24,7 @@ interface CameraMatchLabAppProps {
 
 const SLOT_ORDER = ["A", "B", "C"] as const;
 const FRAME_COUNT = 5;
+const MATCH_ENGINE_VERSION = "tuning_v2";
 type CameraSlot = (typeof SLOT_ORDER)[number];
 type MatchActionChip = {
   key: string;
@@ -1835,7 +1836,11 @@ function buildAnalysisModel(
   const metrics: CameraMatchMetrics = {
     luma_histogram: result.aggregate.luma_histogram,
     rgb_medians: result.aggregate.rgb_medians,
+    midtone_rgb_medians: result.aggregate.midtone_rgb_medians,
+    skin_rgb_medians: result.aggregate.skin_rgb_medians,
     luma_median: result.aggregate.luma_median,
+    midtone_luma_median: result.aggregate.midtone_luma_median,
+    skin_luma_median: result.aggregate.skin_luma_median,
     highlight_percent: result.aggregate.highlight_percent,
     midtone_density: result.aggregate.midtone_density,
   };
@@ -1850,6 +1855,7 @@ function buildAnalysisModel(
       metrics,
       delta_vs_hero: null,
       suggestions: {
+        match_engine_version: MATCH_ENGINE_VERSION,
         exposure: "Hero baseline",
         white_balance: "Hero baseline",
         highlight: "Hero baseline",
@@ -1861,7 +1867,11 @@ function buildAnalysisModel(
   const delta = computeDelta(metrics, {
     luma_histogram: heroResult.aggregate.luma_histogram,
     rgb_medians: heroResult.aggregate.rgb_medians,
+    midtone_rgb_medians: heroResult.aggregate.midtone_rgb_medians,
+    skin_rgb_medians: heroResult.aggregate.skin_rgb_medians,
     luma_median: heroResult.aggregate.luma_median,
+    midtone_luma_median: heroResult.aggregate.midtone_luma_median,
+    skin_luma_median: heroResult.aggregate.skin_luma_median,
     highlight_percent: heroResult.aggregate.highlight_percent,
     midtone_density: heroResult.aggregate.midtone_density,
   });
@@ -1877,10 +1887,14 @@ function buildAnalysisModel(
     suggestions: buildSuggestionSet(delta, metrics, {
       luma_histogram: heroResult.aggregate.luma_histogram,
       rgb_medians: heroResult.aggregate.rgb_medians,
+      midtone_rgb_medians: heroResult.aggregate.midtone_rgb_medians,
+      skin_rgb_medians: heroResult.aggregate.skin_rgb_medians,
       luma_median: heroResult.aggregate.luma_median,
+      midtone_luma_median: heroResult.aggregate.midtone_luma_median,
+      skin_luma_median: heroResult.aggregate.skin_luma_median,
       highlight_percent: heroResult.aggregate.highlight_percent,
       midtone_density: heroResult.aggregate.midtone_density,
-    }, result.aggregate, result.per_frame.length),
+    }, result.aggregate, result.per_frame.length, result.measurement_bundle, heroResult.measurement_bundle),
   };
 }
 
@@ -2084,27 +2098,19 @@ function buildSuggestionSet(
     midtone_variance: number;
   },
   frameCount: number,
+  currentBundle: CameraMatchAnalysisResult["measurement_bundle"],
+  heroBundle: CameraMatchAnalysisResult["measurement_bundle"],
 ): CameraMatchSuggestionSet {
-  const safeCurrent = Math.max(current.luma_median, 0.01);
-  const safeHero = Math.max(hero.luma_median, 0.01);
-  const stopDelta = clamp(Math.log2(safeHero / safeCurrent), -2, 2);
-  const boundedStops = Math.abs(stopDelta) < 0.08 ? 0 : roundTo(stopDelta, 0.1);
-
-  const heroRb = hero.rgb_medians.red - hero.rgb_medians.blue;
-  const currentRb = current.rgb_medians.red - current.rgb_medians.blue;
-  const kelvinShift = clamp(Math.round(((heroRb - currentRb) * 8000) / 100) * 100, -1200, 1200);
-  const heroTintBase = hero.rgb_medians.green - (hero.rgb_medians.red + hero.rgb_medians.blue) * 0.5;
-  const currentTintBase = current.rgb_medians.green - (current.rgb_medians.red + current.rgb_medians.blue) * 0.5;
-  const tintShift = clamp(Math.round((heroTintBase - currentTintBase) * 180), -10, 10);
+  const exposureStops = computeTuningV2ExposureStops(currentBundle, heroBundle);
+  const boundedStops = Math.abs(exposureStops) < 0.08 ? 0 : roundTo(clamp(exposureStops, -2, 2), 0.1);
+  const wbKelvinShift = computeTuningV2WbKelvinShift(currentBundle, heroBundle, current, hero);
+  const tintShift = computeTuningV2TintShift(currentBundle, heroBundle, current, hero);
 
   return {
+    match_engine_version: MATCH_ENGINE_VERSION,
     exposure: boundedStops === 0 ? "Hold" : `${boundedStops > 0 ? "+" : ""}${boundedStops.toFixed(1)} stop`,
-    white_balance: `${formatKelvinShift(kelvinShift)} • ${formatTintShift(tintShift)}`,
-    highlight: delta.highlight_percent > 0.015
-      ? `Warn +${(delta.highlight_percent * 100).toFixed(1)}%`
-      : delta.highlight_percent < -0.015
-        ? `Safer ${(Math.abs(delta.highlight_percent) * 100).toFixed(1)}%`
-        : "Aligned",
+    white_balance: `${formatKelvinShift(wbKelvinShift)} • ${formatTintShift(tintShift)}`,
+    highlight: shouldProtectHighlights(currentBundle, delta) ? "HL Protect" : "HL OK",
     confidence: computeConfidence(aggregateVariance, frameCount),
     warning: computeVarianceWarning(aggregateVariance, frameCount),
   };
@@ -2817,9 +2823,7 @@ function buildMatchActionChips(
   const expValue = correctionDisplay?.exposure && correctionDisplay.exposure !== "Baseline"
     ? compactExposureValue(correctionDisplay.exposure)
     : deriveExposureAction(rawAnalysis, analysis, signalPreview);
-  const hlValue = (bundle.false_color_summary.clipped > 0.01 || bundle.false_color_summary.near_clip > 0.06 || bundle.waveform_summary.top_band_density > 0.14)
-    ? "Protect"
-    : "OK";
+  const hlValue = shouldProtectHighlights(bundle, analysis.delta_vs_hero) ? "Protect" : "OK";
   const midValue = getMidAction(rawAnalysis, analysis, signalPreview);
   const shadowValue = getShadowAction(rawAnalysis, analysis, signalPreview);
 
@@ -3008,13 +3012,111 @@ function getShadowAction(rawAnalysis: CameraMatchAnalysisResult, analysis: Camer
   return "Hold";
 }
 
+function shouldProtectHighlights(
+  bundle: CameraMatchAnalysisResult["measurement_bundle"],
+  delta?: CameraMatchDelta | null,
+) {
+  const highlightPressure = bundle.highlight_percentage;
+  const clipped = bundle.false_color_summary.clipped;
+  const nearClip = bundle.false_color_summary.near_clip;
+  const topCompression = bundle.waveform_summary.top_band_density;
+  const heroHighlightDrift = delta?.highlight_percent ?? 0;
+  return highlightPressure > 0.03
+    || clipped > 0.01
+    || (nearClip > 0.07 && topCompression > 0.16)
+    || (heroHighlightDrift > 0.03 && topCompression > 0.15);
+}
+
+function computeTuningV2ExposureStops(
+  currentBundle: CameraMatchAnalysisResult["measurement_bundle"],
+  heroBundle: CameraMatchAnalysisResult["measurement_bundle"],
+) {
+  const currentMid = currentBundle.waveform_summary.midtone_band_median_luma ?? currentBundle.waveform_summary.median_luma;
+  const heroMid = heroBundle.waveform_summary.midtone_band_median_luma ?? heroBundle.waveform_summary.median_luma;
+  const currentSkin = currentBundle.waveform_summary.skin_band_median_luma ?? currentMid;
+  const heroSkin = heroBundle.waveform_summary.skin_band_median_luma ?? heroMid;
+  const weightedCurrent = (currentMid * 0.7) + (currentSkin * 0.3);
+  const weightedHero = (heroMid * 0.7) + (heroSkin * 0.3);
+  return clamp(Math.log2(Math.max(weightedHero, 0.01) / Math.max(weightedCurrent, 0.01)), -2, 2);
+}
+
+function computeTuningV2WbKelvinShift(
+  currentBundle: CameraMatchAnalysisResult["measurement_bundle"],
+  heroBundle: CameraMatchAnalysisResult["measurement_bundle"],
+  current: CameraMatchMetrics,
+  hero: CameraMatchMetrics,
+) {
+  const heroMidRb = hero.midtone_rgb_medians.red - hero.midtone_rgb_medians.blue;
+  const currentMidRb = current.midtone_rgb_medians.red - current.midtone_rgb_medians.blue;
+  const baseKelvin = ((heroMidRb - currentMidRb) * 7000);
+
+  const heroSkinRb = hero.skin_rgb_medians.red - hero.skin_rgb_medians.blue;
+  const currentSkinRb = current.skin_rgb_medians.red - current.skin_rgb_medians.blue;
+  const heroSkinWeight = heroBundle.waveform_summary.skin_band_estimate ?? 0;
+  const currentSkinWeight = currentBundle.waveform_summary.skin_band_estimate ?? 0;
+  const skinEvidenceWeight = Math.min(heroSkinWeight, currentSkinWeight);
+  const skinKelvinNudge = skinEvidenceWeight > 0.08
+    ? clamp((heroSkinRb - currentSkinRb) * 1800, -100, 100)
+    : 0;
+
+  const metadataNudge = computeMetadataSupportKelvinNudge(currentBundle, heroBundle);
+  return clamp(Math.round((baseKelvin + skinKelvinNudge + metadataNudge) / 100) * 100, -1200, 1200);
+}
+
+function computeMetadataSupportKelvinNudge(
+  currentBundle: CameraMatchAnalysisResult["measurement_bundle"],
+  heroBundle: CameraMatchAnalysisResult["measurement_bundle"],
+) {
+  const currentMeta = parseKelvinMetadata(currentBundle.wb_metadata);
+  const heroMeta = parseKelvinMetadata(heroBundle.wb_metadata);
+  if (currentMeta == null || heroMeta == null) return 0;
+  return clamp((heroMeta - currentMeta) * 0.15, -100, 100);
+}
+
+function computeTuningV2TintShift(
+  currentBundle: CameraMatchAnalysisResult["measurement_bundle"],
+  heroBundle: CameraMatchAnalysisResult["measurement_bundle"],
+  current: CameraMatchMetrics,
+  hero: CameraMatchMetrics,
+) {
+  const heroTintBase = hero.midtone_rgb_medians.green - ((hero.midtone_rgb_medians.red + hero.midtone_rgb_medians.blue) * 0.5);
+  const currentTintBase = current.midtone_rgb_medians.green - ((current.midtone_rgb_medians.red + current.midtone_rgb_medians.blue) * 0.5);
+  const baseTint = (heroTintBase - currentTintBase) * 48;
+  const hint = currentBundle.rgb_balance_summary.green_magenta_hint;
+  const metadataBias = hint === "Green" ? -0.35 : hint === "Magenta" ? 0.35 : 0;
+  const skinBias = (heroBundle.rgb_balance_summary.skin_red_vs_green != null
+    && currentBundle.rgb_balance_summary.skin_red_vs_green != null
+    && heroBundle.rgb_balance_summary.skin_blue_vs_green != null
+    && currentBundle.rgb_balance_summary.skin_blue_vs_green != null)
+    ? clamp(
+        (
+          ((heroBundle.rgb_balance_summary.skin_red_vs_green + heroBundle.rgb_balance_summary.skin_blue_vs_green) * -0.5)
+          - ((currentBundle.rgb_balance_summary.skin_red_vs_green + currentBundle.rgb_balance_summary.skin_blue_vs_green) * -0.5)
+        ) * 8,
+        -0.5,
+        0.5,
+      )
+    : 0;
+  return clamp(Math.round(baseTint + metadataBias + skinBias), -2, 2);
+}
+
+function parseKelvinMetadata(value?: string | null) {
+  if (!value) return null;
+  const match = value.match(/(\d{3,5})\s*K?/i);
+  if (!match) return null;
+  const kelvin = Number(match[1]);
+  if (!Number.isFinite(kelvin) || kelvin < 1000 || kelvin > 20000) return null;
+  return kelvin;
+}
+
 function deriveWhiteBalanceAction(rawAnalysis: CameraMatchAnalysisResult, analysis: CameraMatchAnalysis) {
   const bundle = rawAnalysis.measurement_bundle;
   const calibrationKelvin = analysis.suggestions?.white_balance ? extractWhiteBalanceAction(analysis.suggestions.white_balance) : "OK";
   if (calibrationKelvin !== "OK") return calibrationKelvin;
-  const drift = bundle.rgb_balance_summary.blue_vs_green - bundle.rgb_balance_summary.red_vs_green;
-  if (drift > 0.03) return "+200K";
-  if (drift < -0.03) return "-200K";
+  const midtoneDrift = (bundle.rgb_balance_summary.midtone_blue_vs_green ?? bundle.rgb_balance_summary.blue_vs_green)
+    - (bundle.rgb_balance_summary.midtone_red_vs_green ?? bundle.rgb_balance_summary.red_vs_green);
+  if (midtoneDrift > 0.025) return "+200K";
+  if (midtoneDrift < -0.025) return "-200K";
   return "OK";
 }
 
@@ -3030,9 +3132,12 @@ function deriveTintAction(rawAnalysis: CameraMatchAnalysisResult, analysis: Came
 function deriveExposureAction(rawAnalysis: CameraMatchAnalysisResult, analysis: CameraMatchAnalysis, signalPreview?: SignalPreviewData) {
   const suggestion = compactExposureValue(analysis.suggestions?.exposure);
   if (suggestion !== "OK") return suggestion;
-  const median = signalPreview?.summary.median_luma ?? rawAnalysis.measurement_bundle.waveform_summary.median_luma;
-  if (median < 0.36) return "+0.2";
-  if (median > 0.62 || rawAnalysis.measurement_bundle.highlight_percentage > 0.035) return "-0.2";
+  const bundle = rawAnalysis.measurement_bundle;
+  const mid = bundle.waveform_summary.midtone_band_median_luma ?? signalPreview?.summary.median_luma ?? bundle.waveform_summary.median_luma;
+  const skin = bundle.waveform_summary.skin_band_median_luma ?? mid;
+  const weighted = (mid * 0.7) + (skin * 0.3);
+  if (weighted < 0.38) return "+0.2";
+  if (weighted > 0.60) return "-0.2";
   return "OK";
 }
 
