@@ -71,7 +71,8 @@ pub fn run() {
         review_core_server_base_url: std::sync::Mutex::new(None),
         production_matchlab_proxy_tracker: crate::production_match_lab::MatchLabProxyTracker::default(),
         production_matchlab_analysis_tracker: crate::production_match_lab::MatchLabAnalysisTracker::default(),
-        production_matchlab_decoder_caps: std::sync::Mutex::new(None),
+        production_matchlab_braw_decoder_caps: std::sync::Mutex::new(None),
+        production_matchlab_redline_decoder_caps: std::sync::Mutex::new(None),
     });
 
     tauri::Builder::default()
@@ -102,6 +103,7 @@ pub fn run() {
                     "production_create_project",
                     "production_list_projects",
                     "production_touch_project",
+                    "production_delete_project",
                     "production_save_look_setup",
                     "production_get_look_setup",
                     "production_save_onset_checks",
@@ -240,6 +242,7 @@ pub fn run() {
             commands::production_create_project,
             commands::production_list_projects,
             commands::production_touch_project,
+            commands::production_delete_project,
             commands::get_camera_profiles,
             commands::get_look_presets,
             commands::save_production_camera_config,

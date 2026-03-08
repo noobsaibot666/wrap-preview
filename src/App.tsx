@@ -1,7 +1,6 @@
 import { Component, ReactNode, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
 import {
   Camera,
   Compass,
@@ -11,7 +10,6 @@ import {
   ArrowRight,
   Boxes,
   BriefcaseBusiness,
-  MessageCircleWarning,
   MoreHorizontal,
   FileDown,
   ChevronDown,
@@ -49,7 +47,6 @@ import { useSelection } from "./hooks/useSelection";
 import { useClipActions } from "./hooks/useClipActions";
 import { useAppKeyboard } from "./hooks/useAppKeyboard";
 import { ProductionLanding } from "./modules/Production/ProductionLanding";
-import { ProjectManager } from "./modules/Production/ProjectManager";
 import LookSetup from './modules/Production/apps/LookSetup';
 import OnSetCoach from './modules/Production/apps/OnSetCoach.tsx';
 import MatchNormalize from './modules/Production/apps/MatchNormalize.tsx';
@@ -98,7 +95,6 @@ function AppContent() {
     return (saved as any) || 'home';
   });
   const [activeProductionProject, setActiveProductionProject] = useState<ProductionProject | null>(null);
-  const [showProjectManager, setShowProjectManager] = useState(false);
   const [activePreproductionApp, setActivePreproductionApp] = useState<string | null>(() => {
     if (IS_DEV) return null;
     return localStorage.getItem('wp_activePreApp') || null;
@@ -274,7 +270,6 @@ function AppContent() {
   const [jobs, setJobs] = useState<JobInfo[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
-  const [lastVerificationJobId, setLastVerificationJobId] = useState<string | null>(null);
   const {
     isOpen: commandPaletteOpen,
     setIsOpen: setCommandPaletteOpen,
@@ -868,12 +863,6 @@ function AppContent() {
     }
   ];
 
-  const handleResetAppData = useCallback(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-    window.location.reload();
-  }, []);
-
   const handleReorderClips = useCallback(async (activeId: string, overId: string) => {
     const activeClip = clips.find(c => c.clip.id === activeId);
     const overClip = clips.find(c => c.clip.id === overId);
@@ -906,7 +895,7 @@ function AppContent() {
     setActivePreproductionApp(null);
     setActiveMediaWorkspaceApp(null);
     setTourRun(true);
-  }, [handleResetAppData]);
+  }, []);
   const effectiveLookbookSortMode: LookbookSortMode = lookbookSortMode === "hook_first" ? "canonical" : lookbookSortMode;
   const thumbnailsByClipId = clips.reduce<Record<string, ClipWithThumbnails["thumbnails"]>>((acc, row) => {
     acc[row.clip.id] = row.thumbnails;
@@ -1309,7 +1298,7 @@ function AppContent() {
                 </button>
 
                 <button
-                  className={`nav-tab ${activeTab === 'preproduction' ? 'active' : ''}`}
+                  className={`nav-tab nav-tab-phase-preproduction ${activeTab === 'preproduction' ? 'active' : ''}`}
                   onClick={() => {
                     setActiveTab('preproduction');
                     setActivePreproductionApp(null);
@@ -1321,7 +1310,7 @@ function AppContent() {
                 </button>
 
                 <button
-                  className={`nav-tab ${activeTab === 'production' ? 'active' : ''}`}
+                  className={`nav-tab nav-tab-phase-production ${activeTab === 'production' ? 'active' : ''}`}
                   onClick={() => {
                     setActiveTab('production');
                     setActivePreproductionApp(null);
@@ -1333,7 +1322,7 @@ function AppContent() {
                 </button>
 
                 <button
-                  className={`nav-tab ${activeTab === 'media-workspace' ? 'active' : ''}`}
+                  className={`nav-tab nav-tab-phase-postproduction ${activeTab === 'media-workspace' ? 'active' : ''}`}
                   onClick={() => {
                     setActiveTab('media-workspace');
                     setActivePreproductionApp(null);
@@ -1362,24 +1351,6 @@ function AppContent() {
                           <span className="menu-item-icon"><Info size={16} /></span>
                           <span className="menu-item-label">About Wrap Preview</span>
                         </button>
-                        <button className="dropdown-item menu-item" onClick={async () => {
-                          setHelpMenuOpen(false);
-                          const dest = await open({ directory: true, multiple: false, title: "Export Feedback Bundle" });
-                          if (!dest) return;
-                          try {
-                            const zip = await invoke<string>("export_feedback_bundle", { outputRoot: dest, lastVerificationJobId });
-                            try { await openPath(zip); } catch (openErr) {
-                              console.warn("openPath failed for feedback bundle", openErr);
-                              setUiError({ title: "Feedback bundle exported", hint: `Saved at ${zip}. Use Finder to open if auto-open is blocked.` });
-                            }
-                          } catch (e) {
-                            console.error(e);
-                            setUiError({ title: "Diagnostics export failed", hint: "Retry and verify destination folder is writable." });
-                          }
-                        }}>
-                          <span className="menu-item-icon"><MessageCircleWarning size={16} /></span>
-                          <span className="menu-item-label">Send Feedback</span>
-                        </button>
                         <div className="dropdown-divider menu-divider" />
                         <button className="dropdown-item menu-item" onClick={() => {
                           if (tourRun) completeTour();
@@ -1387,15 +1358,6 @@ function AppContent() {
                         }}>
                           <span className="menu-item-icon"><Compass size={16} /></span>
                           <span className="menu-item-label">{tourRun ? "Hide Tour" : "Show Tour"}</span>
-                        </button>
-                        <div className="dropdown-divider menu-divider" />
-                        <button className="dropdown-item menu-item text-danger" onClick={() => {
-                          if (window.confirm("This will clear all local settings and reload the app. Continue?")) {
-                            handleResetAppData();
-                          }
-                        }}>
-                          <span className="menu-item-icon"><XCircle size={16} /></span>
-                          <span className="menu-item-label">Reset App Data</span>
                         </button>
                       </div>
                     </>
@@ -1647,7 +1609,7 @@ function AppContent() {
               activeMediaWorkspaceApp === 'safe-copy' ? (
                 <div className="media-workspace">
 
-                  <SafeCopy projectId={projectId ?? "__global__"} onJobCreated={setLastVerificationJobId} onError={setUiError} />
+                  <SafeCopy projectId={projectId ?? "__global__"} onError={setUiError} />
                 </div>
               ) : activeMediaWorkspaceApp === 'clip-review' ? (
                 projectId ? (
@@ -1899,7 +1861,7 @@ function AppContent() {
                 />
               ) : (
                 <ProductionLanding
-                  onOpenProjectPicker={() => setShowProjectManager(true)}
+                  onSelectProject={setActiveProductionProject}
                   onOpenLookSetup={() => {
                     setActiveProductionApp("look-setup");
                   }}
@@ -2033,16 +1995,6 @@ function AppContent() {
 
           <JobsPanel open={jobsOpen} jobs={jobs} onClose={() => setJobsOpen(false)} onRefresh={refreshJobs} extracting={extracting} extractProgress={extractProgress} scanning={scanning} />
           <AboutPanel open={aboutOpen} info={appInfo} onResetTour={resetTour} onClose={() => setAboutOpen(false)} />
-
-          {showProjectManager && (
-            <ProjectManager
-              onClose={() => setShowProjectManager(false)}
-              onSelectProject={(project) => {
-                setActiveProductionProject(project);
-                setShowProjectManager(false);
-              }}
-            />
-          )}
 
           <TourGuide
             run={tourRun}

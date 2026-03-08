@@ -127,6 +127,7 @@ export interface AppInfo {
     macos_version: string;
     arch: string;
     braw_bridge_active?: boolean;
+    redline_bridge_active?: boolean;
 }
 
 export interface ReviewCoreAsset {

@@ -42,6 +42,15 @@
   --status-ok: var(--color-accent);
   --status-warn: var(--text-muted);
   --status-fail: var(--status-red);
+  --phase-preproduction: #7dd3fc;
+  --phase-preproduction-soft: rgba(125, 211, 252, 0.14);
+  --phase-preproduction-glow: rgba(125, 211, 252, 0.2);
+  --phase-production: var(--color-accent);
+  --phase-production-soft: var(--color-accent-soft);
+  --phase-production-glow: var(--color-accent-glow);
+  --phase-postproduction: #f4d35e;
+  --phase-postproduction-soft: rgba(244, 211, 94, 0.14);
+  --phase-postproduction-glow: rgba(244, 211, 94, 0.18);
 
   /* Spacing */
   --space-xs: 4px;
@@ -1938,6 +1947,9 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  --nav-tab-accent: transparent;
+  --nav-tab-accent-soft: rgba(255, 255, 255, 0.06);
+  --nav-tab-accent-glow: rgba(255, 255, 255, 0.08);
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-muted);
@@ -1954,14 +1966,33 @@ body {
 
 .nav-tab:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--nav-tab-accent-soft);
+  border-color: color-mix(in srgb, var(--nav-tab-accent) 24%, transparent);
 }
 
 .nav-tab.active {
-  color: var(--color-accent);
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 0 16px rgba(255, 255, 255, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--nav-tab-accent, var(--color-accent));
+  background: color-mix(in srgb, var(--nav-tab-accent-soft) 76%, rgba(255, 255, 255, 0.04));
+  border-color: color-mix(in srgb, var(--nav-tab-accent) 30%, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 0 16px var(--nav-tab-accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.nav-tab-phase-preproduction {
+  --nav-tab-accent: var(--phase-preproduction);
+  --nav-tab-accent-soft: var(--phase-preproduction-soft);
+  --nav-tab-accent-glow: var(--phase-preproduction-glow);
+}
+
+.nav-tab-phase-production {
+  --nav-tab-accent: var(--phase-production);
+  --nav-tab-accent-soft: var(--phase-production-soft);
+  --nav-tab-accent-glow: var(--phase-production-glow);
+}
+
+.nav-tab-phase-postproduction {
+  --nav-tab-accent: var(--phase-postproduction);
+  --nav-tab-accent-soft: var(--phase-postproduction-soft);
+  --nav-tab-accent-glow: var(--phase-postproduction-glow);
 }
 
 .nav-tab:disabled {
@@ -3549,6 +3580,31 @@ body {
   text-wrap: balance;
 }
 
+.production-apps-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 18px;
+  max-width: 1150px;
+  margin: 0 auto;
+}
+
+.production-apps-grid > .module-card {
+  grid-column: span 2;
+  min-height: 214px;
+}
+
+.production-apps-grid > .production-project-card {
+  grid-column: span 2;
+}
+
+.production-apps-grid > .module-card:nth-child(4) {
+  grid-column: 2 / span 2;
+}
+
+.production-apps-grid > .module-card:nth-child(5) {
+  grid-column: 4 / span 2;
+}
+
 .onboarding-phases-wrapper {
   display: flex;
   flex-direction: row;
@@ -3648,6 +3704,17 @@ body {
 @media (max-width: 768px) {
   .onboarding-grid {
     grid-template-columns: 1fr;
+  }
+
+  .production-apps-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .production-apps-grid > .module-card,
+  .production-apps-grid > .module-card:nth-child(4),
+  .production-apps-grid > .module-card:nth-child(5),
+  .production-apps-grid > .production-project-card {
+    grid-column: auto;
   }
 
   .workspace-apps-grid {

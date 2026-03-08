@@ -181,6 +181,14 @@ pub struct BrawDecoderCaps {
     pub version: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RedlineDecoderCaps {
+    pub found: bool,
+    pub executable_path: Option<String>,
+    pub help_excerpt: String,
+    pub version: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct MatchLabProxyAttempt {
     pub job_id: String,
@@ -278,6 +286,10 @@ pub fn is_r3d_path(clip_path: &str) -> bool {
 
 pub fn is_proxy_only_raw_path(clip_path: &str) -> bool {
     is_nraw_path(clip_path) || is_r3d_path(clip_path)
+}
+
+pub fn is_decoder_backed_raw_path(clip_path: &str) -> bool {
+    is_braw_path(clip_path) || is_nraw_path(clip_path) || is_r3d_path(clip_path)
 }
 
 pub fn classify_source_format(clip_path: &str) -> String {
@@ -950,6 +962,60 @@ pub fn probe_braw_decoder() -> BrawDecoderCaps {
     }
 }
 
+pub fn probe_redline_decoder() -> RedlineDecoderCaps {
+    let executable_path = locate_redline_decoder();
+    let Some(executable_path) = executable_path else {
+        return RedlineDecoderCaps {
+            found: false,
+            executable_path: None,
+            help_excerpt: "REDline not found".to_string(),
+            version: None,
+        };
+    };
+
+    let help_output = Command::new(&executable_path)
+        .arg("--help")
+        .output()
+        .or_else(|_| Command::new(&executable_path).arg("-h").output());
+
+    let help_excerpt = match help_output {
+        Ok(output) => format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" | "),
+        Err(error) => format!("help unavailable: {}", error),
+    };
+
+    let version = Command::new(&executable_path)
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|output| {
+            let combined = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            combined
+                .lines()
+                .find(|line| !line.trim().is_empty())
+                .map(|line| line.trim().to_string())
+        });
+
+    RedlineDecoderCaps {
+        found: true,
+        executable_path: Some(executable_path),
+        help_excerpt,
+        version,
+    }
+}
+
 pub fn probe_braw_ffmpeg_format(caps: &BrawDecoderCaps, input_path: &str) -> Result<String, String> {
     let executable = caps
         .executable_path
@@ -1141,6 +1207,117 @@ fn locate_braw_decoder() -> Option<String> {
         .into_iter()
         .find(|path| Path::new(path).exists())
         .map(|path| path.to_string())
+}
+
+fn locate_redline_decoder() -> Option<String> {
+    for binary in ["REDline", "redline"] {
+        if let Ok(output) = Command::new("which").arg(binary).output() {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    let common_paths = [
+        "/Applications/REDCINE-X PRO.app/Contents/MacOS/REDline",
+        "/usr/local/bin/REDline",
+        "/opt/homebrew/bin/REDline",
+        "/usr/local/bin/redline",
+        "/opt/homebrew/bin/redline",
+    ];
+    common_paths
+        .into_iter()
+        .find(|path| Path::new(path).exists())
+        .map(|path| path.to_string())
+}
+
+pub fn create_redline_proxy_via_file(
+    caps: &RedlineDecoderCaps,
+    input_path: &str,
+    decoded_path: &Path,
+    output_path: &Path,
+) -> Result<(), String> {
+    let executable = caps
+        .executable_path
+        .as_ref()
+        .ok_or("Decoder executable missing".to_string())?;
+    validate_proxy_output_path(input_path, decoded_path)?;
+    validate_proxy_output_path(input_path, output_path)?;
+
+    let decode_output = Command::new(executable)
+        .args([
+            "--i",
+            input_path,
+            "--format",
+            "201",
+            "--PRcodec",
+            "3",
+            "--resizeX",
+            "1920",
+            "--resizeY",
+            "1080",
+            "--useMeta",
+            "--o",
+            &decoded_path.to_string_lossy(),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to start REDline: {}", e))?;
+    if !decode_output.status.success() {
+        return Err(format!(
+            "Input: {}\nOutput: {}\nExit code: {}\n{}",
+            input_path,
+            decoded_path.display(),
+            decode_output
+                .status
+                .code()
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
+            tail_lines(&String::from_utf8_lossy(&decode_output.stderr), 20)
+        ));
+    }
+    let resolved_decoded_path = if decoded_path.exists() {
+        decoded_path.to_path_buf()
+    } else {
+        let appended_mov = PathBuf::from(format!("{}.mov", decoded_path.to_string_lossy()));
+        if appended_mov.exists() {
+            appended_mov
+        } else {
+            return Err(format!(
+                "Input: {}\nRequested output: {}\nREDline completed but no decoded file was created.",
+                input_path,
+                decoded_path.display()
+            ));
+        }
+    };
+
+    let ffmpeg = crate::tools::find_executable("ffmpeg");
+    let ffmpeg_output = Command::new(ffmpeg)
+        .args([
+            "-hide_banner",
+            "-y",
+            "-i",
+            &resolved_decoded_path.to_string_lossy(),
+        ])
+        .args(proxy_ffmpeg_args(output_path))
+        .output()
+        .map_err(|e| format!("Failed to run ffmpeg for proxy encode: {}", e))?;
+    if !ffmpeg_output.status.success() {
+        return Err(format!(
+            "Input: {}\nOutput: {}\nExit code: {}\n{}",
+            resolved_decoded_path.display(),
+            output_path.display(),
+            ffmpeg_output
+                .status
+                .code()
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
+            tail_lines(&String::from_utf8_lossy(&ffmpeg_output.stderr), 20)
+        ));
+    }
+    let _ = std::fs::remove_file(&resolved_decoded_path);
+    Ok(())
 }
 
 fn proxy_ffmpeg_args(output_path: &Path) -> Vec<String> {

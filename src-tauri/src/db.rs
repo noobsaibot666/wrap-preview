@@ -1606,6 +1606,25 @@ impl Database {
         Ok(projects)
     }
 
+    pub fn delete_production_project(&self, project_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
+            "DELETE FROM production_matchlab_results
+             WHERE run_id IN (SELECT id FROM production_matchlab_runs WHERE project_id = ?1)",
+            params![project_id],
+        )?;
+        tx.execute("DELETE FROM production_matchlab_runs WHERE project_id = ?1", params![project_id])?;
+        tx.execute("DELETE FROM production_matchlab_sources WHERE project_id = ?1", params![project_id])?;
+        tx.execute("DELETE FROM production_presets WHERE project_id = ?1", params![project_id])?;
+        tx.execute("DELETE FROM production_onset_checks WHERE project_id = ?1", params![project_id])?;
+        tx.execute("DELETE FROM production_look_setups WHERE project_id = ?1", params![project_id])?;
+        tx.execute("DELETE FROM production_camera_configs WHERE project_id = ?1", params![project_id])?;
+        tx.execute("DELETE FROM production_projects WHERE id = ?1", params![project_id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn upsert_production_camera_config(
         &self,
         config: &ProductionCameraConfig,
