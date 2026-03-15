@@ -200,6 +200,8 @@ pub fn run() {
             commands::get_project_settings,
             commands::create_folder_zip,
             commands::create_folder_structure,
+            commands::scan_duplicates,
+            commands::delete_duplicate_file,
             commands::purge_cache,
             commands::review_core_ingest_files,
             commands::review_core_create_project,

@@ -19,6 +19,7 @@ interface ExportOptions {
   appVersion?: string;
   onWarning?: (message: string) => void;
   shuffle?: boolean;
+  useOriginalRatio?: boolean;
 }
 
 interface MosaicAsset {
@@ -516,7 +517,7 @@ export async function exportImage(options: ExportOptions): Promise<boolean> {
 }
 
 export async function exportMosaicImage(options: ExportOptions): Promise<boolean> {
-  const { projectName, clips, thumbnailsByClipId, thumbnailCache, thumbCount, jumpSeconds, onWarning, cacheKeyContext, shuffle } = options;
+  const { projectName, clips, thumbnailsByClipId, thumbnailCache, thumbCount, jumpSeconds, onWarning, cacheKeyContext, shuffle, useOriginalRatio } = options;
   const assets = await collectMosaicAssets(clips, thumbnailsByClipId, thumbnailCache, thumbCount, jumpSeconds, onWarning, cacheKeyContext, shuffle);
   if (assets.length === 0) {
     onWarning?.("Some clips had no thumbnails yet and were skipped.");
@@ -568,7 +569,11 @@ export async function exportMosaicImage(options: ExportOptions): Promise<boolean
       const row = Math.floor(index / grid);
       const x = margin + column * (tileSize + gap);
       const y = margin + row * (tileSize + gap);
-      drawSquareTile(ctx, img, x, y, tileSize);
+      if (useOriginalRatio) {
+        drawOriginalTile(ctx, img, x, y, tileSize);
+      } else {
+        drawSquareTile(ctx, img, x, y, tileSize);
+      }
     }
 
     await invokeGuarded("save_image_data_url", { path: filePath, dataUrl: canvas.toDataURL("image/jpeg", 0.92) });
@@ -577,7 +582,7 @@ export async function exportMosaicImage(options: ExportOptions): Promise<boolean
 }
 
 export async function exportMosaicPdf(options: ExportOptions): Promise<boolean> {
-  const { projectName, clips, thumbnailsByClipId, thumbnailCache, thumbCount, jumpSeconds, onWarning, cacheKeyContext, shuffle } = options;
+  const { projectName, clips, thumbnailsByClipId, thumbnailCache, thumbCount, jumpSeconds, onWarning, cacheKeyContext, shuffle, useOriginalRatio } = options;
   const filePath = await save({
     filters: [{ name: "PDF Document", extensions: ["pdf"] }],
     defaultPath: `${projectName}_Mosaic.pdf`,
@@ -613,9 +618,15 @@ export async function exportMosaicPdf(options: ExportOptions): Promise<boolean> 
       const { dataUrl } = pageAssets[index];
       try {
         const img = await loadImage(dataUrl);
-        const square = cropToSquare(img);
-        const normalized = await normalizePdfImageDataUrl(square.toDataURL("image/png"));
-        pdf.addImage(normalized, "JPEG", x, y, tileSize, tileSize, undefined, "FAST");
+        if (useOriginalRatio) {
+          const fitted = getContainRect(img.width, img.height, x, y, tileSize, tileSize);
+          const normalized = await normalizePdfImageDataUrl(dataUrl);
+          pdf.addImage(normalized, "JPEG", fitted.x, fitted.y, fitted.width, fitted.height, undefined, "FAST");
+        } else {
+          const square = cropToSquare(img);
+          const normalized = await normalizePdfImageDataUrl(square.toDataURL("image/png"));
+          pdf.addImage(normalized, "JPEG", x, y, tileSize, tileSize, undefined, "FAST");
+        }
       } catch (error) {
         console.warn("Failed to add mosaic thumb to PDF", error);
       }
@@ -650,6 +661,19 @@ function drawSquareTile(
   ctx.fillStyle = "#17181c";
   ctx.fillRect(x, y, size, size);
   ctx.drawImage(square, x, y, size, size);
+}
+
+function drawOriginalTile(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  size: number,
+) {
+  ctx.fillStyle = "#17181c";
+  ctx.fillRect(x, y, size, size);
+  const fitted = getContainRect(img.width, img.height, x, y, size, size);
+  ctx.drawImage(img, fitted.x, fitted.y, fitted.width, fitted.height);
 }
 
 function getMosaicGrid(count: number): number {

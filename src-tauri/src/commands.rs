@@ -6089,6 +6089,214 @@ pub async fn create_folder_structure(
     folders_impl::create_structure_on_disk(structure, &output_root)
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct DuplicateFile {
+    pub path: String,
+    pub filename: String,
+    pub size: u64,
+    pub modified: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct DuplicateGroup {
+    pub hash: String,
+    pub size: u64,
+    pub files: Vec<DuplicateFile>,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct DuplicateScanProgress {
+    pub phase: String,
+    pub count: usize,
+    pub current_path: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct DuplicateScanResult {
+    pub groups: Vec<DuplicateGroup>,
+    pub errors: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn scan_duplicates(
+    paths: Vec<String>,
+    app: tauri::AppHandle,
+) -> Result<DuplicateScanResult, String> {
+    use rayon::prelude::*;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::PathBuf;
+    use walkdir::WalkDir;
+    use tauri::Emitter;
+
+    let mut errors = Vec::new();
+
+    // 1. Collect all files with their sizes
+    app.emit("duplicate-scan-progress", DuplicateScanProgress {
+        phase: "indexing".to_string(),
+        count: 0,
+        current_path: None,
+    }).ok();
+
+    let mut files_by_size: HashMap<u64, Vec<PathBuf>> = HashMap::new();
+    let mut file_count = 0;
+    
+    for root in paths {
+        for entry in WalkDir::new(root)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.')) 
+        {
+            match entry {
+                Ok(entry) => {
+                    if entry.file_type().is_file() {
+                        if let Ok(metadata) = entry.metadata() {
+                            let size = metadata.len();
+                            if size > 0 {
+                                files_by_size.entry(size).or_default().push(entry.path().to_path_buf());
+                                file_count += 1;
+                                
+                                if file_count % 500 == 0 {
+                                    app.emit("duplicate-scan-progress", DuplicateScanProgress {
+                                        phase: "indexing".to_string(),
+                                        count: file_count,
+                                        current_path: Some(entry.path().to_string_lossy().to_string()),
+                                    }).ok();
+                                }
+                            }
+                        }
+                    }
+                },
+                Err(e) => {
+                    errors.push(format!("Access error: {}", e));
+                }
+            }
+        }
+    }
+
+    // Filter out files with unique sizes
+    let candidates: Vec<(u64, Vec<PathBuf>)> = files_by_size
+        .into_iter()
+        .filter(|(_, paths)| paths.len() > 1)
+        .collect();
+
+    if candidates.is_empty() {
+        return Ok(DuplicateScanResult { groups: vec![], errors });
+    }
+
+    // 2. Compute partial hashes (first 8KB) for candidates with same size
+    app.emit("duplicate-scan-progress", DuplicateScanProgress {
+        phase: "analyzing signatures".to_string(),
+        count: candidates.len(),
+        current_path: None,
+    }).ok();
+
+    let mut partial_hash_groups: HashMap<(u64, String), Vec<PathBuf>> = HashMap::new();
+    
+    for (size, paths) in candidates {
+        for path in paths {
+            if let Ok(partial_hash) = read_partial_hash(&path) {
+                partial_hash_groups.entry((size, partial_hash)).or_default().push(path);
+            }
+        }
+    }
+
+    // Filter out unique partial hashes
+    let full_scan_candidates: Vec<((u64, String), Vec<PathBuf>)> = partial_hash_groups
+        .into_iter()
+        .filter(|(_, paths)| paths.len() > 1)
+        .collect();
+
+    if full_scan_candidates.is_empty() {
+        return Ok(DuplicateScanResult { groups: vec![], errors });
+    }
+
+    // 3. Compute full hashes in parallel for remaining candidates
+    app.emit("duplicate-scan-progress", DuplicateScanProgress {
+        phase: "calculating hashes".to_string(),
+        count: full_scan_candidates.len(),
+        current_path: None,
+    }).ok();
+
+    let groups: Vec<DuplicateGroup> = full_scan_candidates
+        .into_par_iter()
+        .filter_map(|((size, _), paths)| {
+            let mut hash_to_files: HashMap<String, Vec<DuplicateFile>> = HashMap::new();
+            
+            for path in paths {
+                if let Ok(hash) = compute_full_hash(&path) {
+                    if let Ok(metadata) = fs::metadata(&path) {
+                        let modified = metadata.modified()
+                            .ok()
+                            .and_then(|t| {
+                                let dt: chrono::DateTime<chrono::Utc> = t.into();
+                                Some(dt.to_rfc3339())
+                            })
+                            .unwrap_or_default();
+
+                        hash_to_files.entry(hash).or_default().push(DuplicateFile {
+                            path: path.to_string_lossy().to_string(),
+                            filename: path.file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default(),
+                            size,
+                            modified,
+                        });
+                    }
+                }
+            }
+
+            let mut final_groups = Vec::new();
+            for (hash, files) in hash_to_files {
+                if files.len() > 1 {
+                    final_groups.push(DuplicateGroup {
+                        hash,
+                        size,
+                        files,
+                    });
+                }
+            }
+            
+            if final_groups.is_empty() { None } else { Some(final_groups) }
+        })
+        .flatten()
+        .collect();
+
+    app.emit("duplicate-scan-progress", DuplicateScanProgress {
+        phase: "complete".to_string(),
+        count: groups.len(),
+        current_path: None,
+    }).ok();
+
+    Ok(DuplicateScanResult { groups, errors })
+}
+
+#[tauri::command]
+pub async fn delete_duplicate_file(path: String) -> Result<(), String> {
+    trash::delete(path).map_err(|e| format!("Failed to move to trash: {}", e))
+}
+
+fn read_partial_hash(path: &std::path::Path) -> Result<String, std::io::Error> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut buffer = [0; 8192];
+    let n = file.read(&mut buffer)?;
+    let hash = blake3::hash(&buffer[..n]);
+    Ok(hash.to_hex().to_string())
+}
+
+fn compute_full_hash(path: &std::path::Path) -> Result<String, std::io::Error> {
+    let mut hasher = blake3::Hasher::new();
+    let mut file = std::fs::File::open(path)?;
+    let mut buffer = [0; 65536];
+    loop {
+        let n = std::io::Read::read(&mut file, &mut buffer)?;
+        if n == 0 { break; }
+        hasher.update(&buffer[..n]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
 #[tauri::command]
 pub async fn purge_cache(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
     let cache_dir = &state.cache_dir;

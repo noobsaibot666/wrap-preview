@@ -20,6 +20,7 @@ import {
   Film,
   Image,
   XCircle,
+  FileSearch,
 } from "lucide-react";
 import { ClipList } from "./components/ClipList";
 import { PrintLayout } from "./components/PrintLayout";
@@ -31,6 +32,7 @@ import { AboutPanel } from "./components/AboutPanel";
 import { FolderCreator } from "./components/FolderCreator";
 import { ReviewCore } from "./components/ReviewCore";
 import { MosaicBuilder } from "./components/MosaicBuilder";
+import { DuplicateFinderApp } from "./components/DuplicateFinderApp";
 import { TourGuide, TourStep } from "./components/TourGuide";
 import { exportPdf, exportImage, exportMosaicImage, exportMosaicPdf } from "./utils/ExportUtils";
 import appLogo from "./assets/Icon_square_rounded.svg";
@@ -930,7 +932,7 @@ function AppContent() {
     return null;
   }, [effectiveLookbookSortMode]);
 
-  const runExport = useCallback(async (kind: "pdf" | "image" | "mosaic-pdf" | "mosaic-image", options?: { shuffle?: boolean }) => {
+  const runExport = useCallback(async (kind: "pdf" | "image" | "mosaic-pdf" | "mosaic-image", options?: { shuffle?: boolean, useOriginalRatio?: boolean }) => {
     const exportClips = getExportClips();
     if (exportClips.length === 0) {
       alert("Please select at least one clip to export.");
@@ -955,6 +957,7 @@ function AppContent() {
           onWarning: (message: string) => setUiError({ title: "Export branding fallback", hint: message }),
         };
         if (options?.shuffle !== undefined) payload.shuffle = options.shuffle;
+        if (options?.useOriginalRatio !== undefined) payload.useOriginalRatio = options.useOriginalRatio;
         await exporter(payload);
         setUiError(null);
       } catch (err) {
@@ -986,6 +989,7 @@ function AppContent() {
         onWarning: (message: string) => setUiError({ title: "Export branding fallback", hint: message }),
       };
       if (options?.shuffle !== undefined) payload.shuffle = options.shuffle;
+      if (options?.useOriginalRatio !== undefined) payload.useOriginalRatio = options.useOriginalRatio;
       await exporter(payload);
       setUiError(null);
     } catch (err) {
@@ -1588,6 +1592,10 @@ function AppContent() {
                 <div className="scrollable-view">
                   <FolderCreator />
                 </div>
+              ) : activePreproductionApp === 'duplicate-finder' ? (
+                <div className="scrollable-view">
+                  <DuplicateFinderApp />
+                </div>
               ) : (
                 <div className="scrollable-view">
                   <div className="onboarding-container postproduction-launcher">
@@ -1633,6 +1641,17 @@ function AppContent() {
                         <div className="module-info">
                           <h3>Grid Mosaic</h3>
                           <p>Generate large multi-frame image grids and PDF sheets from clip thumbnails.</p>
+                          <span className="module-action">Open App <ArrowRight size={14} /></span>
+                        </div>
+                        </div>
+                      <div
+                        className="module-card premium-card"
+                        onClick={() => setActivePreproductionApp('duplicate-finder')}
+                      >
+                        <div className="module-icon"><FileSearch size={20} strokeWidth={1.5} /></div>
+                        <div className="module-info">
+                          <h3>Duplicate Finder</h3>
+                          <p>Scan folders for identical files and generate cleanup reports.</p>
                           <span className="module-action">Open App <ArrowRight size={14} /></span>
                         </div>
                       </div>

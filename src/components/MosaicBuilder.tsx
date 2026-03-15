@@ -14,8 +14,8 @@ interface MosaicBuilderProps {
   onSetThumbCount: (count: number) => void;
   jumpSeconds: number;
   cacheKeyContext?: string;
-  onExportPdf: (options: { shuffle: boolean }) => void;
-  onExportImage: (options: { shuffle: boolean }) => void;
+  onExportPdf: (options: { shuffle: boolean, useOriginalRatio: boolean }) => void;
+  onExportImage: (options: { shuffle: boolean, useOriginalRatio: boolean }) => void;
   onLoadFootage: () => void;
   scanning: boolean;
 }
@@ -36,6 +36,7 @@ export const MosaicBuilder = memo(function MosaicBuilder({
   scanning,
 }: MosaicBuilderProps) {
   const [shuffle, setShuffle] = useState(false);
+  const [useOriginalRatio, setUseOriginalRatio] = useState(false);
 
   // Get total selectable
   const selectableClipIds = clips.filter(c => c.clip.flag !== "reject").map((c) => c.clip.id);
@@ -106,7 +107,7 @@ export const MosaicBuilder = memo(function MosaicBuilder({
         <div className="toolbar-left-group">
           <div className="thumb-range-selector">
             <span className="toolbar-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Thumbs</span>
-            {[7, 9, 11, 13, 15].map((n) => (
+            {[7, 10, 12, 15, 20].map((n) => (
               <button
                 key={n}
                 className={`btn btn-ghost btn-xs ${thumbCount === n ? 'active' : ''}`}
@@ -126,17 +127,33 @@ export const MosaicBuilder = memo(function MosaicBuilder({
             <span>Shuffle Grid</span>
           </button>
           <div className="toolbar-separator" />
+          <div className="aspect-ratio-selector" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            <span className="toolbar-label" style={{ fontSize: "var(--inspector-label-size)", fontWeight: "var(--inspector-label-weight)", letterSpacing: "var(--inspector-label-spacing)", color: "var(--inspector-label-color)", textTransform: "uppercase" }}>Ratio</span>
+            <button
+              className={`btn btn-ghost btn-xs ${!useOriginalRatio ? 'active' : ''}`}
+              onClick={() => setUseOriginalRatio(false)}
+            >
+              <span>Square</span>
+            </button>
+            <button
+              className={`btn btn-ghost btn-xs ${useOriginalRatio ? 'active' : ''}`}
+              onClick={() => setUseOriginalRatio(true)}
+            >
+              <span>Original</span>
+            </button>
+          </div>
+          <div className="toolbar-separator" />
         </div>
         <div className="toolbar-right-group">
           <button className="btn btn-ghost btn-sm" onClick={onToggleSelectAll}>
             {selectedSelectableCount === selectableClipIds.length ? "Deselect all" : "Select all"}
           </button>
           
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onExportPdf({ shuffle })}>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => onExportPdf({ shuffle, useOriginalRatio })}>
             <FileDown size={14} />
             <span>Export PDF</span>
           </button>
-          <button type="button" className="btn btn-primary btn-sm btn-glow" onClick={() => onExportImage({ shuffle })}>
+          <button type="button" className="btn btn-primary btn-sm btn-glow" onClick={() => onExportImage({ shuffle, useOriginalRatio })}>
             <ImageIcon size={14} />
             <span>Export Image</span>
           </button>
