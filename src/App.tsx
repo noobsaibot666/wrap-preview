@@ -56,6 +56,7 @@ import LookSetup from './modules/Production/apps/LookSetup';
 import OnSetCoach from './modules/Production/apps/OnSetCoach.tsx';
 import MatchNormalize from './modules/Production/apps/MatchNormalize.tsx';
 import CameraMatchLab from './modules/Production/apps/CameraMatchLab.tsx';
+import FramePreview from './modules/Production/apps/FramePreview';
 import { useCommandPalette } from "./hooks/useCommandPalette";
 import { CommandPalette } from "./components/CommandPalette";
 import { getJumpIntervalForThumbCount, getThumbnailCacheContext } from "./utils/thumbnailIntervals";
@@ -1960,6 +1961,11 @@ function AppContent() {
                   project={activeProductionProject}
                   onBack={() => setActiveProductionApp(null)}
                 />
+              ) : activeProductionApp === "frame-preview" && activeProductionProject ? (
+                <FramePreview
+                  project={activeProductionProject}
+                  onBack={() => setActiveProductionApp(null)}
+                />
               ) : (
                 <ProductionLanding
                   onSelectProject={setActiveProductionProject}
@@ -1974,6 +1980,9 @@ function AppContent() {
                   }}
                   onOpenCameraMatchLab={() => {
                     setActiveProductionApp("camera-match-lab");
+                  }}
+                  onOpenFramePreview={() => {
+                    setActiveProductionApp("frame-preview");
                   }}
                   activeProject={activeProductionProject}
                 />

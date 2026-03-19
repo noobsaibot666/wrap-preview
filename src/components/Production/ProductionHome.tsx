@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowRight, BarChart3, BriefcaseBusiness, Camera, Minus, Plus, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
+import { ArrowRight, BarChart3, BriefcaseBusiness, Camera, Maximize2, Minus, Plus, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
 import { ProductionProject } from "../../types";
 import { invokeGuarded } from "../../utils/tauri";
 
@@ -10,6 +10,7 @@ interface ProductionHomeProps {
   onOpenOnSetCoach: () => void;
   onOpenMatchNormalize: () => void;
   onOpenCameraMatchLab: () => void;
+  onOpenFramePreview: () => void;
 }
 
 export function ProductionHome({
@@ -19,6 +20,7 @@ export function ProductionHome({
   onOpenOnSetCoach,
   onOpenMatchNormalize,
   onOpenCameraMatchLab,
+  onOpenFramePreview,
 }: ProductionHomeProps) {
   const [projects, setProjects] = useState<ProductionProject[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -129,6 +131,13 @@ export function ProductionHome({
             description="Choose a hero camera and save repeatable alignment presets for the rest of the camera package."
             enabled={Boolean(activeProject)}
             onClick={onOpenMatchNormalize}
+          />
+          <ModuleCard
+            icon={<Maximize2 size={22} strokeWidth={1.35} />}
+            title="Frame Preview"
+            description="Preview media in multiple aspect ratio frames, reframe content per format, and export preview crops."
+            enabled={Boolean(activeProject)}
+            onClick={onOpenFramePreview}
           />
         </div>
 
