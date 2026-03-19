@@ -17,6 +17,7 @@ interface FilmStripProps {
     clipLutEnabled?: number;
     lutRenderNonce?: number;
     fallbackThumbnailSrc?: string;
+    isImage?: boolean; // New prop
 }
 
 export const FilmStrip = memo(function FilmStrip({
@@ -32,15 +33,18 @@ export const FilmStrip = memo(function FilmStrip({
     projectLutHash,
     clipLutEnabled = 0,
     lutRenderNonce = 0,
-    fallbackThumbnailSrc
+    fallbackThumbnailSrc,
+    isImage = false, // Default to false
 }: FilmStripProps) {
 
-    const effectivePlaceholderCount = count ?? placeholderCount;
+    const effectivePlaceholderCount = isImage ? 1 : (count ?? placeholderCount);
     const indices = useMemo(
         () => Array.from({ length: effectivePlaceholderCount }, (_, i) => i),
         [effectivePlaceholderCount]
     );
     const orientationClass = aspectRatio > 0 && aspectRatio < 1 ? "is-vertical" : "is-horizontal";
+    const imageClass = isImage ? "is-image" : "";
+
     const resolvedThumbnails: DisplayedThumbnail[] = useMemo(() => thumbnails.map((thumb) => {
         if ("src" in thumb) {
             return thumb;
@@ -52,6 +56,7 @@ export const FilmStrip = memo(function FilmStrip({
             file_path: thumb.file_path,
         };
     }).filter((thumb) => Boolean(thumb.src)), [cacheKeyContext, clipId, thumbnailCache, thumbnails]);
+
     const [renderSources, setRenderSources] = useState<string[]>([]);
     const renderTokenRef = useRef(0);
 
@@ -90,7 +95,7 @@ export const FilmStrip = memo(function FilmStrip({
     if (status === "fail") {
         return (
             <div
-                className={`film-strip filmstrip ${orientationClass}`}
+                className={`film-strip filmstrip ${orientationClass} ${imageClass}`}
                 onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(); }}
                 style={{ "--aspect-ratio": aspectRatio } as any}
             >
@@ -106,7 +111,7 @@ export const FilmStrip = memo(function FilmStrip({
     if (resolvedThumbnails.length === 0) {
         return (
             <div
-                className={`film-strip filmstrip ${orientationClass}`}
+                className={`film-strip filmstrip ${orientationClass} ${imageClass}`}
                 onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(); }}
                 style={{ "--aspect-ratio": aspectRatio, "--thumb-columns": effectivePlaceholderCount } as any}
             >
@@ -125,7 +130,7 @@ export const FilmStrip = memo(function FilmStrip({
 
     return (
         <div
-            className={`film-strip filmstrip ${orientationClass}`}
+            className={`film-strip filmstrip ${orientationClass} ${imageClass}`}
             onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick?.(); }}
             style={{ "--aspect-ratio": aspectRatio, "--thumb-columns": effectivePlaceholderCount } as any}
         >
@@ -142,9 +147,11 @@ export const FilmStrip = memo(function FilmStrip({
                                     (e.target as HTMLImageElement).src = fallbackThumbnailSrc ?? thumb.src;
                                 }
                             }} loading="lazy" decoding="async" />
-                            <span className="thumb-time">
-                                {formatTimestamp(thumb?.timestamp_ms || 0)}
-                            </span>
+                            {!isImage && (
+                                <span className="thumb-time">
+                                    {formatTimestamp(thumb?.timestamp_ms || 0)}
+                                </span>
+                            )}
                         </div>
                     );
                 }

@@ -3425,6 +3425,30 @@ body {
   color: var(--text-muted);
 }
 
+/* Image-only Filmstrip Adaptation */
+.film-strip.is-image {
+  background: transparent;
+  border: none;
+  justify-content: center;
+  height: auto;
+  min-height: 110px;
+}
+
+.film-strip.is-image .film-strip-thumb {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: var(--aspect-ratio);
+  height: 110px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.film-strip.is-image.is-vertical .film-strip-thumb {
+  height: 140px; /* Allow vertical images to be a bit taller to show more detail */
+}
+
 /* ─── Tooltips ─── */
 
 [data-tooltip] {

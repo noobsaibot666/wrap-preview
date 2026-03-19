@@ -527,6 +527,8 @@ export function BlocksView({
                               status={clip.status}
                               count={5}
                               aspectRatio={clip.width > 0 && clip.height > 0 ? clip.width / clip.height : 16 / 9}
+                              isImage={clip.duration_ms === 0}
+                              fallbackThumbnailSrc={thumbnailsByClipId[clip.id]?.[0]?.file_path}
                             />
                           </div>
                         ))}

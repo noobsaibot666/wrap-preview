@@ -318,6 +318,7 @@ export const ClipCard = memo(function ClipCard({
                     fallbackThumbnailSrc={previewThumbnails[0]?.src}
                     thumbnailCache={thumbnailCache}
                     cacheKeyContext={cacheKeyContext}
+                    isImage={clip.duration_ms === 0}
                 />
             </div>
 
