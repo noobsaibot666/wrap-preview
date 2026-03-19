@@ -23,7 +23,7 @@ import { RatioType, FramePreviewMedia, RATIO_VALUES, INITIAL_TRANSFORM } from '.
 import { ProductionProject } from '../../types';
 
 interface FramePreviewAppProps {
-  project: ProductionProject;
+  project?: ProductionProject | null;
   onBack: () => void;
 }
 
@@ -50,7 +50,7 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
   // Initialize with some media or empty state
   useEffect(() => {
     // Phase 1 can load from project folder or manually
-  }, [project.id]);
+  }, [project?.id]);
 
   const handleAddMedia = async () => {
     const selected = await open({

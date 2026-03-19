@@ -1961,7 +1961,7 @@ function AppContent() {
                   project={activeProductionProject}
                   onBack={() => setActiveProductionApp(null)}
                 />
-              ) : activeProductionApp === "frame-preview" && activeProductionProject ? (
+              ) : activeProductionApp === "frame-preview" ? (
                 <FramePreview
                   project={activeProductionProject}
                   onBack={() => setActiveProductionApp(null)}

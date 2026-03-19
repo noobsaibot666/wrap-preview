@@ -136,7 +136,7 @@ export function ProductionHome({
             icon={<Maximize2 size={22} strokeWidth={1.35} />}
             title="Frame Preview"
             description="Preview media in multiple aspect ratio frames, reframe content per format, and export preview crops."
-            enabled={Boolean(activeProject)}
+            enabled={true}
             onClick={onOpenFramePreview}
           />
         </div>

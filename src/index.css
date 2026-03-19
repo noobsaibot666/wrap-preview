@@ -3606,27 +3606,16 @@ body {
 
 .production-apps-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 18px;
-  max-width: 1150px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  max-width: 1240px;
   margin: 0 auto;
 }
 
-.production-apps-grid > .module-card {
-  grid-column: span 2;
-  min-height: 214px;
-}
-
+.production-apps-grid > .module-card,
 .production-apps-grid > .production-project-card {
-  grid-column: span 2;
-}
-
-.production-apps-grid > .module-card:nth-child(4) {
-  grid-column: 2 / span 2;
-}
-
-.production-apps-grid > .module-card:nth-child(5) {
-  grid-column: 4 / span 2;
+  grid-column: span 1;
+  min-height: 220px;
 }
 
 .onboarding-phases-wrapper {
@@ -3747,8 +3736,6 @@ body {
   }
 
   .production-apps-grid > .module-card,
-  .production-apps-grid > .module-card:nth-child(4),
-  .production-apps-grid > .module-card:nth-child(5),
   .production-apps-grid > .production-project-card {
     grid-column: auto;
   }
@@ -3761,8 +3748,7 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .postproduction-apps-grid .module-card:nth-child(4),
-  .postproduction-apps-grid .module-card:nth-child(5) {
+  .postproduction-apps-grid > .module-card {
     grid-column: auto;
   }
 }
