@@ -7488,3 +7488,150 @@ body {
 .empty-state .muted {
     opacity: 0.25;
 }
+
+/* --- Export Settings Header (Frame Preview) --- */
+
+.export-settings-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 4px 12px;
+  border-radius: 100px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.export-settings-header .selector-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-settings-header .label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  padding-right: 4px;
+}
+
+.export-settings-header .btn-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.export-settings-header .btn-toggle:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.export-settings-header .btn-toggle.active {
+  color: #fff;
+  background: var(--accent-primary);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.3);
+}
+
+/* --- Frame Headers (Frame Preview) --- */
+
+.frame-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+  pointer-events: none;
+  z-index: 20;
+}
+
+.frame-header-actions {
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.btn-frame-action {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0.4;
+}
+
+.btn-frame-action:hover {
+  opacity: 1;
+  background: rgba(255,255,255,0.2);
+}
+
+.btn-frame-action.active {
+  opacity: 1;
+  background: var(--accent-primary);
+}
+
+/* --- Safe Guide Overlays --- */
+
+.safe-guide-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.safe-guide-overlay div {
+  position: absolute;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+/* Action Safe (5%) */
+.action-safe {
+  top: 5%; bottom: 5%; left: 5%; right: 5%;
+}
+
+/* Title Safe (10%) */
+.title-safe {
+  top: 10%; bottom: 10%; left: 10%; right: 10%;
+  border-style: solid !important;
+  opacity: 0.15;
+}
+
+/* Social Media Specific (9:16) */
+.safe-guide-overlay.ratio-9-16 .social-top-ui {
+  top: 0; left: 0; right: 0; height: 12%;
+  background: linear-gradient(to bottom, rgba(255,0,0,0.05), transparent);
+  border: none;
+}
+
+.safe-guide-overlay.ratio-9-16 .social-bottom-ui {
+  bottom: 0; left: 0; right: 0; height: 18%;
+  background: linear-gradient(to top, rgba(255,0,0,0.05), transparent);
+  border: none;
+}
+
+.safe-guide-overlay.ratio-9-16 .social-side-ui {
+  top: 0; bottom: 0; right: 0; width: 14%;
+  background: linear-gradient(to left, rgba(255,0,0,0.05), transparent);
+  border: none;
+}

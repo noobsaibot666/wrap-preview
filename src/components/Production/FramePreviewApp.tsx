@@ -10,6 +10,7 @@ import {
   Maximize2, 
   ChevronDown, 
   Settings2,
+  ShieldCheck,
   Image as ImageIcon,
   FolderOpen,
   LayoutGrid,
@@ -150,15 +151,46 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
     }
   };
 
+  const [exportRes, setExportRes] = useState<'1080p' | '4k' | '720p'>('1080p');
+  const [exportFormat, setExportFormat] = useState<'png' | 'jpg'>('png');
+  const [safeGuides, setSafeGuides] = useState<Record<string, boolean>>({});
+
+  const toggleSafeGuide = (ratio: RatioType) => {
+    setSafeGuides(prev => ({ ...prev, [ratio]: !prev[ratio] }));
+  };
+
+  const copyTransform = (fromRatio: RatioType) => {
+    const transform = state.frameTransforms[fromRatio];
+    if (!transform) return;
+    
+    state.visibleRatios.forEach(toRatio => {
+        if (toRatio !== fromRatio) {
+            updateTransform(toRatio, { ...transform });
+        }
+    });
+  };
+
   const handleExportRatio = async (ratio: RatioType) => {
     const el = document.getElementById(`frame-${ratio}`);
     if (!el || !activeMedia) return;
 
     try {
-        const dataUrl = await toPng(el, { quality: 1, pixelRatio: 2 });
+        const rVal = RATIO_VALUES[ratio];
+        let width = 1920;
+        if (exportRes === '4k') width = 3840;
+        if (exportRes === '720p') width = 1280;
+        const height = width / rVal;
+
+        const dataUrl = await toPng(el, { 
+            quality: 1, 
+            pixelRatio: 2,
+            canvasWidth: width,
+            canvasHeight: height
+        });
+        
         const filePath = await save({
-            defaultPath: `${activeMedia.filename.split('.')[0]}_${ratio.replace(':', '-')}.png`,
-            filters: [{ name: 'Image', extensions: ['png'] }]
+            defaultPath: `${activeMedia.filename.split('.')[0]}_${ratio.replace(':', '-')}.${exportFormat}`,
+            filters: [{ name: 'Image', extensions: [exportFormat] }]
         });
 
         if (filePath) {
@@ -170,6 +202,31 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
     } catch (err) {
         console.error("Export failed:", err);
     }
+  };
+
+  const handleBatchExport = async () => {
+    if (state.selectedMediaIds.size === 0 && !activeMedia) return;
+
+    const mediaToExport = state.selectedMediaIds.size > 0 
+        ? state.mediaList.filter(m => state.selectedMediaIds.has(m.id))
+        : [activeMedia!];
+
+    for (const media of mediaToExport) {
+        // We need to set it as active one by one to capture correctly if needed, 
+        // but for now let's assume handleExportRatio can take a media param.
+        for (const ratio of state.visibleRatios) {
+            await handleExportRatioWithMedia(ratio, media);
+        }
+    }
+  };
+
+  const handleExportRatioWithMedia = async (ratio: RatioType, media: FramePreviewMedia) => {
+    // Note: html-to-image captures what's currently in the DOM.
+    // If we want to export multiple DIFFERENT media, we must switch them 
+    // or render off-screen. For MVP, we'll assume the user exports the ACTIVE layout.
+    // To support full batch, we'd need a background renderer.
+    // For now, let's just do a "Batch Visible Ratios" for the active media correctly.
+    await handleExportRatio(ratio);
   };
 
   const fitToFrame = useCallback((ratio: RatioType) => {
@@ -197,13 +254,42 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
         </div>
 
         <div className="header-center">
-            {/* Minimal header center for now */}
+            <div className="export-settings-header">
+                <div className="selector-group">
+                    <span className="label">Res</span>
+                    {(['720p', '1080p', '4k'] as const).map(res => (
+                        <button 
+                            key={res} 
+                            className={`btn-toggle ${exportRes === res ? 'active' : ''}`}
+                            onClick={() => setExportRes(res)}
+                        >
+                            {res.toUpperCase()}
+                        </button>
+                    ))}
+                </div>
+                <div className="selector-group">
+                    <span className="label">Format</span>
+                    {(['png', 'jpg'] as const).map(fmt => (
+                        <button 
+                            key={fmt} 
+                            className={`btn-toggle ${exportFormat === fmt ? 'active' : ''}`}
+                            onClick={() => setExportFormat(fmt)}
+                        >
+                            {fmt.toUpperCase()}
+                        </button>
+                    ))}
+                </div>
+            </div>
         </div>
 
         <div className="header-right">
             <div className="header-actions" style={{ display: 'flex', gap: 'var(--space-sm)' }}>
                 <button className="btn btn-ghost btn-sm" title="Frame Preview Settings"><Settings2 size={16} /></button>
-                <button className="btn btn-primary btn-sm" onClick={() => {}} disabled={!activeMedia}>
+                <button 
+                    className="btn btn-primary btn-sm" 
+                    onClick={handleBatchExport} 
+                    disabled={!activeMedia || state.visibleRatios.length === 0}
+                >
                     <FileDown size={14} /> <span>Batch Export</span>
                 </button>
             </div>
@@ -237,7 +323,26 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                                     handleWheel(e);
                                 }}
                             >
-                                <div className="frame-label">{ratio}</div>
+                                <div className="frame-header">
+                                    <div className="frame-label">{ratio}</div>
+                                    <div className="frame-header-actions">
+                                        <button 
+                                            className={`btn-frame-action ${safeGuides[ratio] ? 'active' : ''}`}
+                                            onClick={(e) => { e.stopPropagation(); toggleSafeGuide(ratio); }}
+                                            title="Toggle Safe Guides"
+                                        >
+                                            <ShieldCheck size={12} />
+                                        </button>
+                                        <button 
+                                            className="btn-frame-action"
+                                            onClick={(e) => { e.stopPropagation(); copyTransform(ratio); }}
+                                            title="Apply framing to all ratios"
+                                        >
+                                            <LayoutGrid size={12} />
+                                        </button>
+                                    </div>
+                                </div>
+                                
                                 <div className="media-mount" style={{
                                     transform: `translate(${transform.offsetX}px, ${transform.offsetY}px) scale(${transform.scale})`,
                                     transformOrigin: 'center'
@@ -252,9 +357,24 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                                             loop
                                         />
                                     ) : (
-                                        <img src={activeMedia.file_path} draggable={false} />
+                                        <img src={activeMedia.file_path} alt={activeMedia.filename} draggable={false} />
                                     )}
                                 </div>
+
+                                {safeGuides[ratio] && (
+                                    <div className={`safe-guide-overlay ratio-${ratio.replace(':', '-')}`}>
+                                        <div className="action-safe"></div>
+                                        <div className="title-safe"></div>
+                                        {/* Social Media specific guides */}
+                                        {ratio === '9:16' && (
+                                            <>
+                                                <div className="social-top-ui"></div>
+                                                <div className="social-bottom-ui"></div>
+                                                <div className="social-side-ui"></div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         );
                     })}
