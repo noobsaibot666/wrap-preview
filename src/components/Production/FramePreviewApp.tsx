@@ -10,7 +10,6 @@ import {
   Maximize2, 
   ChevronDown, 
   X,
-  Settings2,
   ShieldCheck,
   FolderOpen,
   LayoutGrid,
@@ -66,6 +65,26 @@ interface FrameResizeSession {
   handle: Exclude<ResizeHandle, null>;
 }
 
+type CompositionGuideKey =
+  | 'none'
+  | 'ruleOfThirds'
+  | 'leadingLines'
+  | 'goldenSpiral'
+  | 'phiGrid'
+  | 'ruleOfOdds'
+  | 'negativeSpace'
+  | 'symmetry'
+  | 'dynamicSymmetry';
+
+type SocialGuideKey =
+  | 'none'
+  | 'instagramFeed'
+  | 'instagramReel'
+  | 'linkedin'
+  | 'facebook'
+  | 'youtube'
+  | 'tiktok';
+
 const BROWSER_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg', 'avif']);
 const RAW_IMAGE_EXTENSIONS = new Set(['dng', 'cr2', 'cr3', 'nef', 'nrw', 'arw', 'srf', 'sr2', 'raf', 'rw2', 'orf', 'pef', 'srw', 'raw', 'rwl', 'iiq']);
 
@@ -102,25 +121,29 @@ function computePreviewLayout(ratios: number[], width: number, height: number): 
     return [];
   }
 
-  const gap = Math.min(24, Math.max(12, Math.min(width, height) * 0.025));
+  const insetX = Math.min(36, Math.max(20, width * 0.028));
+  const insetY = Math.min(30, Math.max(18, height * 0.032));
+  const usableWidth = Math.max(width - insetX * 2, 1);
+  const usableHeight = Math.max(height - insetY * 2, 1);
+  const gap = Math.min(24, Math.max(12, Math.min(usableWidth, usableHeight) * 0.025));
 
   if (ratios.length === 1) {
-    const box = fitBox(ratios[0], width, height);
+    const box = fitBox(ratios[0], usableWidth, usableHeight);
     return [{
       width: box.width,
       height: box.height,
-      left: (width - box.width) / 2,
-      top: (height - box.height) / 2
+      left: insetX + (usableWidth - box.width) / 2,
+      top: insetY + (usableHeight - box.height) / 2
     }];
   }
 
   if (ratios.length === 2) {
-    const rowHeight = Math.min(height, (width - gap) / (ratios[0] + ratios[1]));
+    const rowHeight = Math.min(usableHeight, (usableWidth - gap) / (ratios[0] + ratios[1]));
     const firstWidth = ratios[0] * rowHeight;
     const secondWidth = ratios[1] * rowHeight;
     const totalWidth = firstWidth + gap + secondWidth;
-    const leftOffset = (width - totalWidth) / 2;
-    const topOffset = (height - rowHeight) / 2;
+    const leftOffset = insetX + (usableWidth - totalWidth) / 2;
+    const topOffset = insetY + (usableHeight - rowHeight) / 2;
 
     return [
       { width: firstWidth, height: rowHeight, left: leftOffset, top: topOffset },
@@ -128,15 +151,15 @@ function computePreviewLayout(ratios: number[], width: number, height: number): 
     ];
   }
 
-  const rightColumnWidth = (height - gap) / ((1 / ratios[1]) + (1 / ratios[2]));
+  const rightColumnWidth = (usableHeight - gap) / ((1 / ratios[1]) + (1 / ratios[2]));
   const secondHeight = rightColumnWidth / ratios[1];
   const thirdHeight = rightColumnWidth / ratios[2];
-  const primaryMaxWidth = Math.max(width - gap - rightColumnWidth, width * 0.45);
-  const primaryBox = fitBox(ratios[0], primaryMaxWidth, height);
+  const primaryMaxWidth = Math.max(usableWidth - gap - rightColumnWidth, usableWidth * 0.45);
+  const primaryBox = fitBox(ratios[0], primaryMaxWidth, usableHeight);
   const totalWidth = primaryBox.width + gap + rightColumnWidth;
-  const leftOffset = (width - totalWidth) / 2;
-  const primaryTop = (height - primaryBox.height) / 2;
-  const rightTop = (height - (secondHeight + gap + thirdHeight)) / 2;
+  const leftOffset = insetX + (usableWidth - totalWidth) / 2;
+  const primaryTop = insetY + (usableHeight - primaryBox.height) / 2;
+  const rightTop = insetY + (usableHeight - (secondHeight + gap + thirdHeight)) / 2;
 
   return [
     { width: primaryBox.width, height: primaryBox.height, left: leftOffset, top: primaryTop },
@@ -184,6 +207,418 @@ function resizeCursor(handle: ResizeHandle): string | undefined {
   }
 }
 
+const ORIGINAL_RATIO_TINTS: Record<string, string> = {
+  '16:9': '#8f7cff',
+  '9:16': '#67d4ff',
+  '1:1': '#7be0a5',
+  '4:5': '#ffb86b',
+  '3:5': '#ff8ca1',
+  '4:3': '#ffd66b',
+  '3:2': '#7cc0ff',
+  '2.39:1': '#c7a2ff'
+};
+
+function gcd(a: number, b: number): number {
+  let x = Math.abs(a);
+  let y = Math.abs(b);
+  while (y !== 0) {
+    const temp = y;
+    y = x % y;
+    x = temp;
+  }
+  return x || 1;
+}
+
+function getOriginalRatioLabel(width: number, height: number): string {
+  const ratio = width / Math.max(height, 1);
+  const commonRatios: Array<{ label: string; value: number }> = [
+    { label: '16:9', value: 16 / 9 },
+    { label: '9:16', value: 9 / 16 },
+    { label: '1:1', value: 1 },
+    { label: '4:5', value: 4 / 5 },
+    { label: '3:5', value: 3 / 5 },
+    { label: '4:3', value: 4 / 3 },
+    { label: '3:2', value: 3 / 2 },
+    { label: '2.39:1', value: 2.39 }
+  ];
+  const closest = commonRatios.reduce((best, candidate) => {
+    const nextDistance = Math.abs(candidate.value - ratio);
+    return nextDistance < best.distance ? { label: candidate.label, distance: nextDistance } : best;
+  }, { label: '1:1', distance: Number.POSITIVE_INFINITY });
+
+  if (closest.distance < 0.03) {
+    return closest.label;
+  }
+
+  const reduced = gcd(width, height);
+  return `${Math.round(width / reduced)}:${Math.round(height / reduced)}`;
+}
+
+function formatMediaSize(width: number, height: number): string {
+  return `${width}×${height}`;
+}
+
+function safeNumber(value: number, fallback: number) {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function safePositiveNumber(value: number, fallback: number) {
+  return Math.max(safeNumber(value, fallback), 0.0001);
+}
+
+function getGuideViewBox(ratio: RatioType) {
+  const ratioValue = safePositiveNumber(RATIO_VALUES[ratio], 1);
+  if (ratioValue >= 1) {
+    return { width: safePositiveNumber(100 * ratioValue, 100), height: 100 };
+  }
+  return { width: 100, height: safePositiveNumber(100 / ratioValue, 100) };
+}
+
+type SpiralSide = 'left' | 'top' | 'right' | 'bottom';
+
+interface SpiralSquare {
+  x: number;
+  y: number;
+  size: number;
+  side: SpiralSide;
+}
+
+function sanitizeGuideDimension(value: number, fallback: number) {
+  return Math.max(1, safePositiveNumber(value, fallback));
+}
+
+function buildQuarterArc(square: SpiralSquare) {
+  const x = safeNumber(square.x, 0);
+  const y = safeNumber(square.y, 0);
+  const size = sanitizeGuideDimension(square.size, 1);
+
+  switch (square.side) {
+    case 'left':
+      return `M ${x} ${y + size} A ${size} ${size} 0 0 1 ${x + size} ${y}`;
+    case 'top':
+      return `M ${x} ${y} A ${size} ${size} 0 0 1 ${x + size} ${y + size}`;
+    case 'right':
+      return `M ${x + size} ${y} A ${size} ${size} 0 0 1 ${x} ${y + size}`;
+    case 'bottom':
+      return `M ${x + size} ${y + size} A ${size} ${size} 0 0 1 ${x} ${y}`;
+    default:
+      return '';
+  }
+}
+
+function buildGoldenSpiralGuide(width: number, height: number) {
+  const safeWidth = sanitizeGuideDimension(width, 100);
+  const safeHeight = sanitizeGuideDimension(height, 100);
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const isLandscape = safeWidth >= safeHeight;
+  const guideWidth = isLandscape
+    ? Math.min(safeWidth, safeHeight * phi)
+    : Math.min(safeWidth, safeHeight / phi);
+  const guideHeight = isLandscape
+    ? guideWidth / phi
+    : Math.min(safeHeight, guideWidth * phi);
+  const offsetX = (safeWidth - guideWidth) / 2;
+  const offsetY = (safeHeight - guideHeight) / 2;
+  const cycle: SpiralSide[] = isLandscape
+    ? ['left', 'top', 'right', 'bottom']
+    : ['top', 'right', 'bottom', 'left'];
+
+  const squares: SpiralSquare[] = [];
+  let remainder = {
+    x: offsetX,
+    y: offsetY,
+    width: guideWidth,
+    height: guideHeight
+  };
+
+  for (let index = 0; index < 12; index += 1) {
+    const nextSize = Math.min(remainder.width, remainder.height);
+    if (!Number.isFinite(nextSize) || nextSize < 0.75) {
+      break;
+    }
+
+    const side = cycle[index % cycle.length];
+    switch (side) {
+      case 'left':
+        squares.push({ x: remainder.x, y: remainder.y, size: nextSize, side });
+        remainder = {
+          x: remainder.x + nextSize,
+          y: remainder.y,
+          width: remainder.width - nextSize,
+          height: remainder.height
+        };
+        break;
+      case 'top':
+        squares.push({ x: remainder.x, y: remainder.y, size: nextSize, side });
+        remainder = {
+          x: remainder.x,
+          y: remainder.y + nextSize,
+          width: remainder.width,
+          height: remainder.height - nextSize
+        };
+        break;
+      case 'right':
+        squares.push({ x: remainder.x + remainder.width - nextSize, y: remainder.y, size: nextSize, side });
+        remainder = {
+          x: remainder.x,
+          y: remainder.y,
+          width: remainder.width - nextSize,
+          height: remainder.height
+        };
+        break;
+      case 'bottom':
+        squares.push({ x: remainder.x, y: remainder.y + remainder.height - nextSize, size: nextSize, side });
+        remainder = {
+          x: remainder.x,
+          y: remainder.y,
+          width: remainder.width,
+          height: remainder.height - nextSize
+        };
+        break;
+    }
+
+    if (remainder.width < 0.75 || remainder.height < 0.75) {
+      break;
+    }
+  }
+
+  const arcs = squares
+    .map(buildQuarterArc)
+    .filter(Boolean)
+    .join(' ');
+
+  return {
+    offsetX,
+    offsetY,
+    guideWidth,
+    guideHeight,
+    squares,
+    arcs
+  };
+}
+
+function buildRectPath(x: number, y: number, width: number, height: number) {
+  const safeX = safeNumber(x, 0);
+  const safeY = safeNumber(y, 0);
+  const safeWidth = sanitizeGuideDimension(width, 1);
+  const safeHeight = sanitizeGuideDimension(height, 1);
+  return `M ${safeX} ${safeY} H ${safeX + safeWidth} V ${safeY + safeHeight} H ${safeX} Z`;
+}
+
+function buildDiagonalSymmetryGuide(width: number, height: number) {
+  const safeWidth = sanitizeGuideDimension(width, 100);
+  const safeHeight = sanitizeGuideDimension(height, 100);
+  const slope = safeHeight / safeWidth;
+  const reciprocalHeight = safeHeight * 0.24;
+  const reciprocalWidth = safeWidth * 0.24;
+
+  return [
+    `M 0 0 L ${safeWidth} ${safeHeight}`,
+    `M ${safeWidth} 0 L 0 ${safeHeight}`,
+    `M 0 ${reciprocalHeight} L ${safeWidth - reciprocalWidth} ${safeHeight}`,
+    `M ${reciprocalWidth} 0 L ${safeWidth} ${safeHeight - reciprocalHeight}`,
+    `M 0 ${safeHeight - reciprocalHeight} L ${safeWidth - reciprocalWidth} 0`,
+    `M ${reciprocalWidth} ${safeHeight} L ${safeWidth} ${reciprocalHeight}`,
+    `M ${safeWidth / 2} 0 L ${safeWidth / 2} ${safeHeight}`,
+    `M 0 ${safeHeight / 2} L ${safeWidth} ${safeHeight / 2}`,
+    `M 0 ${safeHeight * (0.5 - slope * 0.18)} L ${safeWidth * 0.18} 0`,
+    `M ${safeWidth * 0.82} ${safeHeight} L ${safeWidth} ${safeHeight * (0.5 + slope * 0.18)}`
+  ].join(' ');
+}
+
+const COMPOSITION_GUIDES: Array<{ key: CompositionGuideKey; label: string }> = [
+  { key: 'none', label: 'None' },
+  { key: 'ruleOfThirds', label: 'Rule of Thirds' },
+  { key: 'leadingLines', label: 'Leading Lines' },
+  { key: 'goldenSpiral', label: 'The Golden Ratio/Spiral' },
+  { key: 'phiGrid', label: 'The Phi Grid' },
+  { key: 'ruleOfOdds', label: 'Rule of Odds' },
+  { key: 'negativeSpace', label: 'Negative Space' },
+  { key: 'symmetry', label: 'Symmetry and Centering' },
+  { key: 'dynamicSymmetry', label: 'Diagonal Lines/Dynamic Symmetry' }
+];
+
+const SOCIAL_GUIDES: Array<{ key: SocialGuideKey; label: string }> = [
+  { key: 'none', label: 'None' },
+  { key: 'instagramFeed', label: 'Instagram Feed' },
+  { key: 'instagramReel', label: 'Instagram Reel' },
+  { key: 'linkedin', label: 'LinkedIn' },
+  { key: 'facebook', label: 'Facebook' },
+  { key: 'youtube', label: 'YouTube' },
+  { key: 'tiktok', label: 'TikTok' }
+];
+
+function getSocialGuideInsets(guide: SocialGuideKey) {
+  switch (guide) {
+    case 'instagramFeed':
+      return { top: 8, right: 6, bottom: 16, left: 6 };
+    case 'instagramReel':
+      return { top: 14, right: 10, bottom: 22, left: 8 };
+    case 'linkedin':
+      return { top: 10, right: 6, bottom: 14, left: 6 };
+    case 'facebook':
+      return { top: 10, right: 7, bottom: 17, left: 7 };
+    case 'youtube':
+      return { top: 8, right: 6, bottom: 18, left: 6 };
+    case 'tiktok':
+      return { top: 16, right: 10, bottom: 24, left: 10 };
+    default:
+      return { top: 10, right: 8, bottom: 16, left: 8 };
+  }
+}
+
+function getSocialGuideLines(guide: SocialGuideKey) {
+  switch (guide) {
+    case 'instagramFeed':
+      return { top: [0.16], bottom: [0.18], sides: [], verticalCenter: false, horizontalCenter: false };
+    case 'instagramReel':
+      return { top: [0.12], bottom: [0.2], sides: [0.88], verticalCenter: false, horizontalCenter: true };
+    case 'linkedin':
+      return { top: [0.14], bottom: [0.16], sides: [], verticalCenter: false, horizontalCenter: false };
+    case 'facebook':
+      return { top: [0.15], bottom: [0.19], sides: [0.9], verticalCenter: false, horizontalCenter: false };
+    case 'youtube':
+      return { top: [0.12], bottom: [0.15], sides: [], verticalCenter: true, horizontalCenter: false };
+    case 'tiktok':
+      return { top: [0.12], bottom: [0.22], sides: [0.86], verticalCenter: false, horizontalCenter: true };
+    default:
+      return { top: [], bottom: [], sides: [], verticalCenter: false, horizontalCenter: false };
+  }
+}
+
+function renderCompositionGuide(guide: CompositionGuideKey, ratio: RatioType) {
+  const { width, height } = getGuideViewBox(ratio);
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const safeWidth = sanitizeGuideDimension(width, 100);
+  const safeHeight = sanitizeGuideDimension(height, 100);
+  const phiA = safeWidth / (phi * phi);
+  const phiB = safeWidth / phi;
+  const phiY1 = safeHeight / (phi * phi);
+  const phiY2 = safeHeight / phi;
+
+  switch (guide) {
+    case 'none':
+      return null;
+    case 'ruleOfThirds':
+      return (
+        <svg className="frame-preview-guide-svg composition" viewBox={`0 0 ${safeWidth} ${safeHeight}`} preserveAspectRatio="none">
+          <line className="frame-preview-guide-emphasis" x1={safeWidth / 3} y1="0" x2={safeWidth / 3} y2={safeHeight} />
+          <line className="frame-preview-guide-emphasis" x1={(safeWidth * 2) / 3} y1="0" x2={(safeWidth * 2) / 3} y2={safeHeight} />
+          <line className="frame-preview-guide-emphasis" x1="0" y1={safeHeight / 3} x2={safeWidth} y2={safeHeight / 3} />
+          <line className="frame-preview-guide-emphasis" x1="0" y1={(safeHeight * 2) / 3} x2={safeWidth} y2={(safeHeight * 2) / 3} />
+        </svg>
+      );
+    case 'leadingLines':
+      return (
+        <svg className="frame-preview-guide-svg composition" viewBox={`0 0 ${safeWidth} ${safeHeight}`} preserveAspectRatio="none">
+          <line className="frame-preview-guide-emphasis" x1="0" y1={safeHeight} x2={safeWidth * 0.52} y2={safeHeight * 0.34} />
+          <line className="frame-preview-guide-emphasis" x1={safeWidth} y1={safeHeight} x2={safeWidth * 0.52} y2={safeHeight * 0.34} />
+          <line x1={safeWidth * 0.18} y1={safeHeight} x2={safeWidth * 0.52} y2={safeHeight * 0.34} />
+          <line x1={safeWidth * 0.82} y1={safeHeight} x2={safeWidth * 0.52} y2={safeHeight * 0.34} />
+          <line x1="0" y1={safeHeight * 0.74} x2={safeWidth * 0.52} y2={safeHeight * 0.34} />
+          <line x1={safeWidth} y1={safeHeight * 0.74} x2={safeWidth * 0.52} y2={safeHeight * 0.34} />
+        </svg>
+      );
+    case 'goldenSpiral': {
+      const golden = buildGoldenSpiralGuide(safeWidth, safeHeight);
+      return (
+        <svg className="frame-preview-guide-svg composition" viewBox={`0 0 ${safeWidth} ${safeHeight}`} preserveAspectRatio="none">
+          <path d={buildRectPath(golden.offsetX, golden.offsetY, golden.guideWidth, golden.guideHeight)} />
+          {golden.squares.map((square, index) => (
+            <path key={index} d={buildRectPath(square.x, square.y, square.size, square.size)} />
+          ))}
+          <path className="frame-preview-guide-emphasis" d={golden.arcs} />
+        </svg>
+      );
+    }
+    case 'phiGrid':
+      return (
+        <svg className="frame-preview-guide-svg composition" viewBox={`0 0 ${safeWidth} ${safeHeight}`} preserveAspectRatio="none">
+          <line className="frame-preview-guide-emphasis" x1={phiA} y1="0" x2={phiA} y2={safeHeight} />
+          <line x1={phiB} y1="0" x2={phiB} y2={safeHeight} />
+          <line className="frame-preview-guide-emphasis" x1="0" y1={phiY1} x2={safeWidth} y2={phiY1} />
+          <line x1="0" y1={phiY2} x2={safeWidth} y2={phiY2} />
+        </svg>
+      );
+    case 'ruleOfOdds':
+      return (
+        <svg className="frame-preview-guide-svg composition" viewBox={`0 0 ${safeWidth} ${safeHeight}`} preserveAspectRatio="none">
+          <line className="frame-preview-guide-emphasis" x1={safeWidth * 0.2} y1={safeHeight * 0.36} x2={safeWidth * 0.2} y2={safeHeight * 0.68} />
+          <line className="frame-preview-guide-emphasis" x1={safeWidth * 0.5} y1={safeHeight * 0.24} x2={safeWidth * 0.5} y2={safeHeight * 0.64} />
+          <line className="frame-preview-guide-emphasis" x1={safeWidth * 0.8} y1={safeHeight * 0.4} x2={safeWidth * 0.8} y2={safeHeight * 0.72} />
+          <line x1={safeWidth * 0.2} y1={safeHeight * 0.52} x2={safeWidth * 0.5} y2={safeHeight * 0.44} />
+          <line x1={safeWidth * 0.5} y1={safeHeight * 0.44} x2={safeWidth * 0.8} y2={safeHeight * 0.56} />
+        </svg>
+      );
+    case 'negativeSpace':
+      return (
+        <svg className="frame-preview-guide-svg composition" viewBox={`0 0 ${safeWidth} ${safeHeight}`} preserveAspectRatio="none">
+          <line className="frame-preview-guide-emphasis" x1={safeWidth * 0.42} y1={safeHeight * 0.12} x2={safeWidth * 0.42} y2={safeHeight * 0.88} />
+          <line x1={safeWidth * 0.12} y1={safeHeight * 0.12} x2={safeWidth * 0.12} y2={safeHeight * 0.88} />
+          <line x1={safeWidth * 0.12} y1={safeHeight * 0.12} x2={safeWidth * 0.42} y2={safeHeight * 0.12} />
+          <line x1={safeWidth * 0.12} y1={safeHeight * 0.88} x2={safeWidth * 0.42} y2={safeHeight * 0.88} />
+        </svg>
+      );
+    case 'symmetry':
+      return (
+        <svg className="frame-preview-guide-svg composition" viewBox={`0 0 ${safeWidth} ${safeHeight}`} preserveAspectRatio="none">
+          <line className="frame-preview-guide-emphasis" x1={safeWidth / 2} y1="0" x2={safeWidth / 2} y2={safeHeight} />
+          <line x1="0" y1={safeHeight / 2} x2={safeWidth} y2={safeHeight / 2} />
+        </svg>
+      );
+    case 'dynamicSymmetry':
+      return (
+        <svg className="frame-preview-guide-svg composition" viewBox={`0 0 ${safeWidth} ${safeHeight}`} preserveAspectRatio="none">
+          <path d={buildDiagonalSymmetryGuide(safeWidth, safeHeight)} />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+function renderSocialGuide(guide: SocialGuideKey, ratio: RatioType) {
+  if (guide === 'none') {
+    return null;
+  }
+
+  const { width, height } = getGuideViewBox(ratio);
+  const frameWidth = sanitizeGuideDimension(width, 100);
+  const frameHeight = sanitizeGuideDimension(height, 100);
+  const insets = getSocialGuideInsets(guide);
+  const safeWidth = frameWidth - (frameWidth * insets.left) / 100 - (frameWidth * insets.right) / 100;
+  const safeHeight = frameHeight - (frameHeight * insets.top) / 100 - (frameHeight * insets.bottom) / 100;
+  const left = (frameWidth * insets.left) / 100;
+  const top = (frameHeight * insets.top) / 100;
+  const right = frameWidth - (frameWidth * insets.right) / 100;
+  const bottom = frameHeight - (frameHeight * insets.bottom) / 100;
+  const lineConfig = getSocialGuideLines(guide);
+
+  return (
+    <svg className="frame-preview-guide-svg social" viewBox={`0 0 ${frameWidth} ${frameHeight}`} preserveAspectRatio="none">
+      <rect className="frame-preview-guide-emphasis" x={left} y={top} width={safeWidth} height={safeHeight} rx="2.5" />
+      {lineConfig.top.map((position) => {
+        const y = top + safeHeight * position;
+        return <line key={`top-${position}`} x1={left} y1={y} x2={right} y2={y} />;
+      })}
+      {lineConfig.bottom.map((position) => {
+        const y = bottom - safeHeight * position;
+        return <line key={`bottom-${position}`} x1={left} y1={y} x2={right} y2={y} />;
+      })}
+      {lineConfig.sides.map((position) => {
+        const x = left + safeWidth * position;
+        return <line key={`side-${position}`} x1={x} y1={top} x2={x} y2={bottom} />;
+      })}
+      {lineConfig.verticalCenter ? (
+        <line x1={frameWidth / 2} y1={top} x2={frameWidth / 2} y2={bottom} />
+      ) : null}
+      {lineConfig.horizontalCenter ? (
+        <line x1={left} y1={frameHeight / 2} x2={right} y2={frameHeight / 2} />
+      ) : null}
+    </svg>
+  );
+}
+
 export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBack }) => {
   void onBack;
   const {
@@ -207,6 +642,8 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
   const [isFrameResizing, setIsFrameResizing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [compositionMenuOpen, setCompositionMenuOpen] = useState(false);
+  const [socialMenuOpen, setSocialMenuOpen] = useState(false);
   const [thumbnailsHidden, setThumbnailsHidden] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const dragStartRef = useRef<{ x: number; y: number; offX: number; offY: number; ratio: RatioType } | null>(null);
@@ -214,6 +651,8 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
   const frameResizeStartRef = useRef<FrameResizeSession | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const exportMenuRef = useRef<HTMLDivElement>(null);
+  const compositionMenuRef = useRef<HTMLDivElement>(null);
+  const socialMenuRef = useRef<HTMLDivElement>(null);
   const canvasStageRef = useRef<HTMLDivElement>(null);
   const [frameOffsets, setFrameOffsets] = useState<Record<string, FrameOffset>>({});
   const [frameScales, setFrameScales] = useState<Record<string, number>>({});
@@ -386,17 +825,24 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
   }, [activeMedia?.id]);
 
   useEffect(() => {
-    if (!exportMenuOpen) return;
+    if (!exportMenuOpen && !compositionMenuOpen && !socialMenuOpen) return;
 
     const handlePointerDown = (event: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (exportMenuRef.current && !exportMenuRef.current.contains(target)) {
         setExportMenuOpen(false);
+      }
+      if (compositionMenuRef.current && !compositionMenuRef.current.contains(target)) {
+        setCompositionMenuOpen(false);
+      }
+      if (socialMenuRef.current && !socialMenuRef.current.contains(target)) {
+        setSocialMenuOpen(false);
       }
     };
 
     window.addEventListener('mousedown', handlePointerDown);
     return () => window.removeEventListener('mousedown', handlePointerDown);
-  }, [exportMenuOpen]);
+  }, [compositionMenuOpen, exportMenuOpen, socialMenuOpen]);
 
   useEffect(() => {
     const stage = canvasStageRef.current;
@@ -436,18 +882,6 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
       };
       return;
     }
-    if (e.metaKey || e.altKey) {
-      const currentOffset = frameOffsets[ratio] || { x: 0, y: 0 };
-      setIsFrameDragging(true);
-      frameDragStartRef.current = {
-        x: e.clientX,
-        y: e.clientY,
-        startX: currentOffset.x,
-        startY: currentOffset.y,
-        ratio
-      };
-      return;
-    }
     const transform = getTransform(activeMedia.id, ratio);
     setIsDragging(true);
     dragStartRef.current = {
@@ -457,7 +891,23 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
       offY: transform.offsetY,
       ratio
     };
-  }, [activeMedia, frameOffsets, getTransform, hoverResizeHandles, renderedFrameRectMap]);
+  }, [activeMedia, getTransform, hoverResizeHandles, renderedFrameRectMap]);
+
+  const startFrameDrag = useCallback((e: React.MouseEvent, ratio: RatioType) => {
+    e.stopPropagation();
+    clickRatio(ratio, false);
+    const currentOffset = frameOffsets[ratio] || { x: 0, y: 0 };
+    setIsDragging(false);
+    setIsFrameResizing(false);
+    setIsFrameDragging(true);
+    frameDragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      startX: currentOffset.x,
+      startY: currentOffset.y,
+      ratio
+    };
+  }, [clickRatio, frameOffsets]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isDragging || !dragStartRef.current || !activeMedia) return;
@@ -648,6 +1098,8 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
   const [exportRes] = useState<FramePreviewResolution>('1080p');
   const [exportFormat] = useState<FramePreviewFormat>('jpg');
   const [safeGuides, setSafeGuides] = useState<Record<string, boolean>>({});
+  const [selectedCompositionGuide, setSelectedCompositionGuide] = useState<CompositionGuideKey>('phiGrid');
+  const [selectedSocialGuide, setSelectedSocialGuide] = useState<SocialGuideKey>('none');
 
   const toggleSafeGuide = (ratio: RatioType) => {
     setSafeGuides(prev => ({ ...prev, [ratio]: !prev[ratio] }));
@@ -737,6 +1189,20 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
     updateTransform(activeMedia.id, ratio, { scale: nextScale, offsetX: 0, offsetY: 0 });
   }, [activeMedia, renderedFrameRectMap, updateTransform]);
 
+  const arrangeFrames = useCallback(() => {
+    setFrameOffsets({});
+    setFrameScales({});
+    setHoverResizeHandles({});
+  }, []);
+
+  const handleFitButtonClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    if (event.shiftKey) {
+      arrangeFrames();
+      return;
+    }
+    fitToFrame(state.activeRatio);
+  }, [arrangeFrames, fitToFrame, state.activeRatio]);
+
   const handleRatioChipClick = (ratio: RatioType, event: React.MouseEvent) => {
     const shouldAutoFitNewRatio = !event.shiftKey
       && !!activeMedia
@@ -750,24 +1216,12 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
     }
   };
 
-  const activeSelectionLabel = selectedExportRatios.length > 1
-    ? `${selectedExportRatios.length} selected`
-    : selectedExportRatios[0] || state.activeRatio;
+  const activeGuideVisible = (ratio: RatioType) => safeGuides[ratio] && (selectedCompositionGuide !== 'none' || selectedSocialGuide !== 'none');
 
   return (
     <div className="frame-preview-app-container">
       {/* HEADER */}
       <header className="frame-preview-header premium-header">
-        <div className="frame-preview-header-left">
-        </div>
-
-        <div className="frame-preview-header-center" />
-
-        <div className="frame-preview-header-right">
-            <div className="frame-preview-header-actions">
-                <button className="btn btn-ghost btn-sm" title="Frame Preview Settings"><Settings2 size={16} /></button>
-            </div>
-        </div>
         {activeMedia && (
           <>
             <div className="frame-preview-control-section ratios">
@@ -788,6 +1242,68 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                             </button>
                         );
                     })}
+                </div>
+            </div>
+
+            <div className="frame-preview-control-section guides">
+                <span className="frame-preview-control-label">Guides</span>
+                <div className="frame-preview-guide-menu" ref={compositionMenuRef}>
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => {
+                          setCompositionMenuOpen((open) => !open);
+                          setSocialMenuOpen(false);
+                        }}
+                        aria-expanded={compositionMenuOpen}
+                    >
+                        <span>Composition</span> <ChevronDown size={14} />
+                    </button>
+                    {compositionMenuOpen ? (
+                      <div className="frame-preview-guide-dropdown" role="menu">
+                        {COMPOSITION_GUIDES.map((guide) => (
+                          <button
+                            key={guide.key}
+                            className={`frame-preview-guide-item ${selectedCompositionGuide === guide.key ? 'active' : ''}`}
+                            onClick={() => {
+                              setSelectedCompositionGuide(guide.key);
+                              setCompositionMenuOpen(false);
+                            }}
+                          >
+                            {guide.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                </div>
+                <div className="frame-preview-guide-menu" ref={socialMenuRef}>
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => {
+                          setSocialMenuOpen((open) => !open);
+                          setCompositionMenuOpen(false);
+                        }}
+                        aria-expanded={socialMenuOpen}
+                    >
+                        <span>Social</span> <ChevronDown size={14} />
+                    </button>
+                    {socialMenuOpen ? (
+                      <div className="frame-preview-guide-dropdown" role="menu">
+                        {SOCIAL_GUIDES.map((guide) => (
+                          <button
+                            key={guide.key}
+                            className={`frame-preview-guide-item ${selectedSocialGuide === guide.key ? 'active' : ''}`}
+                            onClick={() => {
+                              setSelectedSocialGuide(guide.key);
+                              setSocialMenuOpen(false);
+                            }}
+                          >
+                            {guide.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                 </div>
             </div>
 
@@ -816,11 +1332,14 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                 </div>
                 
                 <div className="frame-preview-btn-group">
-                    <button className="btn btn-ghost btn-xs" onClick={() => fitToFrame(state.activeRatio)} title="Fit to Frame">
+                    <button className="btn btn-ghost btn-xs" onClick={handleFitButtonClick} title="Fit to Frame. Shift-click to arrange all frames.">
                         <Maximize2 size={14} /> <span>Fit</span>
                     </button>
                     <button className="btn btn-ghost btn-xs" onClick={() => activeMedia && resetTransform(activeMedia.id, state.activeRatio)}>
                         <RotateCcw size={14} /> <span>Reset</span>
+                    </button>
+                    <button className="btn btn-ghost btn-xs" onClick={arrangeFrames} title="Arrange all visible frames">
+                        <LayoutGrid size={14} /> <span>Arrange</span>
                     </button>
                     <div className="frame-preview-export-menu" ref={exportMenuRef}>
                         <button
@@ -852,7 +1371,6 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                         ) : null}
                     </div>
                 </div>
-                <div className="frame-preview-selection-pill">{activeSelectionLabel}</div>
             </div>
           </>
         )}
@@ -913,6 +1431,11 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                                     </div>
                                     <div className="frame-preview-frame-header-actions">
                                         <button
+                                            className="frame-preview-frame-drag-handle"
+                                            onMouseDown={(e) => startFrameDrag(e, ratio)}
+                                            title="Drag frame"
+                                        />
+                                        <button
                                             className={`frame-preview-btn-frame-action ${isMaster ? 'active master' : ''}`}
                                             onClick={(e) => { e.stopPropagation(); setMasterRatio(ratio); }}
                                             title={isMaster ? 'Unset Master Ratio' : 'Set Master Ratio'}
@@ -920,9 +1443,9 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                                             <span className="frame-preview-master-button-label">M</span>
                                         </button>
                                         <button 
-                                            className={`frame-preview-btn-frame-action ${safeGuides[ratio] ? 'active' : ''}`}
+                                            className={`frame-preview-btn-frame-action ${activeGuideVisible(ratio) ? 'active' : ''}`}
                                             onClick={(e) => { e.stopPropagation(); toggleSafeGuide(ratio); }}
-                                            title="Toggle Safe Guides"
+                                            title="Show or hide selected guides"
                                         >
                                             <ShieldCheck size={12} />
                                         </button>
@@ -963,23 +1486,12 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                                     )}
                                 </div>
 
-                                {safeGuides[ratio] && (
+                                {safeGuides[ratio] ? (
                                     <div className={`frame-preview-safe-guide-overlay ratio-${ratio.replace(':', '-')}`}>
-                                        <div className="frame-preview-action-safe"></div>
-                                        <div className="frame-preview-title-safe"></div>
-                                        <div className="frame-preview-thirds-v-1"></div>
-                                        <div className="frame-preview-thirds-v-2"></div>
-                                        <div className="frame-preview-thirds-h-1"></div>
-                                        <div className="frame-preview-thirds-h-2"></div>
-                                        {(['9:16', '1:1', '4:5', '3:5'] as RatioType[]).includes(ratio) && (
-                                            <>
-                                                <div className="frame-preview-social-top-ui"></div>
-                                                <div className="frame-preview-social-bottom-ui"></div>
-                                                <div className="frame-preview-social-side-ui"></div>
-                                            </>
-                                        )}
+                                        {renderCompositionGuide(selectedCompositionGuide, ratio)}
+                                        {renderSocialGuide(selectedSocialGuide, ratio)}
                                     </div>
-                                )}
+                                ) : null}
                             </div>
                         );
                     })}
@@ -1018,10 +1530,13 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                 {state.mediaList.map(media => {
                     const isActive = media.id === state.activeMediaId;
                     const isSelected = state.selectedMediaIds.has(media.id);
+                    const originalRatio = getOriginalRatioLabel(media.width, media.height);
+                    const ratioTint = ORIGINAL_RATIO_TINTS[originalRatio] ?? 'var(--color-accent)';
                     return (
                         <div 
                             key={media.id} 
                             className={`frame-preview-filmstrip-card ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
+                            style={{ ['--frame-preview-thumb-ratio' as string]: ratioTint }}
                             onClick={(e) => {
                                 if (e.shiftKey || e.metaKey || e.ctrlKey) {
                                     toggleMediaSelection(media.id, true);
@@ -1039,9 +1554,10 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
 	                                    alt={media.filename}
 	                                  />
 	                                ) : null}
+                                    <div className="frame-preview-thumb-ratio-badge">{originalRatio}</div>
+                                    <div className="frame-preview-thumb-size">{formatMediaSize(media.width, media.height)}</div>
 	                                {isSelected && <div className="frame-preview-selection-indicator"><ChevronDown size={14} /></div>}
 	                            </div>
-                            <div className="frame-preview-card-label">{media.filename}</div>
                         </div>
                     );
                 })}
