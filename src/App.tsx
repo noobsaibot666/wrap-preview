@@ -35,9 +35,10 @@ import { ReviewCore } from "./components/ReviewCore";
 import { MosaicBuilder } from "./components/MosaicBuilder";
 import { DuplicateFinderApp } from "./components/DuplicateFinderApp";
 import StarterSetup from "./components/PreProduction/StarterSetup";
+import ShotList from "./components/PreProduction/ShotList";
 import { TourGuide, TourStep } from "./components/TourGuide";
 import { exportPdf, exportImage, exportMosaicImage, exportMosaicPdf } from "./utils/ExportUtils";
-import appLogo from "./assets/Icon_square_rounded.svg";
+import appLogo from "./assets/Subtract.svg";
 import { AppInfo, Clip, ClipWithThumbnails, JobInfo, ScanResult, RecentProject, ProductionProject, Phase, PhaseData } from "./types";
 import {
   LookbookSortMode,
@@ -1633,6 +1634,10 @@ function AppContent() {
                 <div className="scrollable-view">
                   <StarterSetup onBack={() => setActivePreproductionApp(null)} />
                 </div>
+              ) : activePreproductionApp === 'shot-list' ? (
+                <div className="scrollable-view">
+                  <ShotList onBack={() => setActivePreproductionApp(null)} appVersion={appInfo?.version} />
+                </div>
               ) : (
                 <div className="scrollable-view">
                   <div className="onboarding-container preproduction-launcher">
@@ -1661,6 +1666,17 @@ function AppContent() {
                         <div className="module-info">
                           <h3>Starter Setup</h3>
                           <p>Get a safe technical starting setup sheet for your shoot instantly.</p>
+                          <span className="module-action">Open App <ArrowRight size={14} /></span>
+                        </div>
+                      </div>
+                      <div
+                        className="module-card premium-card"
+                        onClick={() => setActivePreproductionApp('shot-list')}
+                      >
+                        <div className="module-icon"><ClipboardCheck size={20} strokeWidth={1.5} /></div>
+                        <div className="module-info">
+                          <h3>Shot List</h3>
+                          <p>Build a clean day sheet with minimal shot rows and a visual equipment list.</p>
                           <span className="module-action">Open App <ArrowRight size={14} /></span>
                         </div>
                       </div>

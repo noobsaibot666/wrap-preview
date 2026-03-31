@@ -352,6 +352,60 @@ export interface ProductionQuickSetupRow {
     badge?: string;
 }
 
+export interface ShotListProject {
+    id: string;
+    title: string;
+    day_label: string;
+    created_at: string;
+    updated_at: string;
+    last_opened_at: string;
+}
+
+export interface ShotListRow {
+    id: string;
+    project_id: string;
+    sort_order: number;
+    shot_number: string;
+    capture_type: "photo" | "video";
+    scene_setup: string;
+    description: string;
+    camera_lens: string;
+    movement: string;
+    location_time: string;
+    notes: string;
+    status: string;
+}
+
+export interface ShotListEquipmentSection {
+    id: string;
+    project_id: string;
+    sort_order: number;
+    section_key?: string | null;
+    section_name: string;
+    icon_name: string;
+}
+
+export interface ShotListEquipmentItem {
+    id: string;
+    section_id: string;
+    sort_order: number;
+    item_name: string;
+    item_type: string;
+    icon_name: string;
+    notes: string;
+    camera_label?: string | null;
+    media_type?: string | null;
+    capacity_value?: number | null;
+    capacity_unit?: "GB" | "TB" | null;
+}
+
+export interface ShotListBundle {
+    project: ShotListProject;
+    rows: ShotListRow[];
+    sections: ShotListEquipmentSection[];
+    items: ShotListEquipmentItem[];
+}
+
 export interface ProductionDetailItem {
     label: string;
     text: string;

@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
@@ -8,7 +8,7 @@ use zip::write::FileOptions;
 const MAX_STRUCTURE_DEPTH: usize = 12;
 const MAX_STRUCTURE_NODES: usize = 1000;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct FolderNode {
     pub name: String,
     pub r#type: String, // "folder" or "file"

@@ -6,7 +6,8 @@ use crate::db::{
     ProductionOnsetChecks, ProductionPreset, ProductionProject, Project, ProjectRoot,
     ReviewCoreAnnotation, ReviewCoreApprovalState, ReviewCoreComment, ReviewCoreFrameNote,
     ReviewCoreProject, ReviewCoreShareLink, ReviewCoreShareSession, SceneBlock,
-    SceneDetectionCache, Thumbnail, VerificationItem, VerificationJob, VerificationQueueItem,
+    SceneDetectionCache, ShotListEquipmentItem, ShotListEquipmentSection, ShotListProject,
+    ShotListRow, Thumbnail, VerificationItem, VerificationJob, VerificationQueueItem,
 };
 use crate::ffprobe;
 use crate::jobs::{JobInfo, JobStatus};
@@ -46,12 +47,20 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Semaphore;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ShotListBundle {
+    pub project: ShotListProject,
+    pub rows: Vec<ShotListRow>,
+    pub sections: Vec<ShotListEquipmentSection>,
+    pub items: Vec<ShotListEquipmentItem>,
+}
+
 /// App state holding the database
 pub struct AppState {
     pub db: Database,
     pub cache_dir: String,
-    pub app_data_dir: std::path::PathBuf,
-    pub db_path: std::path::PathBuf,
+    pub _app_data_dir: std::path::PathBuf,
+    pub _db_path: std::path::PathBuf,
     pub job_manager: Arc<crate::jobs::JobManager>,
     pub perf_log: crate::perf::PerfLog,
     pub review_core_base_dir: std::path::PathBuf,
@@ -6649,6 +6658,198 @@ pub async fn production_delete_project(
         .db
         .delete_production_project(&project_id)
         .map_err(|e| format!("Failed to delete production project: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_ensure_project(
+    state: State<'_, Arc<AppState>>,
+) -> Result<ShotListProject, String> {
+    if let Some(project) = state
+        .db
+        .get_latest_shot_list_project()
+        .map_err(|e| format!("Failed to load Shot List project: {}", e))?
+    {
+        let now = chrono::Utc::now().to_rfc3339();
+        state
+            .db
+            .touch_shot_list_project(&project.id, &now)
+            .map_err(|e| format!("Failed to touch Shot List project: {}", e))?;
+        return state
+            .db
+            .get_shot_list_project(&project.id)
+            .map_err(|e| format!("Failed to reload Shot List project: {}", e))?
+            .ok_or_else(|| "Shot List project disappeared after touch.".to_string());
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let local_day = chrono::Local::now().format("Day Sheet • %d %b %Y").to_string();
+    let project = ShotListProject {
+        id: uuid::Uuid::new_v4().to_string(),
+        title: "Shot List".to_string(),
+        day_label: local_day,
+        created_at: now.clone(),
+        updated_at: now.clone(),
+        last_opened_at: now,
+    };
+    state
+        .db
+        .upsert_shot_list_project(&project)
+        .map_err(|e| format!("Failed to create Shot List project: {}", e))?;
+    Ok(project)
+}
+
+#[tauri::command]
+pub async fn shot_list_get_bundle(
+    project_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<ShotListBundle, String> {
+    let project = state
+        .db
+        .get_shot_list_project(&project_id)
+        .map_err(|e| format!("Failed to load Shot List project: {}", e))?
+        .ok_or_else(|| "Shot List project not found.".to_string())?;
+    let rows = state
+        .db
+        .list_shot_list_rows(&project_id)
+        .map_err(|e| format!("Failed to load Shot List rows: {}", e))?;
+    let sections = state
+        .db
+        .list_shot_list_equipment_sections(&project_id)
+        .map_err(|e| format!("Failed to load Shot List sections: {}", e))?;
+    let items = state
+        .db
+        .list_shot_list_equipment_items(&project_id)
+        .map_err(|e| format!("Failed to load Shot List items: {}", e))?;
+    Ok(ShotListBundle {
+        project,
+        rows,
+        sections,
+        items,
+    })
+}
+
+#[tauri::command]
+pub async fn shot_list_save_project(
+    project: ShotListProject,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .upsert_shot_list_project(&project)
+        .map_err(|e| format!("Failed to save Shot List project: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_save_row(
+    row: ShotListRow,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .upsert_shot_list_row(&row)
+        .map_err(|e| format!("Failed to save Shot List row: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_delete_row(
+    row_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .delete_shot_list_row(&row_id)
+        .map_err(|e| format!("Failed to delete Shot List row: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_reorder_rows(
+    project_id: String,
+    row_ids: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .reorder_shot_list_rows(&project_id, &row_ids)
+        .map_err(|e| format!("Failed to reorder Shot List rows: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_save_equipment_section(
+    section: ShotListEquipmentSection,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .upsert_shot_list_equipment_section(&section)
+        .map_err(|e| format!("Failed to save Shot List equipment section: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_delete_equipment_section(
+    section_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .delete_shot_list_equipment_section(&section_id)
+        .map_err(|e| format!("Failed to delete Shot List equipment section: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_reorder_sections(
+    project_id: String,
+    section_ids: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .reorder_shot_list_equipment_sections(&project_id, &section_ids)
+        .map_err(|e| format!("Failed to reorder Shot List sections: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_save_equipment_item(
+    item: ShotListEquipmentItem,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .upsert_shot_list_equipment_item(&item)
+        .map_err(|e| format!("Failed to save Shot List equipment item: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_delete_equipment_item(
+    item_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .delete_shot_list_equipment_item(&item_id)
+        .map_err(|e| format!("Failed to delete Shot List equipment item: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_reorder_equipment_items(
+    section_id: String,
+    item_ids: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .reorder_shot_list_equipment_items(&section_id, &item_ids)
+        .map_err(|e| format!("Failed to reorder Shot List equipment items: {}", e))
+}
+
+#[tauri::command]
+pub async fn shot_list_replace_bundle(
+    bundle: ShotListBundle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .replace_shot_list_bundle(&bundle)
+        .map_err(|e| format!("Failed to replace Shot List bundle: {}", e))
 }
 
 #[tauri::command]

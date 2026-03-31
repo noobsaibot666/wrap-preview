@@ -1,5 +1,5 @@
 import type { jsPDF } from "jspdf";
-import iconSvgRaw from "../assets/Icon_square_rounded.svg?raw";
+import iconSvgRaw from "../assets/Subtract.svg?raw";
 
 type WarningHandler = (message: string) => void;
 

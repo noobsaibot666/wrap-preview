@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
-    path: Arc<String>,
+    _path: Arc<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -349,6 +349,57 @@ pub struct ProductionPreset {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShotListProject {
+    pub id: String,
+    pub title: String,
+    pub day_label: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_opened_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShotListRow {
+    pub id: String,
+    pub project_id: String,
+    pub sort_order: i32,
+    pub shot_number: String,
+    pub capture_type: String,
+    pub scene_setup: String,
+    pub description: String,
+    pub camera_lens: String,
+    pub movement: String,
+    pub location_time: String,
+    pub notes: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShotListEquipmentSection {
+    pub id: String,
+    pub project_id: String,
+    pub sort_order: i32,
+    pub section_key: Option<String>,
+    pub section_name: String,
+    pub icon_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShotListEquipmentItem {
+    pub id: String,
+    pub section_id: String,
+    pub sort_order: i32,
+    pub item_name: String,
+    pub item_type: String,
+    pub icon_name: String,
+    pub notes: String,
+    pub camera_label: Option<String>,
+    pub media_type: Option<String>,
+    pub capacity_value: Option<i32>,
+    pub capacity_unit: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductionMatchLabSource {
     pub id: String,
     pub project_id: String,
@@ -385,7 +436,7 @@ impl Database {
         let conn = Connection::open(db_path)?;
         let db = Database {
             conn: Arc::new(Mutex::new(conn)),
-            path: Arc::new(db_path.to_string()),
+            _path: Arc::new(db_path.to_string()),
         };
         db.create_tables()?;
 
@@ -740,6 +791,63 @@ impl Database {
                 ",
             )?;
 
+            conn.execute_batch(
+                "
+                CREATE TABLE IF NOT EXISTS shot_list_projects (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    day_label TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_opened_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS shot_list_rows (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    shot_number TEXT NOT NULL DEFAULT '',
+                    capture_type TEXT NOT NULL DEFAULT 'video',
+                    scene_setup TEXT NOT NULL DEFAULT '',
+                    description TEXT NOT NULL DEFAULT '',
+                    camera_lens TEXT NOT NULL DEFAULT '',
+                    movement TEXT NOT NULL DEFAULT '',
+                    location_time TEXT NOT NULL DEFAULT '',
+                    notes TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'planned',
+                    FOREIGN KEY(project_id) REFERENCES shot_list_projects(id)
+                );
+                CREATE TABLE IF NOT EXISTS shot_list_equipment_sections (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    section_key TEXT,
+                    section_name TEXT NOT NULL DEFAULT '',
+                    icon_name TEXT NOT NULL DEFAULT 'misc',
+                    FOREIGN KEY(project_id) REFERENCES shot_list_projects(id)
+                );
+                CREATE TABLE IF NOT EXISTS shot_list_equipment_items (
+                    id TEXT PRIMARY KEY,
+                    section_id TEXT NOT NULL,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    item_name TEXT NOT NULL DEFAULT '',
+                    item_type TEXT NOT NULL DEFAULT 'misc',
+                    icon_name TEXT NOT NULL DEFAULT 'misc',
+                    notes TEXT NOT NULL DEFAULT '',
+                    camera_label TEXT,
+                    media_type TEXT,
+                    capacity_value INTEGER,
+                    capacity_unit TEXT,
+                    FOREIGN KEY(section_id) REFERENCES shot_list_equipment_sections(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_shot_list_rows_project_order
+                    ON shot_list_rows(project_id, sort_order);
+                CREATE INDEX IF NOT EXISTS idx_shot_list_sections_project_order
+                    ON shot_list_equipment_sections(project_id, sort_order);
+                CREATE INDEX IF NOT EXISTS idx_shot_list_items_section_order
+                    ON shot_list_equipment_items(section_id, sort_order);
+                ",
+            )?;
+
             let mut legacy_look_stmt =
                 conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='production_look_targets'")?;
             let has_legacy_look_targets = legacy_look_stmt.exists([])?;
@@ -1077,8 +1185,9 @@ impl Database {
         Ok(db)
     }
 
+    #[allow(dead_code)]
     pub fn reset_file(&self) -> Result<(), String> {
-        let db_path = (*self.path).clone();
+        let db_path = (*self._path).clone();
         if let Some(parent) = Path::new(&db_path).parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -1515,6 +1624,56 @@ impl Database {
                 FOREIGN KEY(run_id) REFERENCES production_matchlab_runs(id)
             );
 
+            CREATE TABLE IF NOT EXISTS shot_list_projects (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                day_label TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_opened_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS shot_list_rows (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                shot_number TEXT NOT NULL DEFAULT '',
+                capture_type TEXT NOT NULL DEFAULT 'video',
+                scene_setup TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                camera_lens TEXT NOT NULL DEFAULT '',
+                movement TEXT NOT NULL DEFAULT '',
+                location_time TEXT NOT NULL DEFAULT '',
+                notes TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'planned',
+                FOREIGN KEY(project_id) REFERENCES shot_list_projects(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS shot_list_equipment_sections (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                section_key TEXT,
+                section_name TEXT NOT NULL DEFAULT '',
+                icon_name TEXT NOT NULL DEFAULT 'misc',
+                FOREIGN KEY(project_id) REFERENCES shot_list_projects(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS shot_list_equipment_items (
+                id TEXT PRIMARY KEY,
+                section_id TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                item_name TEXT NOT NULL DEFAULT '',
+                item_type TEXT NOT NULL DEFAULT 'misc',
+                icon_name TEXT NOT NULL DEFAULT 'misc',
+                notes TEXT NOT NULL DEFAULT '',
+                camera_label TEXT,
+                media_type TEXT,
+                capacity_value INTEGER,
+                capacity_unit TEXT,
+                FOREIGN KEY(section_id) REFERENCES shot_list_equipment_sections(id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_production_matchlab_sources_project_id
                 ON production_matchlab_sources(project_id);
             CREATE INDEX IF NOT EXISTS idx_production_matchlab_sources_project_slot
@@ -1523,6 +1682,12 @@ impl Database {
                 ON production_matchlab_runs(project_id);
             CREATE INDEX IF NOT EXISTS idx_production_matchlab_results_run_id
                 ON production_matchlab_results(run_id);
+            CREATE INDEX IF NOT EXISTS idx_shot_list_rows_project_order
+                ON shot_list_rows(project_id, sort_order);
+            CREATE INDEX IF NOT EXISTS idx_shot_list_sections_project_order
+                ON shot_list_equipment_sections(project_id, sort_order);
+            CREATE INDEX IF NOT EXISTS idx_shot_list_items_section_order
+                ON shot_list_equipment_items(section_id, sort_order);
             ",
         )?;
         Ok(())
@@ -1539,6 +1704,7 @@ impl Database {
 
     // --- Production Module ---
 
+    #[allow(dead_code)]
     pub fn production_boot_table_status(&self) -> SqlResult<Vec<(String, bool)>> {
         let conn = self.conn.lock().unwrap();
         let tables = vec![
@@ -1977,6 +2143,391 @@ impl Database {
             "DELETE FROM production_matchlab_runs WHERE id = ?1",
             params![run_id],
         )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn upsert_shot_list_project(&self, project: &ShotListProject) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO shot_list_projects (id, title, day_label, created_at, updated_at, last_opened_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                project.id,
+                project.title,
+                project.day_label,
+                project.created_at,
+                project.updated_at,
+                project.last_opened_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn replace_shot_list_bundle(&self, bundle: &crate::commands::ShotListBundle) -> SqlResult<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+
+        tx.execute("DELETE FROM shot_list_equipment_items", [])?;
+        tx.execute("DELETE FROM shot_list_equipment_sections", [])?;
+        tx.execute("DELETE FROM shot_list_rows", [])?;
+        tx.execute("DELETE FROM shot_list_projects", [])?;
+
+        tx.execute(
+            "INSERT INTO shot_list_projects (id, title, day_label, created_at, updated_at, last_opened_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                bundle.project.id,
+                bundle.project.title,
+                bundle.project.day_label,
+                bundle.project.created_at,
+                bundle.project.updated_at,
+                bundle.project.last_opened_at
+            ],
+        )?;
+
+        for row in &bundle.rows {
+            tx.execute(
+                "INSERT INTO shot_list_rows (
+                    id, project_id, sort_order, shot_number, capture_type, scene_setup, description, camera_lens, movement, location_time, notes, status
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                params![
+                    row.id,
+                    row.project_id,
+                    row.sort_order,
+                    row.shot_number,
+                    row.capture_type,
+                    row.scene_setup,
+                    row.description,
+                    row.camera_lens,
+                    row.movement,
+                    row.location_time,
+                    row.notes,
+                    row.status
+                ],
+            )?;
+        }
+
+        for section in &bundle.sections {
+            tx.execute(
+                "INSERT INTO shot_list_equipment_sections (
+                    id, project_id, sort_order, section_key, section_name, icon_name
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    section.id,
+                    section.project_id,
+                    section.sort_order,
+                    section.section_key,
+                    section.section_name,
+                    section.icon_name
+                ],
+            )?;
+        }
+
+        for item in &bundle.items {
+            tx.execute(
+                "INSERT INTO shot_list_equipment_items (
+                    id, section_id, sort_order, item_name, item_type, icon_name, notes, camera_label, media_type, capacity_value, capacity_unit
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    item.id,
+                    item.section_id,
+                    item.sort_order,
+                    item.item_name,
+                    item.item_type,
+                    item.icon_name,
+                    item.notes,
+                    item.camera_label,
+                    item.media_type,
+                    item.capacity_value,
+                    item.capacity_unit
+                ],
+            )?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn get_latest_shot_list_project(&self) -> SqlResult<Option<ShotListProject>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, day_label, created_at, updated_at, last_opened_at
+             FROM shot_list_projects
+             ORDER BY last_opened_at DESC
+             LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map([], |row| {
+            Ok(ShotListProject {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                day_label: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+                last_opened_at: row.get(5)?,
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(project)) => Ok(Some(project)),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn get_shot_list_project(&self, project_id: &str) -> SqlResult<Option<ShotListProject>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, day_label, created_at, updated_at, last_opened_at
+             FROM shot_list_projects
+             WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![project_id], |row| {
+            Ok(ShotListProject {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                day_label: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+                last_opened_at: row.get(5)?,
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(project)) => Ok(Some(project)),
+            _ => Ok(None),
+        }
+    }
+
+    pub fn touch_shot_list_project(&self, project_id: &str, timestamp: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE shot_list_projects
+             SET updated_at = ?2, last_opened_at = ?2
+             WHERE id = ?1",
+            params![project_id, timestamp],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_shot_list_rows(&self, project_id: &str) -> SqlResult<Vec<ShotListRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, sort_order, shot_number, capture_type, scene_setup, description, camera_lens, movement, location_time, notes, status
+             FROM shot_list_rows
+             WHERE project_id = ?1
+             ORDER BY sort_order ASC, id ASC",
+        )?;
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(ShotListRow {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                sort_order: row.get(2)?,
+                shot_number: row.get(3)?,
+                capture_type: row.get(4)?,
+                scene_setup: row.get(5)?,
+                description: row.get(6)?,
+                camera_lens: row.get(7)?,
+                movement: row.get(8)?,
+                location_time: row.get(9)?,
+                notes: row.get(10)?,
+                status: row.get(11)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn upsert_shot_list_row(&self, row: &ShotListRow) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO shot_list_rows (
+                id, project_id, sort_order, shot_number, capture_type, scene_setup, description, camera_lens, movement, location_time, notes, status
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                row.id,
+                row.project_id,
+                row.sort_order,
+                row.shot_number,
+                row.capture_type,
+                row.scene_setup,
+                row.description,
+                row.camera_lens,
+                row.movement,
+                row.location_time,
+                row.notes,
+                row.status
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_shot_list_row(&self, row_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM shot_list_rows WHERE id = ?1", params![row_id])?;
+        Ok(())
+    }
+
+    pub fn reorder_shot_list_rows(&self, project_id: &str, row_ids: &[String]) -> SqlResult<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for (index, row_id) in row_ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE shot_list_rows SET sort_order = ?1 WHERE id = ?2 AND project_id = ?3",
+                params![index as i32 + 1, row_id, project_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_shot_list_equipment_sections(&self, project_id: &str) -> SqlResult<Vec<ShotListEquipmentSection>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, project_id, sort_order, section_key, section_name, icon_name
+             FROM shot_list_equipment_sections
+             WHERE project_id = ?1
+             ORDER BY sort_order ASC, id ASC",
+        )?;
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(ShotListEquipmentSection {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                sort_order: row.get(2)?,
+                section_key: row.get(3)?,
+                section_name: row.get(4)?,
+                icon_name: row.get(5)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for section in rows {
+            results.push(section?);
+        }
+        Ok(results)
+    }
+
+    pub fn upsert_shot_list_equipment_section(&self, section: &ShotListEquipmentSection) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO shot_list_equipment_sections (
+                id, project_id, sort_order, section_key, section_name, icon_name
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                section.id,
+                section.project_id,
+                section.sort_order,
+                section.section_key,
+                section.section_name,
+                section.icon_name
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_shot_list_equipment_section(&self, section_id: &str) -> SqlResult<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM shot_list_equipment_items WHERE section_id = ?1",
+            params![section_id],
+        )?;
+        tx.execute(
+            "DELETE FROM shot_list_equipment_sections WHERE id = ?1",
+            params![section_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn reorder_shot_list_equipment_sections(
+        &self,
+        project_id: &str,
+        section_ids: &[String],
+    ) -> SqlResult<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for (index, section_id) in section_ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE shot_list_equipment_sections SET sort_order = ?1 WHERE id = ?2 AND project_id = ?3",
+                params![index as i32 + 1, section_id, project_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn list_shot_list_equipment_items(&self, project_id: &str) -> SqlResult<Vec<ShotListEquipmentItem>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.section_id, i.sort_order, i.item_name, i.item_type, i.icon_name, i.notes, i.camera_label, i.media_type, i.capacity_value, i.capacity_unit
+             FROM shot_list_equipment_items i
+             INNER JOIN shot_list_equipment_sections s ON s.id = i.section_id
+             WHERE s.project_id = ?1
+             ORDER BY s.sort_order ASC, i.sort_order ASC, i.id ASC",
+        )?;
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(ShotListEquipmentItem {
+                id: row.get(0)?,
+                section_id: row.get(1)?,
+                sort_order: row.get(2)?,
+                item_name: row.get(3)?,
+                item_type: row.get(4)?,
+                icon_name: row.get(5)?,
+                notes: row.get(6)?,
+                camera_label: row.get(7)?,
+                media_type: row.get(8)?,
+                capacity_value: row.get(9)?,
+                capacity_unit: row.get(10)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for item in rows {
+            results.push(item?);
+        }
+        Ok(results)
+    }
+
+    pub fn upsert_shot_list_equipment_item(&self, item: &ShotListEquipmentItem) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO shot_list_equipment_items (
+                id, section_id, sort_order, item_name, item_type, icon_name, notes, camera_label, media_type, capacity_value, capacity_unit
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                item.id,
+                item.section_id,
+                item.sort_order,
+                item.item_name,
+                item.item_type,
+                item.icon_name,
+                item.notes,
+                item.camera_label,
+                item.media_type,
+                item.capacity_value,
+                item.capacity_unit
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_shot_list_equipment_item(&self, item_id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM shot_list_equipment_items WHERE id = ?1",
+            params![item_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn reorder_shot_list_equipment_items(&self, section_id: &str, item_ids: &[String]) -> SqlResult<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for (index, item_id) in item_ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE shot_list_equipment_items SET sort_order = ?1 WHERE id = ?2 AND section_id = ?3",
+                params![index as i32 + 1, item_id, section_id],
+            )?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -4272,6 +4823,7 @@ impl Database {
     }
 }
 
+#[allow(dead_code)]
 fn remove_sqlite_file(path: &str) -> Result<(), String> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
