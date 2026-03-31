@@ -417,11 +417,24 @@ export default function ShotList({ appVersion }: ShotListProps) {
   const [saveState, setSaveState] = useState<"saved" | "saving" | "idle" | "error">("saved");
   const [exporting, setExporting] = useState<"pdf" | "image" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [collapsedRowIds, setCollapsedRowIds] = useState<Set<string>>(new Set());
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<Set<string>>(new Set());
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(new Set());
   const saveTimersRef = useRef<Record<string, number>>({});
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!actionsMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target as Node)) {
+        setActionsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [actionsMenuOpen]);
 
   useEffect(() => {
     let mounted = true;
@@ -976,22 +989,65 @@ export default function ShotList({ appVersion }: ShotListProps) {
               <FolderOpen size={14} />
               <span>Open</span>
             </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleSaveWrap(false)} disabled={!!exporting}>
-              <Save size={14} />
-              <span>Save .wrap</span>
-            </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleSaveWrap(true)} disabled={!!exporting}>
-              <Save size={14} />
-              <span>Save As</span>
-            </button>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleExport("pdf")} disabled={!!exporting}>
-              <Download size={14} />
-              <span>{exporting === "pdf" ? "Exporting PDF…" : "Export PDF"}</span>
-            </button>
-            <button type="button" className="btn btn-primary btn-sm btn-glow" onClick={() => void handleExport("image")} disabled={!!exporting}>
-              <Download size={14} />
-              <span>{exporting === "image" ? "Exporting Image…" : "Export Image"}</span>
-            </button>
+            <div className={`shot-list-actions-dropdown ${actionsMenuOpen ? "is-open" : ""}`} ref={actionsMenuRef}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm btn-glow"
+                onClick={() => setActionsMenuOpen(!actionsMenuOpen)}
+                disabled={!!exporting}
+              >
+                <Save size={14} />
+                <span>Save & Export</span>
+                <ChevronDown size={14} className={`dropdown-arrow ${actionsMenuOpen ? "is-open" : ""}`} />
+              </button>
+              {actionsMenuOpen && (
+                <div className="shot-list-actions-menu">
+                  <button
+                    className="shot-list-action-item"
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      void handleSaveWrap(false);
+                    }}
+                  >
+                    <Save size={14} />
+                    <span>Save .wrap</span>
+                  </button>
+                  <button
+                    className="shot-list-action-item"
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      void handleSaveWrap(true);
+                    }}
+                  >
+                    <Save size={14} />
+                    <span>Save As</span>
+                  </button>
+                  <div className="shot-list-actions-divider" />
+                  <button
+                    className="shot-list-action-item"
+                    disabled={!!exporting}
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      void handleExport("pdf");
+                    }}
+                  >
+                    <Download size={14} />
+                    <span>{exporting === "pdf" ? "Exporting PDF…" : "Export PDF"}</span>
+                  </button>
+                  <button
+                    className="shot-list-action-item"
+                    disabled={!!exporting}
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      void handleExport("image");
+                    }}
+                  >
+                    <Download size={14} />
+                    <span>{exporting === "image" ? "Exporting Image…" : "Export Image"}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

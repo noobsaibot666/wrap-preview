@@ -63,8 +63,8 @@ pub fn run() {
     let app_state = Arc::new(AppState {
         db: database.clone(),
         cache_dir: cache_dir_path.to_string_lossy().to_string(),
-        _app_data_dir: app_data_dir,
-        _db_path: db_path,
+        app_data_dir,
+        db_path,
         job_manager: Arc::new(crate::jobs::JobManager::new(Some(database))),
         perf_log: crate::perf::PerfLog::new(500),
         review_core_base_dir,

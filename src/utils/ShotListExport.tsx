@@ -5,7 +5,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   drawFooter,
-  drawHeader,
 } from "./ExportBranding";
 import type {
   ShotListEquipmentItem,
@@ -22,14 +21,15 @@ interface ShotListExportPayload {
   items: ShotListEquipmentItem[];
   appVersion?: string;
   brandName?: string;
+  clientName?: string;
 }
 
-const PREPROD_ACCENT = "#7dd3fc";
-const PREPROD_ACCENT_SOFT = "#e0f2fe";
+const PREPROD_ACCENT = "#38bdf8";
+const PREPROD_ACCENT_SOFT = "#f0f9ff";
 const EXPORT_TEXT = "#111827";
-const EXPORT_MUTED = "#64748b";
-const EXPORT_BORDER = "#dbe4ef";
-const EXPORT_PANEL = "#f8fbff";
+const EXPORT_MUTED = "#4b5563";
+const EXPORT_BORDER = "#e2e8f0";
+const EXPORT_HEADER_BG = "#0f1115";
 const iconCache = new Map<string, Promise<string>>();
 const CAMERA_SETUP_DELIMITER = "__SLCAM__";
 const LOCATION_TIME_DELIMITER = "__SLTIME__";
@@ -49,31 +49,61 @@ async function getIconDataUrl(iconName: string, size = 56, color = PREPROD_ACCEN
     iconCache.set(
       cacheKey,
       (async () => {
-        const Icon = getShotListIconComponent(iconName);
-        const svg = renderToStaticMarkup(
-          createElement(Icon, { size: size - 10, strokeWidth: 1.7, color }),
-        );
-        const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><rect x="1.5" y="1.5" width="${size - 3}" height="${size - 3}" rx="${Math.round(
-            size * 0.24,
-          )}" fill="#ffffff" stroke="${color}" stroke-opacity="0.35" />${svg.replace(
-            "<svg",
-            `<svg x="5" y="5" width="${size - 10}" height="${size - 10}"`,
-          )}</svg>`,
-        )}`;
-        const image = new Image();
-        image.src = dataUrl;
-        await new Promise<void>((resolve, reject) => {
-          image.onload = () => resolve();
-          image.onerror = () => reject(new Error(`Failed to rasterize ${iconName}`));
-        });
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("Shot list export icon canvas unavailable");
-        ctx.drawImage(image, 0, 0, size, size);
-        return canvas.toDataURL("image/png");
+        try {
+          const Icon = getShotListIconComponent(iconName);
+          const svgBody = renderToStaticMarkup(
+            createElement(Icon, { size: size - 12, strokeWidth: 1.8, color }),
+          );
+          
+          // Re-wrap the Lucide icon SVG with a custom rounded background container
+          const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+            <rect x="1" y="1" width="${size - 2}" height="${size - 2}" rx="${Math.round(size * 0.28)}" fill="#ffffff" stroke="${color}" stroke-opacity="0.25" />
+            <g transform="translate(6, 6)">
+              ${svgBody}
+            </g>
+          </svg>`;
+
+          const svgBlob = new Blob([fullSvg], { type: 'image/svg+xml;charset=utf-8' });
+          const url = URL.createObjectURL(svgBlob);
+          
+          const image = new Image();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            image.onload = () => {
+              const canvas = document.createElement("canvas");
+              canvas.width = size;
+              canvas.height = size;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) {
+                URL.revokeObjectURL(url);
+                return reject(new Error("Canvas context unavailable"));
+              }
+              ctx.drawImage(image, 0, 0, size, size);
+              const result = canvas.toDataURL("image/png");
+              URL.revokeObjectURL(url);
+              resolve(result);
+            };
+            image.onerror = () => {
+              URL.revokeObjectURL(url);
+              reject(new Error(`Failed to rasterize icon: ${iconName}`));
+            };
+            image.src = url;
+          });
+          
+          return dataUrl;
+        } catch (err) {
+          console.error(`Rasterization error for ${iconName}:`, err);
+          // Fallback to a plain colored square or empty string if it fails
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+              ctx.fillStyle = color;
+              ctx.globalAlpha = 0.1;
+              ctx.fillRect(2, 2, size - 4, size - 4);
+          }
+          return canvas.toDataURL("image/png");
+        }
       })(),
     );
   }
@@ -131,9 +161,76 @@ function sanitizeFileStem(value: string) {
   return cleaned || "ShotList";
 }
 
+function drawBrandMark(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  ctx.fillStyle = "#ffffff";
+  roundRect(ctx, x, y, 40, 40, 11, true, false);
+  ctx.fillStyle = "#0f1115";
+  roundRect(ctx, x + 8, y + 8, 24, 24, 7, true, false);
+  ctx.fillStyle = "#38bdf8";
+  roundRect(ctx, x + 25, y + 8, 7, 24, 3, true, false);
+}
+
+function drawMetaChip(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  label: string,
+  value: string,
+  accent: string = "#38bdf8"
+) {
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  roundRect(ctx, x, y, width, 46, 14, true, false);
+  ctx.fillStyle = accent;
+  roundRect(ctx, x + 14, y + 15, 8, 16, 4, true, false);
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.font = "700 10px Inter, system-ui, sans-serif";
+  ctx.fillText(label.toUpperCase(), x + 30, y + 18);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 13px Inter, system-ui, sans-serif";
+  ctx.fillText(value, x + 30, y + 34);
+}
+
+async function drawBrantedHeader(
+  ctx: CanvasRenderingContext2D,
+  payload: ShotListExportPayload,
+  title: string,
+  pageLabel?: string
+) {
+  const margin = EXPORT_MARGIN_X;
+  const width = EXPORT_PAGE_WIDTH;
+
+  ctx.fillStyle = EXPORT_HEADER_BG;
+  roundRect(ctx, margin, 32, width - margin * 2, 160, 32, true, false);
+
+  drawBrandMark(ctx, margin + 32, 64);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 16px Inter, system-ui, sans-serif";
+  ctx.fillText((payload.brandName || "WRAP PREVIEW").toUpperCase(), margin + 88, 76);
+  ctx.font = "800 34px Inter, system-ui, sans-serif";
+  ctx.fillText(title, margin + 88, 118);
+
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.font = "600 18px Inter, system-ui, sans-serif";
+  const projectInfo = [payload.project.title || "Untitled Project", payload.clientName && `Client: ${payload.clientName}`].filter(Boolean).join(" • ");
+  ctx.fillText(projectInfo, margin + 88, 150);
+
+  const chipWidth = 200;
+  const chipGap = 16;
+  let chipX = width - margin - (pageLabel ? chipWidth * 2 + chipGap : chipWidth) - 32;
+
+  drawMetaChip(ctx, chipX, 64, chipWidth, "DAY SHEET", payload.project.day_label || "Day 1");
+  chipX += chipWidth + chipGap;
+  if (pageLabel) {
+    drawMetaChip(ctx, chipX, 64, chipWidth, "PROGRESS", pageLabel, "#a855f7");
+    chipX += chipWidth + chipGap;
+  }
+}
+
 async function createExportPage(
   payload: ShotListExportPayload,
   title: string,
+  pageLabel?: string
 ): Promise<{ canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }> {
   const canvas = document.createElement("canvas");
   canvas.width = EXPORT_PAGE_WIDTH;
@@ -141,43 +238,13 @@ async function createExportPage(
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Shot list export canvas unavailable");
 
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = "#f8f9fb";
   ctx.fillRect(0, 0, EXPORT_PAGE_WIDTH, EXPORT_PAGE_HEIGHT);
-  await drawHeader(
-    {
-      kind: "canvas",
-      ctx,
-      canvasWidth: EXPORT_PAGE_WIDTH,
-      marginX: EXPORT_MARGIN_X,
-    },
-    {
-      appName: payload.brandName || "Wrap Preview",
-      appVersion: payload.appVersion || "unknown",
-      exportedAt: new Date(),
-      projectName: payload.project.title,
-      title,
-    },
-  );
+  await drawBrantedHeader(ctx, payload, title, pageLabel);
   return { canvas, ctx };
 }
 
-function drawExportPageMeta(
-  ctx: CanvasRenderingContext2D,
-  project: ShotListProject,
-  rightText?: string,
-) {
-  ctx.fillStyle = EXPORT_TEXT;
-  ctx.font = "700 38px Inter, system-ui, sans-serif";
-  ctx.fillText(project.title, EXPORT_MARGIN_X, 152);
-  ctx.fillStyle = EXPORT_MUTED;
-  ctx.font = "500 20px Inter, system-ui, sans-serif";
-  ctx.fillText(`Day Sheet: ${project.day_label}`, EXPORT_MARGIN_X, 184);
-  if (rightText) {
-    ctx.textAlign = "right";
-    ctx.fillText(rightText, EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X, 152);
-    ctx.textAlign = "left";
-  }
-}
+// Removed drawExportPageMeta as it is handled by drawBrantedHeader
 
 async function renderRowsCanvasPage(
   payload: ShotListExportPayload,
@@ -185,38 +252,40 @@ async function renderRowsCanvasPage(
   pageIndex: number,
   totalPages: number,
 ): Promise<HTMLCanvasElement> {
-  const { canvas, ctx } = await createExportPage(payload, "Shot List");
-  drawExportPageMeta(ctx, payload.project, `Rows ${pageIndex + 1}/${totalPages}`);
+  const { canvas, ctx } = await createExportPage(payload, "Production Shot List", `Sheet ${pageIndex + 1}/${totalPages}`);
 
-  let y = 224;
+  let y = 232;
   for (const row of pageRows) {
     ctx.fillStyle = "#ffffff";
     ctx.strokeStyle = EXPORT_BORDER;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
     roundRect(ctx, EXPORT_MARGIN_X, y, EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X * 2, EXPORT_ROW_CARD_HEIGHT, 20, true, true);
 
     const icon = await getIconDataUrl(row.capture_type, 66);
     const img = await loadImage(icon);
-    ctx.drawImage(img, EXPORT_MARGIN_X + 24, y + 16, 42, 42);
+    ctx.drawImage(img, EXPORT_MARGIN_X + 24, y + 11, 42, 42);
 
     ctx.fillStyle = EXPORT_TEXT;
-    ctx.font = "700 22px Inter, system-ui, sans-serif";
-    ctx.fillText(row.shot_number || "—", EXPORT_MARGIN_X + 88, y + 30);
-    ctx.font = "700 18px Inter, system-ui, sans-serif";
-    ctx.fillText(trimText(ctx, row.scene_setup || "—", 280), EXPORT_MARGIN_X + 152, y + 30);
+    ctx.font = "800 20px Inter, system-ui, sans-serif";
+    ctx.fillText(row.shot_number || "—", EXPORT_MARGIN_X + 88, y + 32);
+    ctx.font = "700 17px Inter, system-ui, sans-serif";
+    ctx.fillText(trimText(ctx, row.scene_setup || "—", 280), EXPORT_MARGIN_X + 132, y + 32);
 
     ctx.fillStyle = EXPORT_MUTED;
-    ctx.font = "500 16px Inter, system-ui, sans-serif";
-    ctx.fillText(trimText(ctx, row.description || "—", 560), EXPORT_MARGIN_X + 152, y + 58);
+    ctx.font = "500 15px Inter, system-ui, sans-serif";
+    ctx.fillText(trimText(ctx, row.description || "—", 560), EXPORT_MARGIN_X + 88, y + 58);
 
     ctx.fillStyle = EXPORT_TEXT;
     ctx.font = "600 16px Inter, system-ui, sans-serif";
-    ctx.fillText(trimText(ctx, formatCameraSetupsForExport(row.camera_lens), 300), 890, y + 30);
+    ctx.fillText(trimText(ctx, formatCameraSetupsForExport(row.camera_lens), 320), 880, y + 36);
+    ctx.fillStyle = "#6366f1";
+    ctx.font = "700 15px Inter, system-ui, sans-serif";
+    ctx.fillText(trimText(ctx, (row.movement || "STATIC").toUpperCase(), 140), 1220, y + 36);
     ctx.fillStyle = EXPORT_MUTED;
-    ctx.fillText(trimText(ctx, row.movement || "—", 140), 1210, y + 30);
-    ctx.fillText(trimText(ctx, formatLocationTimingForExport(row.location_time), 200), 1360, y + 30);
+    ctx.font = "500 15px Inter, system-ui, sans-serif";
+    ctx.fillText(trimText(ctx, formatLocationTimingForExport(row.location_time), 220), 1380, y + 36);
 
-    drawCanvasPill(ctx, (row.status || "planned").toUpperCase(), EXPORT_PAGE_WIDTH - 214, y + 18);
+    drawCanvasPill(ctx, (row.status || "planned").toUpperCase(), EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X - 146, y + 26);
     y += EXPORT_ROW_CARD_HEIGHT + 16;
   }
 
@@ -242,53 +311,58 @@ async function renderEquipmentCanvasPages(payload: ShotListExportPayload): Promi
 
   let cardIndex = 0;
   while (cardIndex < cards.length) {
-    const { canvas, ctx } = await createExportPage(payload, "Shot List Equipment");
-    drawExportPageMeta(ctx, payload.project, `Equipment ${pages.length + 1}`);
+    const { canvas, ctx } = await createExportPage(payload, "Equipment Inventory", `Pack ${pages.length + 1}`);
 
-    let y = 224;
+    let y = 232;
     let column = 0;
     let rowHeight = 0;
-    const cardWidth = (EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X * 2 - 20) / 2;
-    const xPositions = [EXPORT_MARGIN_X, EXPORT_MARGIN_X + cardWidth + 20];
+    const cardWidth = (EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X * 2 - 24) / 2;
+    const xPositions = [EXPORT_MARGIN_X, EXPORT_MARGIN_X + cardWidth + 24];
 
     while (cardIndex < cards.length) {
       const { section, items } = cards[cardIndex];
-      const cardHeight = Math.max(164, 94 + items.length * 48);
+      const cardHeight = Math.max(164, 94 + items.length * 52);
       if (column === 0 && y + cardHeight > EXPORT_PAGE_HEIGHT - 64) break;
 
       const x = xPositions[column];
-      ctx.fillStyle = EXPORT_PANEL;
+      ctx.fillStyle = "#ffffff";
       ctx.strokeStyle = EXPORT_BORDER;
-      ctx.lineWidth = 2;
-      roundRect(ctx, x, y, cardWidth, cardHeight, 24, true, true);
+      ctx.lineWidth = 1;
+      roundRect(ctx, x, y, cardWidth, cardHeight, 28, true, true);
 
-      const icon = await loadImage(await getIconDataUrl(section.icon_name, 72));
-      ctx.drawImage(icon, x + 18, y + 16, 42, 42);
+      // Section Header within Card
+      ctx.fillStyle = "#f1f5f9";
+      roundRect(ctx, x + 8, y + 8, cardWidth - 16, 68, 20, true, false);
+
+      const sectionIcon = await loadImage(await getIconDataUrl(section.icon_name, 64));
+      ctx.drawImage(sectionIcon, x + 20, y + 16, 52, 52);
       ctx.fillStyle = EXPORT_TEXT;
-      ctx.font = "700 24px Inter, system-ui, sans-serif";
-      ctx.fillText(section.section_name, x + 74, y + 38);
+      ctx.font = "800 24px Inter, system-ui, sans-serif";
+      ctx.fillText(section.section_name, x + 86, y + 44);
       ctx.fillStyle = EXPORT_MUTED;
-      ctx.font = "500 15px Inter, system-ui, sans-serif";
-      ctx.fillText(`${items.length} items`, x + 74, y + 60);
+      ctx.font = "600 14px Inter, system-ui, sans-serif";
+      ctx.fillText(`${items.length} items logged`, x + 86, y + 66);
 
-      let itemY = y + 88;
+      let itemY = y + 86;
       for (const item of items) {
-        ctx.fillStyle = "#ffffff";
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.lineWidth = 1.5;
-        roundRect(ctx, x + 14, itemY, cardWidth - 28, 40, 14, true, true);
-        const itemIcon = await loadImage(await getIconDataUrl(item.icon_name, 52, "#8b5cf6"));
-        ctx.drawImage(itemIcon, x + 22, itemY + 4, 32, 32);
+        ctx.fillStyle = "transparent";
+        ctx.strokeStyle = "#f1f5f9";
+        ctx.lineWidth = 1;
+        roundRect(ctx, x + 12, itemY, cardWidth - 24, 44, 16, false, true);
+
+        const itemIcon = await loadImage(await getIconDataUrl(item.icon_name, 52, "#6366f1"));
+        ctx.drawImage(itemIcon, x + 18, itemY + 4, 36, 36);
+
         ctx.fillStyle = EXPORT_TEXT;
-        ctx.font = "700 16px Inter, system-ui, sans-serif";
-        ctx.fillText(trimText(ctx, item.item_name || "Unnamed item", cardWidth - 138), x + 64, itemY + 18);
+        ctx.font = "700 17px Inter, system-ui, sans-serif";
+        ctx.fillText(trimText(ctx, item.item_name || "Unnamed item", cardWidth - 140), x + 64, itemY + 20);
         ctx.fillStyle = EXPORT_MUTED;
         ctx.font = "500 12px Inter, system-ui, sans-serif";
-        ctx.fillText(trimText(ctx, formatEquipmentItemMetaForExport(item) || item.item_type || "Gear item", cardWidth - 138), x + 64, itemY + 33);
-        itemY += 46;
+        ctx.fillText(trimText(ctx, formatEquipmentItemMetaForExport(item) || item.item_type || "Gear item", cardWidth - 140), x + 64, itemY + 36);
+        itemY += 50;
       }
 
-      rowHeight = Math.max(rowHeight, cardHeight + 16);
+      rowHeight = Math.max(rowHeight, cardHeight + 18);
       if (column === 1) {
         column = 0;
         y += rowHeight;
@@ -395,28 +469,28 @@ function roundRect(
   fill: boolean,
   stroke: boolean,
 ) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
   ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.moveTo(x + safeRadius, y);
+  ctx.arcTo(x + width, y, x + width, y + height, safeRadius);
+  ctx.arcTo(x + width, y + height, x, y + height, safeRadius);
+  ctx.arcTo(x, y + height, x, y, safeRadius);
+  ctx.arcTo(x, y, x + width, y, safeRadius);
   ctx.closePath();
   if (fill) ctx.fill();
   if (stroke) ctx.stroke();
 }
 
 function drawCanvasPill(ctx: CanvasRenderingContext2D, label: string, x: number, y: number) {
-  const width = Math.max(92, label.length * 12 + 26);
+  const textWidth = ctx.measureText(label).width;
+  const width = Math.max(92, textWidth + 32);
   ctx.fillStyle = PREPROD_ACCENT_SOFT;
-  roundRect(ctx, x, y, width, 32, 16, true, false);
-  ctx.fillStyle = "#0e7490";
-  ctx.font = "700 13px Inter, system-ui, sans-serif";
-  ctx.fillText(label, x + 16, y + 21);
+  roundRect(ctx, x, y, width, 36, 14, true, false);
+  ctx.fillStyle = "#0369a1";
+  ctx.font = "800 12px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(label, x + width / 2, y + 22);
+  ctx.textAlign = "left";
 }
 
 function trimText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
