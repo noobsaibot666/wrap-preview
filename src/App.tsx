@@ -22,6 +22,10 @@ import {
   XCircle,
   FileSearch,
   ClipboardCheck,
+  Calculator,
+  Ruler,
+  CircleDot,
+  X,
 } from "lucide-react";
 import { ClipList } from "./components/ClipList";
 import { PrintLayout } from "./components/PrintLayout";
@@ -118,6 +122,8 @@ function AppContent() {
     const match = window.location.hash.match(/^#\/r\/([^/?#]+)/);
     return match ? decodeURIComponent(match[1]) : null;
   });
+  const [othersMenuOpen, setOthersMenuOpen] = useState(false);
+  const [activeMicroApp, setActiveMicroApp] = useState<"crop-factor" | null>(null);
   const isShotPlannerActive = activeTab === "preproduction" && activePreproductionApp === "shot-planner";
 
   useEffect(() => {
@@ -156,6 +162,13 @@ function AppContent() {
       else localStorage.removeItem('wp_activeProdApp');
     }
   }, [activeProductionApp]);
+
+  useEffect(() => {
+    if (activeTab !== "home") {
+      setOthersMenuOpen(false);
+      setActiveMicroApp(null);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (!IS_DEV || shareRouteToken) return;
@@ -1063,7 +1076,6 @@ function AppContent() {
   const totalClips = clips.length;
   const runningJobs = jobs.filter((j) => j.status === "running" || j.status === "queued").length;
   const failedJobs = jobs.filter((j) => j.status === "failed").length;
-  const inWorkspaceLauncher = activeTab === "media-workspace" && !activeMediaWorkspaceApp;
   const jobHudState = failedJobs > 0 ? "error" : (scanning || extracting || runningJobs > 0) ? "running" : jobs.some((j) => j.status === "done") ? "success" : "idle";
   const rejectedCount = clips.filter((c) => c.clip.flag === "reject").length;
   const exportReadyCount = clips.filter(({ clip }) => {
@@ -1394,6 +1406,38 @@ function AppContent() {
                   )}
                 </div>
 
+                <div className="others-menu-wrapper" style={{ position: 'relative' }}>
+                  <button
+                    className="btn btn-others"
+                    onClick={() => setOthersMenuOpen((prev) => !prev)}
+                    aria-haspopup="menu"
+                    aria-expanded={othersMenuOpen}
+                  >
+                    <span>Others</span>
+                    <ChevronDown size={14} />
+                  </button>
+                  {othersMenuOpen && (
+                    <>
+                      <div className="dropdown-backdrop" onClick={() => setOthersMenuOpen(false)} />
+                      <div className="help-dropdown menu-dropdown others-dropdown" role="menu">
+                        <button
+                          className="dropdown-item menu-item others-menu-item"
+                          onClick={() => {
+                            setOthersMenuOpen(false);
+                            setActiveMicroApp("crop-factor");
+                          }}
+                        >
+                          <span className="menu-item-icon"><Calculator size={16} /></span>
+                          <span className="menu-item-copy">
+                            <span className="menu-item-label">Crop Factor Calculator</span>
+                            <small>Sensor and lens equivalence reference</small>
+                          </span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
 
                 <button className={`btn btn-jobs jobs-state-${jobHudState}`} onClick={() => setJobsOpen(true)}>
                   <div className="jobs-indicator-content">
@@ -1640,15 +1684,14 @@ function AppContent() {
                 </div>
               ) : (
                 <div className="scrollable-view">
-                  <div className="onboarding-container preproduction-launcher">
-                    <div className="onboarding-header">
-                      <span className="onboarding-eyebrow">Module</span>
+                  <div className="onboarding-container module-launcher preproduction-launcher">
+                    <div className="onboarding-header module-launcher-header">
                       <h1>Pre-production</h1>
                       <p>Plan your shoot and organize your project structure.</p>
                     </div>
-                    <div className="onboarding-grid onboarding-grid-root">
+                    <div className="onboarding-grid module-launcher-grid onboarding-grid-root">
                       <div
-                        className="module-card premium-card"
+                        className="module-card premium-card module-launcher-card"
                         onClick={() => setActivePreproductionApp('folder-creator')}
                       >
                         <div className="module-icon"><FolderTree size={20} strokeWidth={1.5} /></div>
@@ -1659,18 +1702,7 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className="module-card premium-card"
-                        onClick={() => setActivePreproductionApp('starter-setup')}
-                      >
-                        <div className="module-icon"><ClipboardCheck size={20} strokeWidth={1.5} /></div>
-                        <div className="module-info">
-                          <h3>Starter Setup</h3>
-                          <p>Get a safe technical starting setup sheet for your shoot instantly.</p>
-                          <span className="module-action">Open App <ArrowRight size={14} /></span>
-                        </div>
-                      </div>
-                      <div
-                        className="module-card premium-card"
+                        className="module-card premium-card module-launcher-card"
                         onClick={() => setActivePreproductionApp('shot-list')}
                       >
                         <div className="module-icon"><ClipboardCheck size={20} strokeWidth={1.5} /></div>
@@ -1681,7 +1713,18 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className="module-card premium-card"
+                        className="module-card premium-card module-launcher-card"
+                        onClick={() => setActivePreproductionApp('starter-setup')}
+                      >
+                        <div className="module-icon"><ClipboardCheck size={20} strokeWidth={1.5} /></div>
+                        <div className="module-info">
+                          <h3>Starter Setup</h3>
+                          <p>Get a safe technical starting setup sheet for your shoot instantly.</p>
+                          <span className="module-action">Open App <ArrowRight size={14} /></span>
+                        </div>
+                      </div>
+                      <div
+                        className="module-card premium-card module-launcher-card"
                         onClick={() => {
                           if (projectStates.pre.projectId) setActivePreproductionApp('shot-planner');
                           else handleLoadFootage('shot-planner');
@@ -1695,7 +1738,7 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className="module-card premium-card"
+                        className="module-card premium-card module-launcher-card"
                         onClick={() => {
                           if (projectStates.pre.projectId) setActivePreproductionApp('mosaic-builder');
                           else handleLoadFootage('mosaic-builder');
@@ -1709,7 +1752,7 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className="module-card premium-card"
+                        className="module-card premium-card module-launcher-card"
                         onClick={() => setActivePreproductionApp('duplicate-finder')}
                       >
                         <div className="module-icon"><FileSearch size={20} strokeWidth={1.5} /></div>
@@ -1878,14 +1921,14 @@ function AppContent() {
                 </div>
               ) : (
                 <div className="scrollable-view">
-                  <div className="onboarding-container postproduction-launcher">
-                    <div className="onboarding-header">
-                      <h1>Media Workspace</h1>
+                  <div className="onboarding-container module-launcher postproduction-launcher">
+                    <div className="onboarding-header module-launcher-header">
+                      <h1>Post-production</h1>
                       <p>Post-production suite for media verification and organization.</p>
                     </div>
-                    <div className="onboarding-grid workspace-apps-grid postproduction-apps-grid">
+                    <div className="onboarding-grid module-launcher-grid workspace-apps-grid postproduction-apps-grid">
                       <div
-                        className="module-card premium-card"
+                        className="module-card premium-card module-launcher-card"
                         onClick={() => setActiveMediaWorkspaceApp('safe-copy')}
                       >
                         <div className="module-icon"><ShieldCheck size={20} strokeWidth={1.5} /></div>
@@ -1896,7 +1939,7 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className="module-card premium-card"
+                        className="module-card premium-card module-launcher-card"
                         onClick={() => {
                           if (projectId) setActiveMediaWorkspaceApp('clip-review');
                           else handleLoadFootage("clip-review");
@@ -1910,7 +1953,7 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className="module-card premium-card"
+                        className="module-card premium-card module-launcher-card"
                         onClick={() => {
                           setActiveMediaWorkspaceApp('review-core');
                         }}
@@ -1923,7 +1966,7 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className={`module-card premium-card ${!projectId ? "disabled" : ""}`}
+                        className={`module-card premium-card module-launcher-card ${!projectId ? "disabled" : ""}`}
                         onClick={() => {
                           if (projectId) setActiveMediaWorkspaceApp('scene-blocks');
                         }}
@@ -1936,7 +1979,7 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className={`module-card premium-card ${!projectId ? "disabled" : ""}`}
+                        className={`module-card premium-card module-launcher-card ${!projectId ? "disabled" : ""}`}
                         onClick={() => { if (projectId) setShowExportPanel(true); }}
                       >
                         <div className="module-icon"><FileDown size={20} strokeWidth={1.5} /></div>
@@ -1947,11 +1990,6 @@ function AppContent() {
                         </div>
                       </div>
                     </div>
-                    {inWorkspaceLauncher && !projectId && (
-                      <div className="workspace-launcher-hint">
-                        <strong>Review Core</strong> can now run independently. <strong>Scene Blocks</strong> and <strong>Delivery</strong> still require an opened workspace.
-                      </div>
-                    )}
                   </div>
                 </div>
               )
@@ -2143,8 +2181,252 @@ function AppContent() {
               <span>Back</span>
             </button>
           )}
+
+          {activeMicroApp === "crop-factor" && (
+            <MicroAppModal title="Crop Factor Calculator" onClose={() => setActiveMicroApp(null)}>
+              <CropFactorCalculator />
+            </MicroAppModal>
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+// Width/height values below come from official manufacturer specification pages.
+const SENSOR_PRESETS = {
+  video: [
+    {
+      brand: 'ARRI',
+      models: [
+        { label: 'ALEXA 35', sensor: 'Super 35', width: 27.99, height: 19.22 },
+      ],
+    },
+    {
+      brand: 'RED',
+      models: [
+        { label: 'V-RAPTOR 8K VV', sensor: 'Vista Vision', width: 40.96, height: 21.6 },
+      ],
+    },
+    {
+      brand: 'Canon',
+      models: [
+        { label: 'C70', sensor: 'Super 35', width: 26.2, height: 13.8 },
+      ],
+    },
+    {
+      brand: 'Blackmagic',
+      models: [
+        { label: 'Pocket 4K', sensor: 'Micro Four Thirds', width: 18.96, height: 10 },
+        { label: 'Pocket 6K', sensor: 'Super 35', width: 23.1, height: 12.99 },
+        { label: 'Cinema 6K FF', sensor: 'Full Frame', width: 36, height: 24 },
+      ],
+    },
+  ],
+  photo: [
+    {
+      brand: 'Nikon',
+      models: [
+        { label: 'Z8', sensor: 'Full Frame', width: 35.9, height: 23.9 },
+      ],
+    },
+    {
+      brand: 'Fujifilm',
+      models: [
+        { label: 'X-T5', sensor: 'APS-C', width: 23.5, height: 15.7 },
+        { label: 'GFX100S', sensor: 'Medium Format', width: 43.8, height: 32.9 },
+      ],
+    },
+    {
+      brand: 'Panasonic',
+      models: [
+        { label: 'GH7', sensor: 'Micro Four Thirds', width: 17.3, height: 13.0 },
+      ],
+    },
+  ],
+} satisfies Record<"video" | "photo", Array<{ brand: string; models: Array<{ label: string; sensor: string; width: number; height: number }> }>>;
+
+const COMMON_FOCALS = [8, 10, 12, 14, 16, 18, 24, 35, 50, 85, 135, 200];
+const COMMON_APERTURES = [1.4, 2, 2.8, 4, 5.6, 8, 11];
+
+function MicroAppModal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="microapp-backdrop" onClick={onClose}>
+      <div className="microapp-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="microapp-modal-header">
+          <div className="microapp-modal-heading">
+            <span className="microapp-modal-eyebrow">Others</span>
+            <h2>{title}</h2>
+          </div>
+          <button type="button" className="microapp-close" onClick={onClose} aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function CropFactorCalculator() {
+  const [sensorMode, setSensorMode] = useState<"video" | "photo">("video");
+  const [sensorSize, setSensorSize] = useState(String(SENSOR_PRESETS.video[0].models[0].width));
+  const [focalLength, setFocalLength] = useState("50");
+  const [aperture, setAperture] = useState("2.8");
+
+  const activeSensorPresets = SENSOR_PRESETS[sensorMode];
+
+  const sensor = Number(sensorSize) || 0;
+  const focal = Number(focalLength) || 0;
+  const fStop = Number(aperture) || 0;
+
+  const cropFactor = sensor > 0 ? 36 / sensor : 0;
+  const equivalentFocalLength = focal > 0 ? focal * cropFactor : 0;
+  const equivalentAperture = fStop > 0 ? fStop * cropFactor : 0;
+
+  return (
+    <div className="crop-factor-app">
+      <div className="crop-factor-mode-toggle" role="tablist" aria-label="Sensor preset type">
+        <button
+          type="button"
+          className={`crop-factor-mode-pill ${sensorMode === "video" ? "active" : ""}`}
+          onClick={() => {
+            setSensorMode("video");
+            setSensorSize(String(SENSOR_PRESETS.video[0].models[0].width));
+          }}
+        >
+          Video
+        </button>
+        <button
+          type="button"
+          className={`crop-factor-mode-pill ${sensorMode === "photo" ? "active" : ""}`}
+          onClick={() => {
+            setSensorMode("photo");
+            setSensorSize(String(SENSOR_PRESETS.photo[0].models[0].width));
+          }}
+        >
+          Photo
+        </button>
+      </div>
+
+      <div className="crop-factor-inputs">
+        <div className="crop-factor-field">
+          <label className="crop-factor-label">
+            <Ruler size={14} />
+            <span>Sensor Size mm</span>
+          </label>
+          <input
+            type="number"
+            min="1"
+            step="0.01"
+            value={sensorSize}
+            onChange={(event) => setSensorSize(event.target.value)}
+            className="crop-factor-input"
+            placeholder="23.5"
+          />
+          <div className="crop-factor-sensor-groups">
+            {activeSensorPresets.map((group) => (
+              <div key={group.brand} className="crop-factor-sensor-group">
+                <div className="crop-factor-group-label">{group.brand}</div>
+                <div className="crop-factor-chip-row">
+                  {group.models.map((preset) => (
+                    <button
+                      key={`${group.brand}-${preset.label}`}
+                      type="button"
+                      className={`crop-factor-chip ${Number(sensorSize) === preset.width ? "active" : ""}`}
+                      onClick={() => setSensorSize(String(preset.width))}
+                    >
+                      <span>{preset.label}</span>
+                      <small>{preset.sensor}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="crop-factor-field">
+          <label className="crop-factor-label">
+            <Camera size={14} />
+            <span>Focal Length (mm)</span>
+          </label>
+          <input
+            type="number"
+            min="1"
+            step="0.1"
+            value={focalLength}
+            onChange={(event) => setFocalLength(event.target.value)}
+            className="crop-factor-input"
+            placeholder="50"
+          />
+          <div className="crop-factor-inline-note">Common</div>
+          <div className="crop-factor-chip-row compact">
+            {COMMON_FOCALS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`crop-factor-chip ${Number(focalLength) === value ? "active" : ""}`}
+                onClick={() => setFocalLength(String(value))}
+              >
+                {value}mm
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="crop-factor-field">
+          <label className="crop-factor-label">
+            <CircleDot size={14} />
+            <span>Aperture (f/)</span>
+          </label>
+          <input
+            type="number"
+            min="0.7"
+            step="0.1"
+            value={aperture}
+            onChange={(event) => setAperture(event.target.value)}
+            className="crop-factor-input"
+            placeholder="2.8"
+          />
+          <div className="crop-factor-inline-note">Common</div>
+          <div className="crop-factor-chip-row compact">
+            {COMMON_APERTURES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`crop-factor-chip ${Number(aperture) === value ? "active" : ""}`}
+                onClick={() => setAperture(String(value))}
+              >
+                f/{value}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="crop-factor-results">
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Crop Factor</span>
+          <strong>{cropFactor ? `${cropFactor.toFixed(2)}x` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Equivalent Focal Length</span>
+          <strong>{equivalentFocalLength ? `${equivalentFocalLength.toFixed(1)} mm` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Equivalent Aperture</span>
+          <strong>{equivalentAperture ? `f/${equivalentAperture.toFixed(1)}` : "—"}</strong>
+        </div>
+      </div>
     </div>
   );
 }

@@ -88,13 +88,13 @@ export function ProductionHome({
 
   return (
     <div className="scrollable-view">
-      <div className="onboarding-container production-onboarding">
-        <div className="onboarding-header production-onboarding-header">
-          <h1 className="production-onboarding-title">Camera prep and set discipline</h1>
-          <p>Lock the look and keep every camera aligned.</p>
+      <div className="onboarding-container production-onboarding module-launcher production-launcher">
+        <div className="onboarding-header production-onboarding-header module-launcher-header">
+          <h1 className="production-onboarding-title">Production</h1>
+          <p>Lock the look, align the camera package, and keep the set disciplined.</p>
         </div>
 
-        <div className="production-apps-grid">
+        <div className="production-apps-grid module-launcher-grid">
           <ProjectsCard
             activeProject={activeProject}
             projects={recentProjects}
@@ -196,7 +196,7 @@ function ProjectsCard({
   onDeleteProject: (project: ProductionProject) => void;
 }) {
   return (
-    <div className="module-card premium-card production-project-card" style={projectsCardStyle}>
+    <div className="module-card premium-card module-launcher-card production-project-card" style={projectsCardStyle}>
       <div className="module-icon">
         <BriefcaseBusiness size={22} strokeWidth={1.35} />
       </div>
@@ -241,7 +241,7 @@ function ProjectsCard({
           </div>
         )}
       </div>
-      <button type="button" className="btn btn-secondary btn-sm" style={createProjectButtonStyle} onClick={onCreateProject}>
+      <button type="button" className="module-inline-button" style={createProjectButtonStyle} onClick={onCreateProject}>
         <Plus size={14} /> Create project
       </button>
     </div>
@@ -263,7 +263,7 @@ function ModuleCard({
 }) {
   return (
     <div
-      className={`module-card premium-card ${enabled ? "" : "disabled"}`}
+      className={`module-card premium-card module-launcher-card ${enabled ? "" : "disabled"}`}
       onClick={enabled ? onClick : undefined}
       style={moduleCardStyle}
     >
@@ -286,14 +286,17 @@ const moduleCardStyle: React.CSSProperties = {
 
 const projectsCardStyle: React.CSSProperties = {
   minHeight: 214,
-  display: "grid",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
   gap: 14,
-  alignContent: "start",
 };
 
 const projectsInfoStyle: React.CSSProperties = {
   display: "grid",
   gap: 6,
+  justifyItems: "center",
+  textAlign: "center",
 };
 
 const projectInputStyle: React.CSSProperties = {
@@ -309,6 +312,7 @@ const projectInputStyle: React.CSSProperties = {
 const projectListWrapStyle: React.CSSProperties = {
   display: "grid",
   gap: 8,
+  width: "100%",
 };
 const projectListTitleStyle: React.CSSProperties = {
   fontSize: "0.68rem",
@@ -413,6 +417,7 @@ const projectEmptyStyle: React.CSSProperties = {
 
 const createProjectButtonStyle: React.CSSProperties = {
   marginTop: "auto",
+  alignSelf: "center",
 };
 
 const modalBackdropStyle: React.CSSProperties = {

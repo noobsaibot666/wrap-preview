@@ -37,6 +37,7 @@ import {
   SHOT_LIST_STATUS_OPTIONS,
   SHOT_LIST_SUMMARY_ICONS,
   type ShotListIconName,
+  type ShotListSectionKey,
 } from "../../modules/PreProduction/ShotListConfig";
 
 interface ShotListProps {
@@ -79,6 +80,9 @@ const CAMERA_SETUP_DELIMITER = "__SLCAM__";
 
 const SHOT_LIST_IMPORT_STORAGE_KEY = "shot-list-imported-inventory";
 const SHOT_LIST_WRAP_EXTENSION = "wrap";
+const SHOT_LIST_KNOWN_SECTION_KEYS: ReadonlySet<ShotListSectionKey> = new Set(
+  SHOT_LIST_SECTION_PRESETS.map((preset) => preset.key),
+);
 
 function createEmptyCameraSetup(): CameraSetup {
   return {
@@ -95,6 +99,14 @@ function createEmptyCameraSetup(): CameraSetup {
 
 function uniqueSuggestions(values: Array<string | null | undefined>) {
   return [...new Set(values.map((value) => (value || "").trim()).filter(Boolean))];
+}
+
+function getVisibleSuggestions(suggestions: string[], currentValue: string, limit?: number) {
+  const normalizedCurrent = currentValue.trim().toLowerCase();
+  const filtered = normalizedCurrent
+    ? suggestions.filter((suggestion) => suggestion.trim().toLowerCase() !== normalizedCurrent)
+    : suggestions;
+  return typeof limit === "number" ? filtered.slice(0, limit) : filtered;
 }
 
 function parseCameraSetups(value: string) {
@@ -225,6 +237,10 @@ function buildDefaultItem(section: ShotListEquipmentSection, count: number): Sho
     capacity_value: null,
     capacity_unit: "GB",
   };
+}
+
+function isKnownSectionKey(value: string): value is ShotListSectionKey {
+  return SHOT_LIST_KNOWN_SECTION_KEYS.has(value as ShotListSectionKey);
 }
 
 function sortByOrder<T extends { sort_order: number }>(items: T[]) {
@@ -416,13 +432,16 @@ export default function ShotList({ appVersion }: ShotListProps) {
   const [saveState, setSaveState] = useState<"saved" | "saving" | "idle" | "error">("saved");
   const [exporting, setExporting] = useState<"pdf" | "image" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const [newListMenuOpen, setNewListMenuOpen] = useState(false);
   const [sectionPickerOpen, setSectionPickerOpen] = useState(false);
   const [collapsedRowIds, setCollapsedRowIds] = useState<Set<string>>(new Set());
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<Set<string>>(new Set());
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(new Set());
   const saveTimersRef = useRef<Record<string, number>>({});
   const actionsMenuRef = useRef<HTMLDivElement>(null);
+  const newListMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!actionsMenuOpen) return;
@@ -434,6 +453,17 @@ export default function ShotList({ appVersion }: ShotListProps) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [actionsMenuOpen]);
+
+  useEffect(() => {
+    if (!newListMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (newListMenuRef.current && !newListMenuRef.current.contains(event.target as Node)) {
+        setNewListMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [newListMenuOpen]);
 
   useEffect(() => {
     let mounted = true;
@@ -499,6 +529,27 @@ export default function ShotList({ appVersion }: ShotListProps) {
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
 
+  useEffect(() => {
+    const handleWrapperMouseDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const wrapper = target.closest(
+        ".shot-list-row-grid label, .shot-list-equipment-item-grid label, .shot-list-equipment-title-fields label",
+      );
+      if (!wrapper) return;
+      if (target.closest("input, textarea, select, button, option")) return;
+      event.preventDefault();
+    };
+    document.addEventListener("mousedown", handleWrapperMouseDown, true);
+    return () => document.removeEventListener("mousedown", handleWrapperMouseDown, true);
+  }, []);
+
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = window.setTimeout(() => setSuccessMessage(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [successMessage]);
+
   const sectionsWithItems = useMemo(() => {
     if (!bundle) return [];
     return bundle.sections
@@ -514,6 +565,16 @@ export default function ShotList({ appVersion }: ShotListProps) {
 
   const cameraCount = useMemo(
     () => (bundle?.items || []).filter((item) => item.item_type === "camera").length,
+    [bundle],
+  );
+
+  const readyShotCount = useMemo(
+    () => (bundle?.rows || []).filter((row) => row.status === "ready" || row.status === "done").length,
+    [bundle],
+  );
+
+  const soundCount = useMemo(
+    () => (bundle?.items || []).filter((item) => item.item_type === "sound").length,
     [bundle],
   );
 
@@ -682,14 +743,104 @@ export default function ShotList({ appVersion }: ShotListProps) {
     if (!selected || Array.isArray(selected)) return;
     try {
       const content = await readTextFile(selected);
-      const entries = parseMarkdownEquipmentInventory(content);
+      const parsedEntries = parseMarkdownEquipmentInventory(content);
+      if (parsedEntries.length === 0) {
+        throw new Error("No equipment items were found in the selected markdown file.");
+      }
+
+      const unusualEntries = parsedEntries.filter((entry) => entry.category === "misc");
+      let entries = parsedEntries;
+      if (unusualEntries.length > 0) {
+        const preview = unusualEntries.slice(0, 6).map((entry) => `• ${entry.name}`).join("\n");
+        const includeUnusual = window.confirm(
+          `Some imported lines do not match a known equipment category and would be added to Misc.\n\n${preview}${unusualEntries.length > 6 ? `\n• +${unusualEntries.length - 6} more` : ""}\n\nDo you want to include them?`,
+        );
+        if (!includeUnusual) {
+          entries = parsedEntries.filter((entry) => entry.category !== "misc");
+        }
+      }
+
+      if (entries.length === 0) {
+        throw new Error("The imported file only contained unrecognized items and none were added.");
+      }
+
       const nextInventory: ImportedInventory = {
         entries,
         sourceName: selected.split("/").pop() || "Imported markdown",
       };
+      clearPendingSaves();
+      const nextSections = [...bundle.sections];
+      const nextItems = [...bundle.items];
+
+      const sectionByKey = new Map<string, ShotListEquipmentSection>();
+      for (const section of nextSections) {
+        if (section.section_key && isKnownSectionKey(section.section_key)) {
+          sectionByKey.set(section.section_key, section);
+        }
+      }
+
+      const itemsBySection = new Map<string, ShotListEquipmentItem[]>();
+      for (const item of nextItems) {
+        const current = itemsBySection.get(item.section_id) || [];
+        current.push(item);
+        itemsBySection.set(item.section_id, current);
+      }
+
+      let createdCount = 0;
+      for (const entry of entries) {
+        const category = isKnownSectionKey(entry.category) ? entry.category : "misc";
+        let section = sectionByKey.get(category);
+        if (!section) {
+          section = {
+            ...buildDefaultSection(bundle.project.id, category),
+            sort_order: nextSections.length + 1,
+          };
+          nextSections.push(section);
+          sectionByKey.set(category, section);
+          itemsBySection.set(section.id, []);
+        }
+
+        const existingItems = itemsBySection.get(section.id) || [];
+        const duplicate = existingItems.some((item) => item.item_name.trim().toLowerCase() === entry.name.trim().toLowerCase());
+        if (duplicate) continue;
+
+        const itemType = getDefaultItemTypeForSection(section.section_key);
+        const nextItem: ShotListEquipmentItem = {
+          id: crypto.randomUUID(),
+          section_id: section.id,
+          sort_order: existingItems.length + 1,
+          item_name: entry.name,
+          item_type: itemType,
+          icon_name: getDefaultIconNameForSection(section.section_key),
+          notes: "",
+          camera_label: itemType === "camera" ? entry.name : null,
+          media_type: itemType === "camera" || itemType === "media" ? "SSD" : null,
+          capacity_value: null,
+          capacity_unit: "GB",
+        };
+        existingItems.push(nextItem);
+        itemsBySection.set(section.id, existingItems);
+        nextItems.push(nextItem);
+        createdCount += 1;
+      }
+
+      const nextBundle: ShotListBundle = normalizeShotListBundle({
+        ...bundle,
+        sections: nextSections,
+        items: nextItems,
+      });
+      setBundle(nextBundle);
       persistImportedInventory(bundle.project.id, nextInventory);
+      await invokeGuarded("shot_list_replace_bundle", { bundle: nextBundle });
+      setError(null);
+      setSuccessMessage(
+        createdCount > 0
+          ? `Imported ${createdCount} equipment ${createdCount === 1 ? "item" : "items"} from ${nextInventory.sourceName || "markdown list"}.`
+          : `Imported ${nextInventory.sourceName || "markdown list"}, but all listed items already exist in the equipment list.`,
+      );
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : "Failed to import equipment markdown.");
+      setSuccessMessage(null);
     }
   };
 
@@ -925,6 +1076,55 @@ export default function ShotList({ appVersion }: ShotListProps) {
     setSaveState("saved");
   };
 
+  const resetChecklist = async () => {
+    if (!bundle) return;
+    if (!window.confirm("Create a new checklist? This will clear all current shot rows.")) return;
+    clearPendingSaves();
+    const nextBundle: ShotListBundle = {
+      ...bundle,
+      rows: [],
+    };
+    setBundle(nextBundle);
+    setCollapsedRowIds(new Set());
+    setActiveOptionField(null);
+    setSaveState("saving");
+    try {
+      await invokeGuarded("shot_list_replace_bundle", { bundle: normalizeShotListBundle(nextBundle) });
+      setSaveState("saved");
+      setError(null);
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : "Failed to create a new checklist.");
+      setSaveState("error");
+    }
+  };
+
+  const resetEquipmentList = async () => {
+    if (!bundle) return;
+    if (!window.confirm("Create a new equipment list? This will clear all current equipment sections, items, and imported list options.")) return;
+    clearPendingSaves();
+    const nextBundle: ShotListBundle = {
+      ...bundle,
+      sections: [],
+      items: [],
+    };
+    const emptyInventory: ImportedInventory = { entries: [], sourceName: null };
+    setBundle(nextBundle);
+    setCollapsedSectionIds(new Set());
+    setCollapsedItemIds(new Set());
+    setSectionPickerOpen(false);
+    setActiveOptionField(null);
+    persistImportedInventory(bundle.project.id, emptyInventory);
+    setSaveState("saving");
+    try {
+      await invokeGuarded("shot_list_replace_bundle", { bundle: normalizeShotListBundle(nextBundle) });
+      setSaveState("saved");
+      setError(null);
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : "Failed to create a new equipment list.");
+      setSaveState("error");
+    }
+  };
+
   const handleExport = async (kind: "pdf" | "image") => {
     if (!bundle) return;
     setExporting(kind);
@@ -1015,8 +1215,46 @@ export default function ShotList({ appVersion }: ShotListProps) {
           <div className="shot-list-actions">
             <span className={`shot-list-save-badge ${saveState}`}>
               <span className="shot-list-save-dot" />
-              <span>{saveState === "error" ? "Save issue" : "Saved"}</span>
             </span>
+            <div className={`shot-list-actions-dropdown ${newListMenuOpen ? "is-open" : ""}`} ref={newListMenuRef}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setActionsMenuOpen(false);
+                  setNewListMenuOpen(!newListMenuOpen);
+                }}
+                disabled={!!exporting}
+              >
+                <Plus size={14} />
+                <span>New</span>
+                <ChevronDown size={14} className={`dropdown-arrow ${newListMenuOpen ? "is-open" : ""}`} />
+              </button>
+              {newListMenuOpen && (
+                <div className="shot-list-actions-menu">
+                  <button
+                    className="shot-list-action-item"
+                    onClick={() => {
+                      setNewListMenuOpen(false);
+                      void resetChecklist();
+                    }}
+                  >
+                    <Plus size={14} />
+                    <span>New checklist</span>
+                  </button>
+                  <button
+                    className="shot-list-action-item"
+                    onClick={() => {
+                      setNewListMenuOpen(false);
+                      void resetEquipmentList();
+                    }}
+                  >
+                    <Plus size={14} />
+                    <span>New equip list</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleOpenWrap()} disabled={!!exporting}>
               <FolderOpen size={14} />
               <span>Open</span>
@@ -1085,21 +1323,29 @@ export default function ShotList({ appVersion }: ShotListProps) {
 
         <div className="shot-list-summary-grid">
           {[
-            { label: "Shots", value: bundle.rows.length, Icon: SHOT_LIST_SUMMARY_ICONS.rows, tone: "shots" },
-            { label: "Sections", value: bundle.sections.length, Icon: SHOT_LIST_SUMMARY_ICONS.sections, tone: "gear" },
-            { label: "Gear", value: bundle.items.length, Icon: SHOT_LIST_SUMMARY_ICONS.items, tone: "gear" },
-            { label: "Cameras", value: cameraCount, Icon: SHOT_LIST_SUMMARY_ICONS.cameras, tone: "gear" },
-          ].map(({ label, value, Icon, tone }) => (
+            { label: "Shots", value: bundle.rows.length, Icon: SHOT_LIST_SUMMARY_ICONS.rows, tone: "shots", clue: "Rows planned for the day." },
+            { label: "Ready", value: readyShotCount, Icon: SHOT_LIST_SUMMARY_ICONS.rows, tone: "shots", clue: "Shots marked ready or done." },
+            { label: "Sections", value: bundle.sections.length, Icon: SHOT_LIST_SUMMARY_ICONS.sections, tone: "gear", clue: "Gear groups in the list." },
+            { label: "Gear", value: bundle.items.length, Icon: SHOT_LIST_SUMMARY_ICONS.items, tone: "gear", clue: "Total equipment items logged." },
+            { label: "Cameras", value: cameraCount, Icon: SHOT_LIST_SUMMARY_ICONS.cameras, tone: "gear", clue: "Camera bodies available." },
+            { label: "Sound", value: soundCount, Icon: SHOT_LIST_SUMMARY_ICONS.sound, tone: "gear", clue: "Sound items available." },
+          ].map(({ label, value, Icon, tone, clue }) => (
             <div key={label} className={`shot-list-summary-card ${tone}`}>
               <div className="shot-list-summary-icon"><Icon size={16} /></div>
-              <div>
-                <span className="shot-list-summary-label">{label}</span>
+              <div className="shot-list-summary-copy">
+                <span className="shot-list-summary-label-row">
+                  <span className="shot-list-summary-label">{label}</span>
+                  <span className="shot-list-inline-hint-icon shot-list-tooltip-anchor shot-list-summary-hint" data-tooltip={clue}>
+                    <HelpCircle size={11} />
+                  </span>
+                </span>
                 <strong className="shot-list-summary-value">{value}</strong>
               </div>
             </div>
           ))}
         </div>
         {error && <div className="error-banner"><strong>Shot List</strong> {error}</div>}
+        {successMessage && <div className="info-banner shot-list-success-banner"><strong>Shot List</strong> {successMessage}</div>}
       </div>
 
       <div className="shot-list-body">
@@ -1121,16 +1367,18 @@ export default function ShotList({ appVersion }: ShotListProps) {
           <div className="shot-list-row-stack">
             {bundle.rows.length === 0 && (
               <div className="shot-list-empty-state">
-                <p>Start with the essential shots for the day. Keep it minimal and readable.</p>
-                <div className="shot-list-action-with-hint">
-                  <button type="button" className="btn btn-secondary btn-sm shot-list-hinted-button" onClick={() => void addRow()}>
-                    <Plus size={14} />
-                    <span>Create first shot</span>
-                    <span className="shot-list-inline-hint-icon shot-list-tooltip-anchor shot-list-button-corner-hint" data-tooltip="Use this first, then keep building with Add Shot.">
-                      <HelpCircle size={12} />
-                    </span>
-                  </button>
+                <div className="shot-list-empty-state-topline">
+                  <div className="shot-list-action-with-hint">
+                    <button type="button" className="btn btn-secondary btn-sm shot-list-hinted-button shot-list-empty-primary-action" onClick={() => void addRow()}>
+                      <Plus size={14} />
+                      <span>Create first shot</span>
+                      <span className="shot-list-inline-hint-icon shot-list-tooltip-anchor shot-list-button-corner-hint" data-tooltip="Use this first, then keep building with Add Shot.">
+                        <HelpCircle size={12} />
+                      </span>
+                    </button>
+                  </div>
                 </div>
+                <p>Start with the essential shots for the day. Keep it minimal and readable.</p>
               </div>
             )}
             {bundle.rows.map((row, index) => {
@@ -1225,7 +1473,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                         />
                         <div className="shot-list-field-options">
                           <div className="shot-list-suggestion-pills">
-                            {shotTypeSuggestions.map((suggestion) => (
+                            {getVisibleSuggestions(shotTypeSuggestions, row.shot_type).map((suggestion) => (
                               <button
                                 key={`${row.id}-shot_type-${suggestion}`}
                                 type="button"
@@ -1289,7 +1537,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                         {audioSuggestions.length > 0 && (
                           <div className="shot-list-field-options">
                             <div className="shot-list-suggestion-pills">
-                              {audioSuggestions.slice(0, 5).map((suggestion) => (
+                              {getVisibleSuggestions(audioSuggestions, row.audio_notes, 5).map((suggestion) => (
                                 <button
                                   key={`${row.id}-audio-${suggestion}`}
                                   type="button"
@@ -1323,7 +1571,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                         {lightingSuggestions.length > 0 && (
                           <div className="shot-list-field-options">
                             <div className="shot-list-suggestion-pills">
-                              {lightingSuggestions.slice(0, 5).map((suggestion) => (
+                              {getVisibleSuggestions(lightingSuggestions, row.lighting_notes, 5).map((suggestion) => (
                                 <button
                                   key={`${row.id}-lighting-${suggestion}`}
                                   type="button"
@@ -1366,7 +1614,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                         {propsSuggestions.length > 0 && (
                           <div className="shot-list-field-options">
                             <div className="shot-list-suggestion-pills">
-                              {propsSuggestions.slice(0, 5).map((suggestion) => (
+                              {getVisibleSuggestions(propsSuggestions, row.props_details, 5).map((suggestion) => (
                                 <button
                                   key={`${row.id}-props-${suggestion}`}
                                   type="button"
@@ -1390,7 +1638,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                         ))}
                       </select>
                     </label>
-                    <label className="shot-list-row-wide">
+                    <div className="shot-list-row-wide shot-list-field-group">
                       <span className="shot-list-field-heading">
                         <span>Camera setups</span>
                         <span className="shot-list-field-clue shot-list-tooltip-anchor" data-tooltip="Add multiple camera positions for the same shot. Use one line per camera setup.">
@@ -1425,7 +1673,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                 {availableCameraSuggestions.length > 0 && (
                                   <div className="shot-list-field-options">
                                     <div className="shot-list-suggestion-pills">
-                                      {availableCameraSuggestions.map((suggestion) => (
+                                      {getVisibleSuggestions(availableCameraSuggestions, setup.camera).map((suggestion) => (
                                         <button
                                           key={`${row.id}-${setupIndex}-camera-${suggestion}`}
                                           type="button"
@@ -1464,7 +1712,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                 {lensSuggestions.length > 0 && (
                                   <div className="shot-list-field-options">
                                     <div className="shot-list-suggestion-pills">
-                                      {lensSuggestions.slice(0, 6).map((suggestion) => (
+                                      {getVisibleSuggestions(lensSuggestions, setup.lens, 6).map((suggestion) => (
                                         <button
                                           key={`${row.id}-${setupIndex}-lens-${suggestion}`}
                                           type="button"
@@ -1503,7 +1751,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                 {accessorySuggestions.length > 0 && (
                                   <div className="shot-list-field-options">
                                     <div className="shot-list-suggestion-pills">
-                                      {accessorySuggestions.slice(0, 6).map((suggestion) => (
+                                      {getVisibleSuggestions(accessorySuggestions, setup.accessory, 6).map((suggestion) => (
                                         <button
                                           key={`${row.id}-${setupIndex}-accessory-${suggestion}`}
                                           type="button"
@@ -1556,7 +1804,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   {(importedSuggestionsByCategory.get("media") || []).length > 0 && (
                                     <div className="shot-list-field-options">
                                       <div className="shot-list-suggestion-pills">
-                                        {(importedSuggestionsByCategory.get("media") || []).slice(0, 6).map((suggestion) => (
+                                        {getVisibleSuggestions(importedSuggestionsByCategory.get("media") || [], setup.media, 6).map((suggestion) => (
                                           <button
                                             key={`${row.id}-${setupIndex}-media-${suggestion}`}
                                             type="button"
@@ -1595,7 +1843,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   {supportSuggestions.length > 0 && (
                                     <div className="shot-list-field-options">
                                       <div className="shot-list-suggestion-pills">
-                                        {supportSuggestions.slice(0, 6).map((suggestion) => (
+                                        {getVisibleSuggestions(supportSuggestions, setup.support, 6).map((suggestion) => (
                                           <button
                                             key={`${row.id}-${setupIndex}-support-${suggestion}`}
                                             type="button"
@@ -1637,7 +1885,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   {movementSuggestions.length > 0 && (
                                     <div className="shot-list-field-options">
                                       <div className="shot-list-suggestion-pills">
-                                        {movementSuggestions.slice(0, 6).map((suggestion) => (
+                                        {getVisibleSuggestions(movementSuggestions, setup.movement, 6).map((suggestion) => (
                                           <button
                                             key={`${row.id}-${setupIndex}-movement-${suggestion}`}
                                             type="button"
@@ -1679,7 +1927,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   {powerSuggestions.length > 0 && (
                                     <div className="shot-list-field-options">
                                       <div className="shot-list-suggestion-pills">
-                                        {powerSuggestions.slice(0, 6).map((suggestion) => (
+                                        {getVisibleSuggestions(powerSuggestions, setup.power, 6).map((suggestion) => (
                                           <button
                                             key={`${row.id}-${setupIndex}-power-${suggestion}`}
                                             type="button"
@@ -1718,7 +1966,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   {monitorSuggestions.length > 0 && (
                                     <div className="shot-list-field-options">
                                       <div className="shot-list-suggestion-pills">
-                                        {monitorSuggestions.slice(0, 6).map((suggestion) => (
+                                        {getVisibleSuggestions(monitorSuggestions, setup.monitor, 6).map((suggestion) => (
                                           <button
                                             key={`${row.id}-${setupIndex}-monitor-${suggestion}`}
                                             type="button"
@@ -1752,7 +2000,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                           <span>Add camera</span>
                         </button>
                       </div>
-                    </label>
+                    </div>
                     <label className="shot-list-row-wide">
                       <span>Notes</span>
                       <textarea value={row.notes} onFocus={selectFieldText} onChange={(event) => updateRow(row.id, { notes: event.target.value })} rows={2} />
@@ -1772,7 +2020,12 @@ export default function ShotList({ appVersion }: ShotListProps) {
         <section className="shot-list-equipment-column premium-card">
           <div className="shot-list-section-heading shot-list-equipment-heading">
             <div>
-              <h2>Visual gear sections</h2>
+              <h2>Gear list</h2>
+              {importedInventory.sourceName && (
+                <p className="shot-list-import-meta">
+                  Import loaded • {importedInventory.entries.length} options
+                </p>
+              )}
             </div>
             <div className="shot-list-section-actions">
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleImportMarkdown()}>
@@ -1781,7 +2034,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
               </button>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSectionPickerOpen((open) => !open)}>
                 <Plus size={14} />
-                <span>Add section</span>
+                <span>Add gear</span>
               </button>
             </div>
           </div>
