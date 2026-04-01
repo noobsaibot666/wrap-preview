@@ -365,13 +365,23 @@ pub struct ShotListRow {
     pub sort_order: i32,
     pub shot_number: String,
     pub capture_type: String,
-    pub scene_setup: String,
+    pub scene: String,
+    pub location: String,
+    pub timing: String,
+    pub shot_type: String,
     pub description: String,
     pub camera_lens: String,
-    pub movement: String,
-    pub location_time: String,
+    pub camera_movement: String,
+    pub audio_notes: String,
+    pub lighting_notes: String,
+    pub talent_subjects: String,
+    pub props_details: String,
     pub notes: String,
     pub status: String,
+    // Backward compatibility
+    pub scene_setup: String,
+    pub movement: String,
+    pub location_time: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -807,13 +817,22 @@ impl Database {
                     sort_order INTEGER NOT NULL DEFAULT 0,
                     shot_number TEXT NOT NULL DEFAULT '',
                     capture_type TEXT NOT NULL DEFAULT 'video',
-                    scene_setup TEXT NOT NULL DEFAULT '',
+                    scene TEXT NOT NULL DEFAULT '',
+                    location TEXT NOT NULL DEFAULT '',
+                    timing TEXT NOT NULL DEFAULT '',
+                    shot_type TEXT NOT NULL DEFAULT 'Medium',
                     description TEXT NOT NULL DEFAULT '',
                     camera_lens TEXT NOT NULL DEFAULT '',
-                    movement TEXT NOT NULL DEFAULT '',
-                    location_time TEXT NOT NULL DEFAULT '',
+                    camera_movement TEXT NOT NULL DEFAULT 'Static',
+                    audio_notes TEXT NOT NULL DEFAULT '',
+                    lighting_notes TEXT NOT NULL DEFAULT '',
+                    talent_subjects TEXT NOT NULL DEFAULT '',
+                    props_details TEXT NOT NULL DEFAULT '',
                     notes TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'planned',
+                    scene_setup TEXT NOT NULL DEFAULT '',
+                    movement TEXT NOT NULL DEFAULT '',
+                    location_time TEXT NOT NULL DEFAULT '',
                     FOREIGN KEY(project_id) REFERENCES shot_list_projects(id)
                 );
                 CREATE TABLE IF NOT EXISTS shot_list_equipment_sections (
@@ -847,6 +866,42 @@ impl Database {
                     ON shot_list_equipment_items(section_id, sort_order);
                 ",
             )?;
+
+            {
+                let mut stmt = conn.prepare("PRAGMA table_info(shot_list_rows)")?;
+                let columns: Vec<String> = stmt
+                    .query_map([], |row| row.get(1))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                if !columns.contains(&"scene".to_string()) {
+                    let _ = conn.execute("ALTER TABLE shot_list_rows ADD COLUMN scene TEXT NOT NULL DEFAULT ''", []);
+                }
+                if !columns.contains(&"location".to_string()) {
+                    let _ = conn.execute("ALTER TABLE shot_list_rows ADD COLUMN location TEXT NOT NULL DEFAULT ''", []);
+                }
+                if !columns.contains(&"timing".to_string()) {
+                    let _ = conn.execute("ALTER TABLE shot_list_rows ADD COLUMN timing TEXT NOT NULL DEFAULT ''", []);
+                }
+                if !columns.contains(&"shot_type".to_string()) {
+                    let _ = conn.execute("ALTER TABLE shot_list_rows ADD COLUMN shot_type TEXT NOT NULL DEFAULT 'Medium'", []);
+                }
+                if !columns.contains(&"camera_movement".to_string()) {
+                    let _ = conn.execute("ALTER TABLE shot_list_rows ADD COLUMN camera_movement TEXT NOT NULL DEFAULT 'Static'", []);
+                }
+                if !columns.contains(&"audio_notes".to_string()) {
+                    let _ = conn.execute("ALTER TABLE shot_list_rows ADD COLUMN audio_notes TEXT NOT NULL DEFAULT ''", []);
+                }
+                if !columns.contains(&"lighting_notes".to_string()) {
+                    let _ = conn.execute("ALTER TABLE shot_list_rows ADD COLUMN lighting_notes TEXT NOT NULL DEFAULT ''", []);
+                }
+                if !columns.contains(&"talent_subjects".to_string()) {
+                    let _ = conn.execute("ALTER TABLE shot_list_rows ADD COLUMN talent_subjects TEXT NOT NULL DEFAULT ''", []);
+                }
+                if !columns.contains(&"props_details".to_string()) {
+                    let _ = conn.execute("ALTER TABLE shot_list_rows ADD COLUMN props_details TEXT NOT NULL DEFAULT ''", []);
+                }
+            }
 
             let mut legacy_look_stmt =
                 conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='production_look_targets'")?;
@@ -2310,7 +2365,7 @@ impl Database {
     pub fn list_shot_list_rows(&self, project_id: &str) -> SqlResult<Vec<ShotListRow>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, project_id, sort_order, shot_number, capture_type, scene_setup, description, camera_lens, movement, location_time, notes, status
+            "SELECT id, project_id, sort_order, shot_number, capture_type, scene, location, timing, shot_type, description, camera_lens, camera_movement, audio_notes, lighting_notes, talent_subjects, props_details, notes, status, scene_setup, movement, location_time
              FROM shot_list_rows
              WHERE project_id = ?1
              ORDER BY sort_order ASC, id ASC",
@@ -2322,13 +2377,22 @@ impl Database {
                 sort_order: row.get(2)?,
                 shot_number: row.get(3)?,
                 capture_type: row.get(4)?,
-                scene_setup: row.get(5)?,
-                description: row.get(6)?,
-                camera_lens: row.get(7)?,
-                movement: row.get(8)?,
-                location_time: row.get(9)?,
-                notes: row.get(10)?,
-                status: row.get(11)?,
+                scene: row.get(5)?,
+                location: row.get(6)?,
+                timing: row.get(7)?,
+                shot_type: row.get(8)?,
+                description: row.get(9)?,
+                camera_lens: row.get(10)?,
+                camera_movement: row.get(11)?,
+                audio_notes: row.get(12)?,
+                lighting_notes: row.get(13)?,
+                talent_subjects: row.get(14)?,
+                props_details: row.get(15)?,
+                notes: row.get(16)?,
+                status: row.get(17)?,
+                scene_setup: row.get(18)?,
+                movement: row.get(19)?,
+                location_time: row.get(20)?,
             })
         })?;
         let mut results = Vec::new();
@@ -2342,21 +2406,30 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO shot_list_rows (
-                id, project_id, sort_order, shot_number, capture_type, scene_setup, description, camera_lens, movement, location_time, notes, status
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                id, project_id, sort_order, shot_number, capture_type, scene, location, timing, shot_type, description, camera_lens, camera_movement, audio_notes, lighting_notes, talent_subjects, props_details, notes, status, scene_setup, movement, location_time
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             params![
                 row.id,
                 row.project_id,
                 row.sort_order,
                 row.shot_number,
                 row.capture_type,
-                row.scene_setup,
+                row.scene,
+                row.location,
+                row.timing,
+                row.shot_type,
                 row.description,
                 row.camera_lens,
+                row.camera_movement,
+                row.audio_notes,
+                row.lighting_notes,
+                row.talent_subjects,
+                row.props_details,
+                row.notes,
+                row.status,
+                row.scene_setup,
                 row.movement,
                 row.location_time,
-                row.notes,
-                row.status
             ],
         )?;
         Ok(())

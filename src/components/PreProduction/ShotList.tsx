@@ -50,15 +50,12 @@ interface CameraSetup {
   accessory: string;
   media: string;
   support: string;
+  movement: string;
   power: string;
   monitor: string;
 }
 
-interface LocationTiming {
-  location: string;
-  start: string;
-  end: string;
-}
+
 
 interface InventoryEntry {
   name: string;
@@ -79,7 +76,7 @@ interface ShotListWrapDocument {
 }
 
 const CAMERA_SETUP_DELIMITER = "__SLCAM__";
-const LOCATION_TIME_DELIMITER = "__SLTIME__";
+
 const SHOT_LIST_IMPORT_STORAGE_KEY = "shot-list-imported-inventory";
 const SHOT_LIST_WRAP_EXTENSION = "wrap";
 
@@ -90,6 +87,7 @@ function createEmptyCameraSetup(): CameraSetup {
     accessory: "",
     media: "",
     support: "",
+    movement: "Static",
     power: "",
     monitor: "",
   };
@@ -106,8 +104,13 @@ function parseCameraSetups(value: string) {
     .filter(Boolean)
     .map((entry) => {
       if (entry.includes(CAMERA_SETUP_DELIMITER)) {
-        const [camera = "", lens = "", accessory = "", media = "", support = "", power = "", monitor = ""] = entry.split(CAMERA_SETUP_DELIMITER);
-        return { camera, lens, accessory, media, support, power, monitor };
+        const parts = entry.split(CAMERA_SETUP_DELIMITER);
+        if (parts.length >= 8) {
+          const [camera = "", lens = "", accessory = "", media = "", support = "", movement = "Static", power = "", monitor = ""] = parts;
+          return { camera, lens, accessory, media, support, movement, power, monitor };
+        }
+        const [camera = "", lens = "", accessory = "", media = "", support = "", power = "", monitor = ""] = parts;
+        return { camera, lens, accessory, media, support, movement: "Static", power, monitor };
       }
       return {
         camera: entry,
@@ -115,6 +118,7 @@ function parseCameraSetups(value: string) {
         accessory: "",
         media: "",
         support: "",
+        movement: "Static",
         power: "",
         monitor: "",
       };
@@ -124,26 +128,12 @@ function parseCameraSetups(value: string) {
 
 function serializeCameraSetups(values: CameraSetup[]) {
   return values
-    .map((entry) => [entry.camera, entry.lens, entry.accessory, entry.media, entry.support, entry.power, entry.monitor].map((part) => part.trim()).join(CAMERA_SETUP_DELIMITER))
+    .map((entry) => [entry.camera, entry.lens, entry.accessory, entry.media, entry.support, entry.movement, entry.power, entry.monitor].map((part) => part.trim()).join(CAMERA_SETUP_DELIMITER))
     .filter((entry) => entry.split(CAMERA_SETUP_DELIMITER).some((part) => part.trim()))
     .join("\n");
 }
 
-function parseLocationTiming(value: string): LocationTiming {
-  if (value.includes(LOCATION_TIME_DELIMITER)) {
-    const [location = "", start = "", end = ""] = value.split(LOCATION_TIME_DELIMITER);
-    return { location, start, end };
-  }
-  return {
-    location: value || "",
-    start: "",
-    end: "",
-  };
-}
 
-function serializeLocationTiming(value: LocationTiming) {
-  return [value.location, value.start, value.end].join(LOCATION_TIME_DELIMITER);
-}
 
 function inferInventoryCategory(value: string) {
   const normalized = value.toLowerCase();
@@ -189,13 +179,22 @@ function buildDefaultRow(projectId: string, sortOrder: number, shotNumber: strin
     sort_order: sortOrder,
     shot_number: shotNumber,
     capture_type: "video",
-    scene_setup: "",
+    scene: "",
+    location: "",
+    timing: "",
+    shot_type: "Medium",
     description: "",
     camera_lens: "",
-    movement: "",
-    location_time: "",
+    camera_movement: "Static",
+    audio_notes: "",
+    lighting_notes: "",
+    talent_subjects: "",
+    props_details: "",
     notes: "",
     status: "planned",
+    scene_setup: "",
+    location_time: "",
+    movement: "Static",
   };
 }
 
@@ -581,13 +580,42 @@ export default function ShotList({ appVersion }: ShotListProps) {
   }, [bundle, importedSuggestionsByCategory]);
 
   const movementSuggestions = useMemo(() => {
-    const defaults = ["Static", "Handheld", "Tripod", "Gimbal", "Slider"];
+    const defaults = ["Static", "Handheld", "Tripod", "Gimbal", "Slider", "Pan", "Tilt", "Crane", "Dolly"];
     const derived = bundle
       ? bundle.items
           .filter((item) => item.item_type === "tripod" || item.item_type === "motion")
           .map((item) => item.item_name)
       : [];
     return uniqueSuggestions([...defaults, ...derived, ...(importedSuggestionsByCategory.get("tripod") || []), ...(importedSuggestionsByCategory.get("motion") || [])]);
+  }, [bundle, importedSuggestionsByCategory]);
+
+  const shotTypeSuggestions = useMemo(() => {
+    return ["Wide", "Medium", "Close-up", "Extreme Close-up", "Long Shot", "Full Shot", "Medium Wide", "Medium Close-up", "Choker", "Macro", "Over the Shoulder", "POV"];
+  }, []);
+
+  const audioSuggestions = useMemo(() => {
+    if (!bundle) return importedSuggestionsByCategory.get("sound") || [];
+    return uniqueSuggestions([
+      ...bundle.items.filter((item) => item.item_type === "sound").map((item) => item.item_name),
+      ...(importedSuggestionsByCategory.get("sound") || []),
+    ]);
+  }, [bundle, importedSuggestionsByCategory]);
+
+  const lightingSuggestions = useMemo(() => {
+    if (!bundle) return importedSuggestionsByCategory.get("light") || [];
+    return uniqueSuggestions([
+      ...bundle.items.filter((item) => item.item_type === "light").map((item) => item.item_name),
+      ...(importedSuggestionsByCategory.get("light") || []),
+    ]);
+  }, [bundle, importedSuggestionsByCategory]);
+
+  const propsSuggestions = useMemo(() => {
+    if (!bundle) return uniqueSuggestions([...(importedSuggestionsByCategory.get("grip") || []), ...(importedSuggestionsByCategory.get("misc") || [])]);
+    return uniqueSuggestions([
+      ...bundle.items.filter((item) => ["grip", "misc"].includes(item.item_type)).map((item) => item.item_name),
+      ...(importedSuggestionsByCategory.get("grip") || []),
+      ...(importedSuggestionsByCategory.get("misc") || []),
+    ]);
   }, [bundle, importedSuggestionsByCategory]);
 
   const getMergedItemSuggestions = (itemType: string) =>
@@ -640,10 +668,6 @@ export default function ShotList({ appVersion }: ShotListProps) {
 
   const updateRowCameraSetups = (rowId: string, setups: CameraSetup[]) => {
     updateRow(rowId, { camera_lens: serializeCameraSetups(setups) });
-  };
-
-  const updateRowLocationTiming = (rowId: string, timing: LocationTiming) => {
-    updateRow(rowId, { location_time: serializeLocationTiming(timing) });
   };
 
   const handleImportMarkdown = async () => {
@@ -1103,8 +1127,11 @@ export default function ShotList({ appVersion }: ShotListProps) {
             )}
             {bundle.rows.map((row, index) => {
               const TypeIcon = getShotListIconComponent(getCaptureTypeIconName(row.capture_type));
-              const cameraSetups = parseCameraSetups(row.camera_lens);
-              const timing = parseLocationTiming(row.location_time);
+              const cameraSetups = parseCameraSetups(row.camera_lens).map((setup, setupIndex) =>
+                setupIndex === 0 && (!setup.movement || setup.movement.trim() === "")
+                  ? { ...setup, movement: row.camera_movement || row.movement || "Static" }
+                  : setup,
+              );
               const isRowCollapsed = collapsedRowIds.has(row.id);
               const addedCameraNames = cameraSetups.map((setup) => setup.camera.trim().toLowerCase()).filter(Boolean);
               const availableCameraSuggestions = cameraNameSuggestions.filter((suggestion) => !addedCameraNames.includes(suggestion.trim().toLowerCase())).slice(0, 6);
@@ -1154,26 +1181,54 @@ export default function ShotList({ appVersion }: ShotListProps) {
                   {isRowCollapsed ? (
                     <div className="shot-list-collapsed-summary shot-list-collapsed-row-summary">
                       <div className="shot-list-collapsed-summary-icon"><TypeIcon size={14} /></div>
-                      <span>{row.scene_setup || row.description || `Shot ${row.shot_number}`}</span>
+                      <span>{row.scene || row.description || `Shot ${row.shot_number}`}</span>
                       <small>{row.capture_type === "photo" ? "Photo" : "Motion"}</small>
                     </div>
                   ) : (
                   <div className="shot-list-row-grid">
                     <label>
                       <span className="shot-list-field-heading">
-                        <span>Setup / Moment</span>
-                        <span className="shot-list-field-clue shot-list-tooltip-anchor" data-tooltip="Use setup for scripted work, or moment for live coverage like concerts, exhibitions, and continuous events.">
-                          <HelpCircle size={12} />
-                        </span>
+                        <span>Scene</span>
                       </span>
                       <input
-                        value={row.scene_setup}
-                        placeholder="Scene 03, Opening beat, Chorus, Artist entrance"
-                        onChange={(event) => updateRow(row.id, { scene_setup: event.target.value })}
+                        value={row.scene}
+                        placeholder="Scene 03, Opening beat, Chorus"
+                        onChange={(event) => updateRow(row.id, { scene: event.target.value })}
                       />
                     </label>
                     <label>
-                      <span>Description</span>
+                      <span className="shot-list-field-heading">
+                        <span>Shot Type</span>
+                      </span>
+                      <div
+                        className={`shot-list-option-field ${activeOptionField === `${row.id}-shot_type` ? "is-open" : ""}`}
+                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-shot_type`, event)}
+                      >
+                        <input
+                          value={row.shot_type}
+                          placeholder="Wide, medium, close-up"
+                          onFocus={() => setActiveOptionField(`${row.id}-shot_type`)}
+                          onChange={(event) => updateRow(row.id, { shot_type: event.target.value })}
+                        />
+                        <div className="shot-list-field-options">
+                          <div className="shot-list-suggestion-pills">
+                            {shotTypeSuggestions.map((suggestion) => (
+                              <button
+                                key={`${row.id}-shot_type-${suggestion}`}
+                                type="button"
+                                className="shot-list-suggestion-pill"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => updateRow(row.id, { shot_type: suggestion })}
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                    <label className="shot-list-row-wide">
+                      <span>Description / Action</span>
                       <input
                         value={row.description}
                         placeholder="What needs to be captured in this shot or moment"
@@ -1311,7 +1366,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                 const next = cameraSetups.filter((_, entryIndex) => entryIndex !== setupIndex);
                                 updateRowCameraSetups(row.id, next.length > 0 ? next : [createEmptyCameraSetup()]);
                               }}
-                              disabled={cameraSetups.length === 1 && !cameraSetups[0].camera.trim() && !cameraSetups[0].lens.trim() && !cameraSetups[0].accessory.trim() && !cameraSetups[0].media.trim() && !cameraSetups[0].support.trim() && !cameraSetups[0].power.trim() && !cameraSetups[0].monitor.trim()}
+                              disabled={cameraSetups.length === 1 && !cameraSetups[0].camera.trim() && !cameraSetups[0].lens.trim() && !cameraSetups[0].accessory.trim() && !cameraSetups[0].media.trim() && !cameraSetups[0].support.trim() && (!cameraSetups[0].movement.trim() || cameraSetups[0].movement.trim().toLowerCase() === "static") && !cameraSetups[0].power.trim() && !cameraSetups[0].monitor.trim()}
                             >
                               <Trash2 size={14} />
                             </button>
@@ -1380,6 +1435,48 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                               const next = [...cameraSetups];
                                               next[setupIndex] = { ...next[setupIndex], support: suggestion };
                                               updateRowCameraSetups(row.id, next);
+                                            }}
+                                          >
+                                            {suggestion}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                <div
+                                  className={`shot-list-option-field ${activeOptionField === `${row.id}-movement-${setupIndex}` ? "is-open" : ""}`}
+                                  onBlur={(event) => handleOptionFieldBlur(`${row.id}-movement-${setupIndex}`, event)}
+                                >
+                                  <input
+                                    value={setup.movement}
+                                    placeholder="Camera movement"
+                                    onFocus={() => setActiveOptionField(`${row.id}-movement-${setupIndex}`)}
+                                    onChange={(event) => {
+                                      const next = [...cameraSetups];
+                                      next[setupIndex] = { ...next[setupIndex], movement: event.target.value };
+                                      updateRowCameraSetups(row.id, next);
+                                      if (setupIndex === 0) {
+                                        updateRow(row.id, { camera_movement: event.target.value, movement: event.target.value });
+                                      }
+                                    }}
+                                  />
+                                  {movementSuggestions.length > 0 && (
+                                    <div className="shot-list-field-options">
+                                      <div className="shot-list-suggestion-pills">
+                                        {movementSuggestions.slice(0, 6).map((suggestion) => (
+                                          <button
+                                            key={`${row.id}-${setupIndex}-movement-${suggestion}`}
+                                            type="button"
+                                            className="shot-list-suggestion-pill"
+                                            onMouseDown={(event) => event.preventDefault()}
+                                            onClick={() => {
+                                              const next = [...cameraSetups];
+                                              next[setupIndex] = { ...next[setupIndex], movement: suggestion };
+                                              updateRowCameraSetups(row.id, next);
+                                              if (setupIndex === 0) {
+                                                updateRow(row.id, { camera_movement: suggestion, movement: suggestion });
+                                              }
                                             }}
                                           >
                                             {suggestion}
@@ -1466,7 +1563,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                           </div>
                         ))}
                       </div>
-                      {availableCameraSuggestions.length === 0 && (
+                      <div className="shot-list-camera-footer">
                         <button
                           type="button"
                           className="shot-list-add-item shot-list-add-camera"
@@ -1475,29 +1572,49 @@ export default function ShotList({ appVersion }: ShotListProps) {
                           <Plus size={14} />
                           <span>Add camera</span>
                         </button>
-                      )}
+                      </div>
                     </label>
                     <label>
-                      <span>Movement</span>
+                      <span className="shot-list-field-heading">
+                        <span>Location</span>
+                      </span>
+                      <input
+                        value={row.location}
+                        placeholder="Location"
+                        onChange={(event) => updateRow(row.id, { location: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span className="shot-list-field-heading">
+                        <span>Timing</span>
+                      </span>
+                      <input
+                        value={row.timing}
+                        placeholder="Start - End"
+                        onChange={(event) => updateRow(row.id, { timing: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>Audio Notes</span>
                       <div
-                        className={`shot-list-option-field ${activeOptionField === `${row.id}-movement` ? "is-open" : ""}`}
-                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-movement`, event)}
+                        className={`shot-list-option-field ${activeOptionField === `${row.id}-audio_notes` ? "is-open" : ""}`}
+                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-audio_notes`, event)}
                       >
                         <input
-                          value={row.movement}
-                          placeholder="Static, handheld, tripod, gimbal, slider"
-                          onFocus={() => setActiveOptionField(`${row.id}-movement`)}
-                          onChange={(event) => updateRow(row.id, { movement: event.target.value })}
+                          value={row.audio_notes}
+                          placeholder="Sync, wild, lavs..."
+                          onFocus={() => setActiveOptionField(`${row.id}-audio_notes`)}
+                          onChange={(event) => updateRow(row.id, { audio_notes: event.target.value })}
                         />
                         <div className="shot-list-field-options">
                           <div className="shot-list-suggestion-pills">
-                            {movementSuggestions.slice(0, 5).map((suggestion) => (
+                            {audioSuggestions.slice(0, 5).map((suggestion) => (
                               <button
-                                key={`${row.id}-movement-${suggestion}`}
+                                key={`${row.id}-audio-${suggestion}`}
                                 type="button"
                                 className="shot-list-suggestion-pill"
                                 onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => updateRow(row.id, { movement: suggestion })}
+                                onClick={() => updateRow(row.id, { audio_notes: suggestion })}
                               >
                                 {suggestion}
                               </button>
@@ -1507,28 +1624,69 @@ export default function ShotList({ appVersion }: ShotListProps) {
                       </div>
                     </label>
                     <label>
-                      <span className="shot-list-field-heading">
-                        <span>Location / Timing</span>
-                        <span className="shot-list-field-clue shot-list-tooltip-anchor" data-tooltip="Track where the shot happens and the start and finish time spent in that setup.">
-                          <HelpCircle size={12} />
-                        </span>
-                      </span>
-                      <div className="shot-list-location-grid">
+                      <span>Lighting Notes</span>
+                      <div
+                        className={`shot-list-option-field ${activeOptionField === `${row.id}-lighting_notes` ? "is-open" : ""}`}
+                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-lighting_notes`, event)}
+                      >
                         <input
-                          value={timing.location}
-                          placeholder="Location"
-                          onChange={(event) => updateRowLocationTiming(row.id, { ...timing, location: event.target.value })}
+                          value={row.lighting_notes}
+                          placeholder="Controlled, day, night..."
+                          onFocus={() => setActiveOptionField(`${row.id}-lighting_notes`)}
+                          onChange={(event) => updateRow(row.id, { lighting_notes: event.target.value })}
                         />
+                        <div className="shot-list-field-options">
+                          <div className="shot-list-suggestion-pills">
+                            {lightingSuggestions.slice(0, 5).map((suggestion) => (
+                              <button
+                                key={`${row.id}-lighting-${suggestion}`}
+                                type="button"
+                                className="shot-list-suggestion-pill"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => updateRow(row.id, { lighting_notes: suggestion })}
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </label>
+                    <label>
+                      <span>Talent / Subjects</span>
+                      <input
+                        value={row.talent_subjects}
+                        placeholder="Person name, group..."
+                        onChange={(event) => updateRow(row.id, { talent_subjects: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>Props / Set Details</span>
+                      <div
+                        className={`shot-list-option-field ${activeOptionField === `${row.id}-props_details` ? "is-open" : ""}`}
+                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-props_details`, event)}
+                      >
                         <input
-                          value={timing.start}
-                          placeholder="Start"
-                          onChange={(event) => updateRowLocationTiming(row.id, { ...timing, start: event.target.value })}
+                          value={row.props_details}
+                          placeholder="Prop list, furniture..."
+                          onFocus={() => setActiveOptionField(`${row.id}-props_details`)}
+                          onChange={(event) => updateRow(row.id, { props_details: event.target.value })}
                         />
-                        <input
-                          value={timing.end}
-                          placeholder="Finish"
-                          onChange={(event) => updateRowLocationTiming(row.id, { ...timing, end: event.target.value })}
-                        />
+                        <div className="shot-list-field-options">
+                          <div className="shot-list-suggestion-pills">
+                            {propsSuggestions.slice(0, 5).map((suggestion) => (
+                              <button
+                                key={`${row.id}-props-${suggestion}`}
+                                type="button"
+                                className="shot-list-suggestion-pill"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => updateRow(row.id, { props_details: suggestion })}
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     </label>
                     <label>

@@ -119,9 +119,10 @@ function formatCameraSetupsForExport(value: string) {
   return entries
     .map((entry, index) => {
       if (entry.includes(CAMERA_SETUP_DELIMITER)) {
-        const formatted = entry
-          .split(CAMERA_SETUP_DELIMITER)
-          .map((part) => part.trim())
+        const parts = entry.split(CAMERA_SETUP_DELIMITER).map((part) => part.trim());
+        const formatted = (parts.length >= 8
+          ? [parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7]]
+          : parts)
           .filter(Boolean)
           .join(" / ");
         return formatted ? `Cam ${index + 1}: ${formatted}` : "";
@@ -132,11 +133,26 @@ function formatCameraSetupsForExport(value: string) {
     .join(" • ");
 }
 
-function formatLocationTimingForExport(value: string) {
-  if (!value.includes(LOCATION_TIME_DELIMITER)) {
-    return value || "—";
+function getPrimaryCameraMovement(row: ShotListRow) {
+  const entries = (row.camera_lens || "")
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (entries.length > 0 && entries[0].includes(CAMERA_SETUP_DELIMITER)) {
+    const parts = entries[0].split(CAMERA_SETUP_DELIMITER).map((entry) => entry.trim());
+    if (parts.length >= 8 && parts[5]) return parts[5];
   }
-  const [location = "", start = "", end = ""] = value.split(LOCATION_TIME_DELIMITER).map((entry) => entry.trim());
+  return row.camera_movement || row.movement || "Static";
+}
+
+function formatLocationTimingForExport(row: ShotListRow) {
+  if (row.location || row.timing) {
+    return [row.location, row.timing].filter(Boolean).join(" / ") || "—";
+  }
+  if (!row.location_time || !row.location_time.includes(LOCATION_TIME_DELIMITER)) {
+    return row.location_time || "—";
+  }
+  const [location = "", start = "", end = ""] = row.location_time.split(LOCATION_TIME_DELIMITER).map((entry) => entry.trim());
   return [location, start && end ? `${start}-${end}` : start || end].filter(Boolean).join(" / ") || "—";
 }
 
@@ -289,31 +305,55 @@ async function renderRowsCanvasPage(
     const iconImg = await loadImage(iconDataUrl);
     ctx.drawImage(iconImg, labelX + 72, rowY + 34, 72, 72);
 
-    // Shot Number / Scene Setup
+    // Shot Number / Scene
     ctx.fillStyle = "#111827";
     ctx.font = "800 34px Inter, system-ui, sans-serif";
-    const title = `${row.shot_number || "SHOT"} ${row.scene_setup ? `— ${row.scene_setup}` : ""}`;
+    const title = `${row.shot_number || "SHOT"} ${row.scene ? `— ${row.scene}` : ""}`;
     ctx.fillText(trimText(ctx, title, 1000), labelX + 168, rowY + 68);
 
-    // Description
+    // Shot Type / Movement sub-header
+    ctx.fillStyle = "#6366f1";
+    ctx.font = "700 20px Inter, system-ui, sans-serif";
+    const subTitle = `${row.shot_type || "Medium"} • ${getPrimaryCameraMovement(row)}`;
+    ctx.fillText(trimText(ctx, subTitle.toUpperCase(), 1000), labelX + 168, rowY + 98);
+
+    // Description / Action (Left Column)
     ctx.fillStyle = "#4b5563";
     ctx.font = "500 22px Inter, system-ui, sans-serif";
-    const desc = row.description || "No specific instructions provided for this shot setup.";
-    ctx.fillText(trimText(ctx, desc, 1200), labelX + 168, rowY + 104);
+    const desc = row.description || "No specific instructions provided for this setup.";
+    ctx.fillText(trimText(ctx, desc, 1200), labelX + 168, rowY + 138);
 
-    // Metadata Chips (Right Aligned)
+    // Details Grid (Layout below)
+    let detailsY = rowY + 180;
+    const detailColWidth = 600;
+    
+    // Talent / Props
+    ctx.fillStyle = "#111827";
+    ctx.font = "700 18px Inter, system-ui, sans-serif";
+    ctx.fillText("TALENT / PROPS", labelX + 168, detailsY);
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "500 18px Inter, system-ui, sans-serif";
+    const talentProps = [row.talent_subjects, row.props_details].filter(Boolean).join(" • ") || "None";
+    ctx.fillText(trimText(ctx, talentProps, detailColWidth), labelX + 168, detailsY + 28);
+
+    // Audio / Lighting
+    ctx.fillStyle = "#111827";
+    ctx.font = "700 18px Inter, system-ui, sans-serif";
+    ctx.fillText("AUDIO / LIGHTING", labelX + 168 + detailColWidth + 40, detailsY);
+    ctx.fillStyle = "#6b7280";
+    ctx.font = "500 18px Inter, system-ui, sans-serif";
+    const audioLight = [row.audio_notes, row.lighting_notes].filter(Boolean).join(" • ") || "Default Setup";
+    ctx.fillText(trimText(ctx, audioLight, detailColWidth), labelX + 168 + detailColWidth + 40, detailsY + 28);
+
+    // Info Chips (Right Aligned)
     let metaX = EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X - 1000;
 
-    // Movement Chip
-    drawMetaInfoChip(ctx, metaX, rowY + 34, 300, "MOVEMENT", (row.movement || "Stationary").toUpperCase(), "#6366f1");
-    metaX += 320;
-
-    // Cam Setup Chip
+    // Camera / Equipment Chip
     drawMetaInfoChip(ctx, metaX, rowY + 34, 380, "EQUIPMENT", trimText(ctx, formatCameraSetupsForExport(row.camera_lens || ""), 220), "#a855f7");
     metaX += 400;
 
-    // Location Chip
-    drawMetaInfoChip(ctx, metaX, rowY + 34, 280, "LOCATION / TIME", formatLocationTimingForExport(row.location_time || ""), "#14b8a6");
+    // Location / Timing Chip
+    drawMetaInfoChip(ctx, metaX, rowY + 34, 580, "LOCATION / TIMING", formatLocationTimingForExport(row), "#14b8a6");
   }
 
   drawFooter(

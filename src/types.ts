@@ -367,13 +367,23 @@ export interface ShotListRow {
     sort_order: number;
     shot_number: string;
     capture_type: "photo" | "video";
-    scene_setup: string;
+    scene: string;
+    location: string;
+    timing: string;
+    shot_type: string;
     description: string;
     camera_lens: string;
-    movement: string;
-    location_time: string;
+    camera_movement: string; 
+    audio_notes: string;
+    lighting_notes: string;
+    talent_subjects: string;
+    props_details: string;
     notes: string;
     status: string;
+    // Backward compatibility
+    scene_setup: string;
+    location_time: string;
+    movement: string;
 }
 
 export interface ShotListEquipmentSection {
