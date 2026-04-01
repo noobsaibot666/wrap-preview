@@ -1,6 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import type { FocusEvent } from "react";
+import type { FocusEvent, FocusEventHandler } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
@@ -768,6 +768,14 @@ export default function ShotList({ appVersion }: ShotListProps) {
     setActiveOptionField((current) => (current === fieldKey ? null : current));
   };
 
+  const selectFieldText: FocusEventHandler<HTMLInputElement | HTMLTextAreaElement> = (event) => {
+    window.requestAnimationFrame(() => {
+      if (document.activeElement === event.currentTarget) {
+        event.currentTarget.select();
+      }
+    });
+  };
+
   const addRow = async () => {
     if (!bundle) return;
     const nextRow = buildDefaultRow(bundle.project.id, bundle.rows.length + 1, String(bundle.rows.length + 1).padStart(2, "0"));
@@ -1143,6 +1151,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                       <input
                         className="shot-list-shot-number"
                         value={row.shot_number}
+                        onFocus={selectFieldText}
                         onChange={(event) => updateRow(row.id, { shot_number: event.target.value })}
                       />
                       <div className={`shot-list-type-toggle ${row.capture_type}-active`}>
@@ -1193,6 +1202,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                       <input
                         value={row.scene}
                         placeholder="Scene 03, Opening beat, Chorus"
+                        onFocus={selectFieldText}
                         onChange={(event) => updateRow(row.id, { scene: event.target.value })}
                       />
                     </label>
@@ -1207,7 +1217,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                         <input
                           value={row.shot_type}
                           placeholder="Wide, medium, close-up"
-                          onFocus={() => setActiveOptionField(`${row.id}-shot_type`)}
+                          onFocus={(event) => {
+                            selectFieldText(event);
+                            setActiveOptionField(`${row.id}-shot_type`);
+                          }}
                           onChange={(event) => updateRow(row.id, { shot_type: event.target.value })}
                         />
                         <div className="shot-list-field-options">
@@ -1232,8 +1245,150 @@ export default function ShotList({ appVersion }: ShotListProps) {
                       <input
                         value={row.description}
                         placeholder="What needs to be captured in this shot or moment"
+                        onFocus={selectFieldText}
                         onChange={(event) => updateRow(row.id, { description: event.target.value })}
                       />
+                    </label>
+                    <label>
+                      <span className="shot-list-field-heading">
+                        <span>Location</span>
+                      </span>
+                      <input
+                        value={row.location}
+                        placeholder="Location"
+                        onFocus={selectFieldText}
+                        onChange={(event) => updateRow(row.id, { location: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span className="shot-list-field-heading">
+                        <span>Timing</span>
+                      </span>
+                      <input
+                        value={row.timing}
+                        placeholder="Start - End"
+                        onFocus={selectFieldText}
+                        onChange={(event) => updateRow(row.id, { timing: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>Audio Notes</span>
+                      <div
+                        className={`shot-list-option-field ${activeOptionField === `${row.id}-audio_notes` ? "is-open" : ""}`}
+                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-audio_notes`, event)}
+                      >
+                        <input
+                          value={row.audio_notes}
+                          placeholder="Sync, wild, lavs..."
+                          onFocus={(event) => {
+                            selectFieldText(event);
+                            setActiveOptionField(`${row.id}-audio_notes`);
+                          }}
+                          onChange={(event) => updateRow(row.id, { audio_notes: event.target.value })}
+                        />
+                        {audioSuggestions.length > 0 && (
+                          <div className="shot-list-field-options">
+                            <div className="shot-list-suggestion-pills">
+                              {audioSuggestions.slice(0, 5).map((suggestion) => (
+                                <button
+                                  key={`${row.id}-audio-${suggestion}`}
+                                  type="button"
+                                  className="shot-list-suggestion-pill"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => updateRow(row.id, { audio_notes: suggestion })}
+                                >
+                                  {suggestion}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                    <label>
+                      <span>Lighting Notes</span>
+                      <div
+                        className={`shot-list-option-field ${activeOptionField === `${row.id}-lighting_notes` ? "is-open" : ""}`}
+                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-lighting_notes`, event)}
+                      >
+                        <input
+                          value={row.lighting_notes}
+                          placeholder="Controlled, day, night..."
+                          onFocus={(event) => {
+                            selectFieldText(event);
+                            setActiveOptionField(`${row.id}-lighting_notes`);
+                          }}
+                          onChange={(event) => updateRow(row.id, { lighting_notes: event.target.value })}
+                        />
+                        {lightingSuggestions.length > 0 && (
+                          <div className="shot-list-field-options">
+                            <div className="shot-list-suggestion-pills">
+                              {lightingSuggestions.slice(0, 5).map((suggestion) => (
+                                <button
+                                  key={`${row.id}-lighting-${suggestion}`}
+                                  type="button"
+                                  className="shot-list-suggestion-pill"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => updateRow(row.id, { lighting_notes: suggestion })}
+                                >
+                                  {suggestion}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                    <label>
+                      <span>Talent / Subjects</span>
+                      <input
+                        value={row.talent_subjects}
+                        placeholder="Person name, group..."
+                        onFocus={selectFieldText}
+                        onChange={(event) => updateRow(row.id, { talent_subjects: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>Props / Set Details</span>
+                      <div
+                        className={`shot-list-option-field ${activeOptionField === `${row.id}-props_details` ? "is-open" : ""}`}
+                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-props_details`, event)}
+                      >
+                        <input
+                          value={row.props_details}
+                          placeholder="Prop list, furniture..."
+                          onFocus={(event) => {
+                            selectFieldText(event);
+                            setActiveOptionField(`${row.id}-props_details`);
+                          }}
+                          onChange={(event) => updateRow(row.id, { props_details: event.target.value })}
+                        />
+                        {propsSuggestions.length > 0 && (
+                          <div className="shot-list-field-options">
+                            <div className="shot-list-suggestion-pills">
+                              {propsSuggestions.slice(0, 5).map((suggestion) => (
+                                <button
+                                  key={`${row.id}-props-${suggestion}`}
+                                  type="button"
+                                  className="shot-list-suggestion-pill"
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => updateRow(row.id, { props_details: suggestion })}
+                                >
+                                  {suggestion}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                    <label>
+                      <span>Status</span>
+                      <select className="shot-list-row-status-select" value={row.status} onChange={(event) => updateRow(row.id, { status: event.target.value })}>
+                        {SHOT_LIST_STATUS_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
                     </label>
                     <label className="shot-list-row-wide">
                       <span className="shot-list-field-heading">
@@ -1257,7 +1412,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                 <input
                                   value={setup.camera}
                                   placeholder="Camera"
-                                  onFocus={() => setActiveOptionField(`${row.id}-camera-${setupIndex}`)}
+                                  onFocus={(event) => {
+                                    selectFieldText(event);
+                                    setActiveOptionField(`${row.id}-camera-${setupIndex}`);
+                                  }}
                                   onChange={(event) => {
                                     const next = [...cameraSetups];
                                     next[setupIndex] = { ...next[setupIndex], camera: event.target.value };
@@ -1293,7 +1451,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                 <input
                                   value={setup.lens}
                                   placeholder="Lens"
-                                  onFocus={() => setActiveOptionField(`${row.id}-lens-${setupIndex}`)}
+                                  onFocus={(event) => {
+                                    selectFieldText(event);
+                                    setActiveOptionField(`${row.id}-lens-${setupIndex}`);
+                                  }}
                                   onChange={(event) => {
                                     const next = [...cameraSetups];
                                     next[setupIndex] = { ...next[setupIndex], lens: event.target.value };
@@ -1329,7 +1490,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                 <input
                                   value={setup.accessory}
                                   placeholder="Filter / adapter / accessory"
-                                  onFocus={() => setActiveOptionField(`${row.id}-accessory-${setupIndex}`)}
+                                  onFocus={(event) => {
+                                    selectFieldText(event);
+                                    setActiveOptionField(`${row.id}-accessory-${setupIndex}`);
+                                  }}
                                   onChange={(event) => {
                                     const next = [...cameraSetups];
                                     next[setupIndex] = { ...next[setupIndex], accessory: event.target.value };
@@ -1379,7 +1543,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   <input
                                     value={setup.media}
                                     placeholder="Media"
-                                    onFocus={() => setActiveOptionField(`${row.id}-media-${setupIndex}`)}
+                                    onFocus={(event) => {
+                                      selectFieldText(event);
+                                      setActiveOptionField(`${row.id}-media-${setupIndex}`);
+                                    }}
                                     onChange={(event) => {
                                       const next = [...cameraSetups];
                                       next[setupIndex] = { ...next[setupIndex], media: event.target.value };
@@ -1415,7 +1582,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   <input
                                     value={setup.support}
                                     placeholder="Support / position"
-                                    onFocus={() => setActiveOptionField(`${row.id}-support-${setupIndex}`)}
+                                    onFocus={(event) => {
+                                      selectFieldText(event);
+                                      setActiveOptionField(`${row.id}-support-${setupIndex}`);
+                                    }}
                                     onChange={(event) => {
                                       const next = [...cameraSetups];
                                       next[setupIndex] = { ...next[setupIndex], support: event.target.value };
@@ -1451,7 +1621,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   <input
                                     value={setup.movement}
                                     placeholder="Camera movement"
-                                    onFocus={() => setActiveOptionField(`${row.id}-movement-${setupIndex}`)}
+                                    onFocus={(event) => {
+                                      selectFieldText(event);
+                                      setActiveOptionField(`${row.id}-movement-${setupIndex}`);
+                                    }}
                                     onChange={(event) => {
                                       const next = [...cameraSetups];
                                       next[setupIndex] = { ...next[setupIndex], movement: event.target.value };
@@ -1493,7 +1666,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   <input
                                     value={setup.power}
                                     placeholder="Power"
-                                    onFocus={() => setActiveOptionField(`${row.id}-power-${setupIndex}`)}
+                                    onFocus={(event) => {
+                                      selectFieldText(event);
+                                      setActiveOptionField(`${row.id}-power-${setupIndex}`);
+                                    }}
                                     onChange={(event) => {
                                       const next = [...cameraSetups];
                                       next[setupIndex] = { ...next[setupIndex], power: event.target.value };
@@ -1529,7 +1705,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                   <input
                                     value={setup.monitor}
                                     placeholder="Monitor"
-                                    onFocus={() => setActiveOptionField(`${row.id}-monitor-${setupIndex}`)}
+                                    onFocus={(event) => {
+                                      selectFieldText(event);
+                                      setActiveOptionField(`${row.id}-monitor-${setupIndex}`);
+                                    }}
                                     onChange={(event) => {
                                       const next = [...cameraSetups];
                                       next[setupIndex] = { ...next[setupIndex], monitor: event.target.value };
@@ -1574,132 +1753,9 @@ export default function ShotList({ appVersion }: ShotListProps) {
                         </button>
                       </div>
                     </label>
-                    <label>
-                      <span className="shot-list-field-heading">
-                        <span>Location</span>
-                      </span>
-                      <input
-                        value={row.location}
-                        placeholder="Location"
-                        onChange={(event) => updateRow(row.id, { location: event.target.value })}
-                      />
-                    </label>
-                    <label>
-                      <span className="shot-list-field-heading">
-                        <span>Timing</span>
-                      </span>
-                      <input
-                        value={row.timing}
-                        placeholder="Start - End"
-                        onChange={(event) => updateRow(row.id, { timing: event.target.value })}
-                      />
-                    </label>
-                    <label>
-                      <span>Audio Notes</span>
-                      <div
-                        className={`shot-list-option-field ${activeOptionField === `${row.id}-audio_notes` ? "is-open" : ""}`}
-                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-audio_notes`, event)}
-                      >
-                        <input
-                          value={row.audio_notes}
-                          placeholder="Sync, wild, lavs..."
-                          onFocus={() => setActiveOptionField(`${row.id}-audio_notes`)}
-                          onChange={(event) => updateRow(row.id, { audio_notes: event.target.value })}
-                        />
-                        <div className="shot-list-field-options">
-                          <div className="shot-list-suggestion-pills">
-                            {audioSuggestions.slice(0, 5).map((suggestion) => (
-                              <button
-                                key={`${row.id}-audio-${suggestion}`}
-                                type="button"
-                                className="shot-list-suggestion-pill"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => updateRow(row.id, { audio_notes: suggestion })}
-                              >
-                                {suggestion}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </label>
-                    <label>
-                      <span>Lighting Notes</span>
-                      <div
-                        className={`shot-list-option-field ${activeOptionField === `${row.id}-lighting_notes` ? "is-open" : ""}`}
-                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-lighting_notes`, event)}
-                      >
-                        <input
-                          value={row.lighting_notes}
-                          placeholder="Controlled, day, night..."
-                          onFocus={() => setActiveOptionField(`${row.id}-lighting_notes`)}
-                          onChange={(event) => updateRow(row.id, { lighting_notes: event.target.value })}
-                        />
-                        <div className="shot-list-field-options">
-                          <div className="shot-list-suggestion-pills">
-                            {lightingSuggestions.slice(0, 5).map((suggestion) => (
-                              <button
-                                key={`${row.id}-lighting-${suggestion}`}
-                                type="button"
-                                className="shot-list-suggestion-pill"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => updateRow(row.id, { lighting_notes: suggestion })}
-                              >
-                                {suggestion}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </label>
-                    <label>
-                      <span>Talent / Subjects</span>
-                      <input
-                        value={row.talent_subjects}
-                        placeholder="Person name, group..."
-                        onChange={(event) => updateRow(row.id, { talent_subjects: event.target.value })}
-                      />
-                    </label>
-                    <label>
-                      <span>Props / Set Details</span>
-                      <div
-                        className={`shot-list-option-field ${activeOptionField === `${row.id}-props_details` ? "is-open" : ""}`}
-                        onBlur={(event) => handleOptionFieldBlur(`${row.id}-props_details`, event)}
-                      >
-                        <input
-                          value={row.props_details}
-                          placeholder="Prop list, furniture..."
-                          onFocus={() => setActiveOptionField(`${row.id}-props_details`)}
-                          onChange={(event) => updateRow(row.id, { props_details: event.target.value })}
-                        />
-                        <div className="shot-list-field-options">
-                          <div className="shot-list-suggestion-pills">
-                            {propsSuggestions.slice(0, 5).map((suggestion) => (
-                              <button
-                                key={`${row.id}-props-${suggestion}`}
-                                type="button"
-                                className="shot-list-suggestion-pill"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => updateRow(row.id, { props_details: suggestion })}
-                              >
-                                {suggestion}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </label>
-                    <label>
-                      <span>Status</span>
-                      <select value={row.status} onChange={(event) => updateRow(row.id, { status: event.target.value })}>
-                        {SHOT_LIST_STATUS_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </label>
                     <label className="shot-list-row-wide">
                       <span>Notes</span>
-                      <textarea value={row.notes} onChange={(event) => updateRow(row.id, { notes: event.target.value })} rows={2} />
+                      <textarea value={row.notes} onFocus={selectFieldText} onChange={(event) => updateRow(row.id, { notes: event.target.value })} rows={2} />
                     </label>
                   </div>
                   )}

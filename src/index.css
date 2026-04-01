@@ -9058,6 +9058,13 @@ body {
   min-height: 76px;
 }
 
+.shot-list-row-status-select {
+  min-height: 44px;
+  line-height: 1.35;
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+
 .shot-list-suggestion-pills {
   display: flex;
   flex-wrap: wrap;
