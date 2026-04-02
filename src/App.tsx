@@ -29,6 +29,8 @@ import {
   HardDrive,
   Clock3,
   AudioLines,
+  Scaling,
+  RotateCcw,
 } from "lucide-react";
 import { ClipList } from "./components/ClipList";
 import { PrintLayout } from "./components/PrintLayout";
@@ -126,7 +128,7 @@ function AppContent() {
     return match ? decodeURIComponent(match[1]) : null;
   });
   const [othersMenuOpen, setOthersMenuOpen] = useState(false);
-  const [activeMicroApp, setActiveMicroApp] = useState<"crop-factor" | "video-file-size" | null>(null);
+  const [activeMicroApp, setActiveMicroApp] = useState<"crop-factor" | "video-file-size" | "aspect-ratio" | "transfer-time" | null>(null);
   const isShotPlannerActive = activeTab === "preproduction" && activePreproductionApp === "shot-planner";
 
   useEffect(() => {
@@ -303,6 +305,7 @@ function AppContent() {
   const [tourRun, setTourRun] = useState(false);
   const [brandProfile, setBrandProfile] = useState<any>(null);
   const [helpMenuOpen, setHelpMenuOpen] = useState(false);
+  const [transferResetNonce, setTransferResetNonce] = useState(0);
   const [shotPlannerExportMenuOpen, setShotPlannerExportMenuOpen] = useState(false);
   const [reviewExportMenuOpen, setReviewExportMenuOpen] = useState(false);
   const [openExportAfterScan, setOpenExportAfterScan] = useState(false);
@@ -1424,7 +1427,7 @@ function AppContent() {
                       <div className="dropdown-backdrop" onClick={() => setOthersMenuOpen(false)} />
                       <div className="help-dropdown menu-dropdown others-dropdown" role="menu">
                         <button
-                          className="dropdown-item menu-item others-menu-item"
+                          className="dropdown-item menu-item others-menu-item others-menu-item-crop"
                           onClick={() => {
                             setOthersMenuOpen(false);
                             setActiveMicroApp("crop-factor");
@@ -1437,7 +1440,7 @@ function AppContent() {
                           </span>
                         </button>
                         <button
-                          className="dropdown-item menu-item others-menu-item"
+                          className="dropdown-item menu-item others-menu-item others-menu-item-file"
                           onClick={() => {
                             setOthersMenuOpen(false);
                             setActiveMicroApp("video-file-size");
@@ -1447,6 +1450,32 @@ function AppContent() {
                           <span className="menu-item-copy">
                             <span className="menu-item-label">File Size</span>
                             <small>Storage estimate</small>
+                          </span>
+                        </button>
+                        <button
+                          className="dropdown-item menu-item others-menu-item others-menu-item-aspect"
+                          onClick={() => {
+                            setOthersMenuOpen(false);
+                            setActiveMicroApp("aspect-ratio");
+                          }}
+                        >
+                          <span className="menu-item-icon"><Scaling size={16} /></span>
+                          <span className="menu-item-copy">
+                            <span className="menu-item-label">Aspect Ratio</span>
+                            <small>Frame math</small>
+                          </span>
+                        </button>
+                        <button
+                          className="dropdown-item menu-item others-menu-item others-menu-item-transfer"
+                          onClick={() => {
+                            setOthersMenuOpen(false);
+                            setActiveMicroApp("transfer-time");
+                          }}
+                        >
+                          <span className="menu-item-icon"><Clock3 size={16} /></span>
+                          <span className="menu-item-copy">
+                            <span className="menu-item-label">Transfer Time</span>
+                            <small>Copy estimate</small>
                           </span>
                         </button>
                       </div>
@@ -2208,6 +2237,29 @@ function AppContent() {
               <VideoFileSizeCalculator />
             </MicroAppModal>
           )}
+          {activeMicroApp === "aspect-ratio" && (
+            <MicroAppModal title="Aspect Ratio Calculator" onClose={() => setActiveMicroApp(null)}>
+              <AspectRatioCalculator />
+            </MicroAppModal>
+          )}
+          {activeMicroApp === "transfer-time" && (
+            <MicroAppModal
+              title="Transfer Time Calculator"
+              onClose={() => setActiveMicroApp(null)}
+              headerAction={(
+                <button
+                  type="button"
+                  className="transfer-reset"
+                  onClick={() => setTransferResetNonce((value) => value + 1)}
+                >
+                  <RotateCcw size={14} />
+                  <span>Reset</span>
+                </button>
+              )}
+            >
+              <TransferTimeCalculator resetNonce={transferResetNonce} />
+            </MicroAppModal>
+          )}
         </>
       )}
     </div>
@@ -2270,177 +2322,1725 @@ const SENSOR_PRESETS = {
 const COMMON_FOCALS = [8, 10, 12, 14, 16, 18, 24, 35, 50, 85, 135, 200];
 const COMMON_APERTURES = [1.4, 2, 2.8, 4, 5.6, 8, 11];
 const COMMON_AUDIO_BITRATES = [128, 256, 320, 512];
-const VIDEO_FILE_SIZE_PRESETS = [
-  {
+const ASPECT_RATIO_PRESETS = [
+  { label: "1:1", width: 1, height: 1, note: "Square" },
+  { label: "4:3", width: 4, height: 3, note: "Classic video" },
+  { label: "3:2", width: 3, height: 2, note: "Still photo" },
+  { label: "16:9", width: 16, height: 9, note: "HD / UHD" },
+  { label: "17:9", width: 17, height: 9, note: "DCI" },
+  { label: "1.85:1", width: 185, height: 100, note: "Flat" },
+  { label: "2.39:1", width: 239, height: 100, note: "Scope" },
+  { label: "9:16", width: 9, height: 16, note: "Vertical" },
+] as const;
+const ASPECT_DELIVERY_PRESETS = [
+  { label: "YouTube", width: 16, height: 9, note: "16:9" },
+  { label: "DCI Flat", width: 185, height: 100, note: "1.85:1" },
+  { label: "DCI Scope", width: 239, height: 100, note: "2.39:1" },
+  { label: "Instagram Post", width: 4, height: 5, note: "4:5" },
+  { label: "Instagram Story", width: 9, height: 16, note: "9:16" },
+  { label: "A4 Landscape", width: 297, height: 210, note: "1.414:1" },
+] as const;
+const ASPECT_RESOLUTION_PRESETS = [
+  { label: "1920 × 1080", width: 1920, height: 1080, note: "FHD" },
+  { label: "2048 × 1080", width: 2048, height: 1080, note: "2K DCI" },
+  { label: "3840 × 2160", width: 3840, height: 2160, note: "UHD" },
+  { label: "4096 × 2160", width: 4096, height: 2160, note: "4K DCI" },
+  { label: "4096 × 1716", width: 4096, height: 1716, note: "4K Scope" },
+  { label: "1080 × 1920", width: 1080, height: 1920, note: "Vertical HD" },
+] as const;
+const TRANSFER_SIZE_UNITS = [
+  { label: "MB", bytes: 1_000_000 },
+  { label: "GB", bytes: 1_000_000_000 },
+  { label: "TB", bytes: 1_000_000_000_000 },
+  { label: "MiB", bytes: 1_048_576 },
+  { label: "GiB", bytes: 1_073_741_824 },
+  { label: "TiB", bytes: 1_099_511_627_776 },
+] as const;
+const TRANSFER_SPEED_UNITS = [
+  { label: "MB/s", bytesPerSecond: 1_000_000 },
+  { label: "GB/s", bytesPerSecond: 1_000_000_000 },
+  { label: "MiB/s", bytesPerSecond: 1_048_576 },
+  { label: "GiB/s", bytesPerSecond: 1_073_741_824 },
+  { label: "Mbps", bytesPerSecond: 125_000 },
+  { label: "Gbps", bytesPerSecond: 125_000_000 },
+] as const;
+const TRANSFER_SIZE_PRESETS = [
+  { label: "128 GB card", value: 128, unit: "GB" },
+  { label: "256 GB card", value: 256, unit: "GB" },
+  { label: "512 GB card", value: 512, unit: "GB" },
+  { label: "1 TB drive", value: 1, unit: "TB" },
+  { label: "2 TB drive", value: 2, unit: "TB" },
+] as const;
+const TRANSFER_SOURCE_PRESETS = [
+  { label: "SD UHS-II card", value: 250, unit: "MB/s", note: "practical sustained read" },
+  { label: "CFexpress Type A card", value: 800, unit: "MB/s", note: "practical sustained read" },
+  { label: "CFexpress Type B card", value: 1700, unit: "MB/s", note: "practical sustained read" },
+  { label: "SATA SSD", value: 550, unit: "MB/s", note: "single drive" },
+  { label: "NVMe SSD", value: 2800, unit: "MB/s", note: "fast external or internal" },
+] as const;
+const TRANSFER_INTERFACE_PRESETS = [
+  { label: "USB 3.2 Gen 1", value: 450, unit: "MB/s", note: "5 Gbps class" },
+  { label: "USB 3.2 Gen 2", value: 1000, unit: "MB/s", note: "10 Gbps class" },
+  { label: "USB 3.2 Gen 2x2", value: 2000, unit: "MB/s", note: "20 Gbps class" },
+  { label: "Thunderbolt 3 / 4", value: 2800, unit: "MB/s", note: "real NVMe class" },
+  { label: "100 MbE", value: 95, unit: "Mbps", note: "practical Ethernet throughput" },
+  { label: "1 GbE", value: 940, unit: "Mbps", note: "real network throughput" },
+  { label: "2.5 GbE", value: 2.35, unit: "Gbps", note: "practical Ethernet throughput" },
+  { label: "10 GbE", value: 9.4, unit: "Gbps", note: "real network throughput" },
+] as const;
+const TRANSFER_DESTINATION_PRESETS = [
+  { label: "Portable SSD", value: 1000, unit: "MB/s", note: "10 Gbps class" },
+  { label: "NVMe SSD", value: 2800, unit: "MB/s", note: "fast local storage" },
+  { label: "RAID storage", value: 1800, unit: "MB/s", note: "shared fast volume" },
+  { label: "NAS over 100 MbE", value: 95, unit: "Mbps", note: "practical Ethernet throughput" },
+  { label: "NAS over 1 GbE", value: 940, unit: "Mbps", note: "real network throughput" },
+  { label: "NAS over 2.5 GbE", value: 2.35, unit: "Gbps", note: "practical Ethernet throughput" },
+  { label: "NAS over 10 GbE", value: 9.4, unit: "Gbps", note: "real network throughput" },
+] as const;
+const TRANSFER_NETWORK_REFERENCE = [
+  { label: "100 MbE", value: 95, unit: "Mbps", throughput: "~12 MB/s", interface: "100 MbE", destination: "NAS over 100 MbE" },
+  { label: "1 GbE", value: 940, unit: "Mbps", throughput: "~118 MB/s", interface: "1 GbE", destination: "NAS over 1 GbE" },
+  { label: "2.5 GbE", value: 2.35, unit: "Gbps", throughput: "~294 MB/s", interface: "2.5 GbE", destination: "NAS over 2.5 GbE" },
+  { label: "10 GbE", value: 9.4, unit: "Gbps", throughput: "~1175 MB/s", interface: "10 GbE", destination: "NAS over 10 GbE" },
+] as const;
+type VideoFileSizePreset = {
+  brand: string;
+  camera: string;
+  codec: string;
+  resolution: string;
+  frameRate: string;
+  videoMbps: number;
+  source: string;
+  profile: string;
+  codecRateName?: string;
+};
+
+const parseResolution = (resolution: string) => {
+  const match = resolution.match(/(\d+)\s*[x×]\s*(\d+)/i);
+  return match ? { width: Number(match[1]), height: Number(match[2]) } : { width: 3840, height: 2160 };
+};
+
+const parseFps = (frameRate: string) => Number.parseFloat(frameRate.replace('p', '').trim()) || 24;
+
+const VIDEO_CODEC_DATA_RATES: Record<string, number> = {
+  'ARRIRAW': 1276482476e-14,
+  'ARRIRAW  HDE': 6382412381e-15,
+  'Apple ProRes 422 HQ': 3550965109e-15,
+  'Apple ProRes 422': 2368879907e-15,
+  'Apple ProRes LT': 1648325979e-15,
+  'Apple ProRes Proxy': 7.299729335e-7,
+  'Apple ProRes RAW HQ': 479841821e-14,
+  'Apple ProRes 4444': 5326447663e-15,
+  'Apple ProRes 4444 XQ': 7992026247e-15,
+  'Sony X-OCN XT': 4544670199e-15,
+  'Sony X-OCN ST': 3108271846e-15,
+  'Sony X-OCN LT': 1831996588e-15,
+  'Sony XAVC S-I': 1205632716e-15,
+  'Sony XAVC S 4K': 5.02346965e-7,
+  'Sony XAVC HS 4K': 5.02346965e-7,
+  'Sony XAVC S': 5.02346965e-7,
+  'Sony XAVC-I': 1205632716e-15,
+  'Sony XAVC-L': 5.02346965e-7,
+  'Sony XAVC H-I HQ': 1243308738e-15,
+  'Canon Cinema RAW Light LT': 1212816474e-15,
+  'Canon XF-AVC': 3814697266e-15,
+  'REDCODE HQ': 4599522748e-15,
+  'REDCODE MQ': 2759713649e-15,
+  'Blackmagic RAW 3:1': 4056451743e-15,
+  'Blackmagic RAW 5:1': 243638278e-14,
+  'Blackmagic RAW 8:1': 1519599569e-15,
+  'Blackmagic RAW 12:1': 1017252604e-15,
+  'Blackmagic RAW 18:1': 5.475581919e-7,
+  'Blackmagic RAW Q0': 5463023245e-15,
+  'Blackmagic RAW Q1': 4370418596e-15,
+  'Blackmagic RAW Q3': 3127109857e-15,
+  'Blackmagic RAW Q5': 1833566422e-15,
+  'Nikon N-RAW': 151057281e-14,
+  'H.265 10-bit': 9.544592335e-7,
+  'H.265 8-bit': 7.535204475e-7,
+  'H.264': 6.02816358e-7,
+};
+
+const resolveCodecVideoMbps = (codecRateName: string | undefined, resolution: string, frameRate: string) => {
+  if (!codecRateName) return null;
+  const dataRate = VIDEO_CODEC_DATA_RATES[codecRateName];
+  if (!dataRate) return null;
+  const { width, height } = parseResolution(resolution);
+  const fps = parseFps(frameRate);
+  return dataRate * width * height * fps;
+};
+
+const scaleMbps = (
+  baseMbps: number,
+  baseResolution: string,
+  baseFrameRate: string,
+  targetResolution: string,
+  targetFrameRate: string,
+) => {
+  const base = parseResolution(baseResolution);
+  const target = parseResolution(targetResolution);
+  const baseFps = parseFps(baseFrameRate);
+  const targetFps = parseFps(targetFrameRate);
+  const ratio = (target.width * target.height * targetFps) / (base.width * base.height * baseFps);
+  return Math.round(baseMbps * ratio);
+};
+
+const mbPerSecondToMbps = (value: number) => Math.round(value * 8);
+const tbPerHourToMbps = (value: number) => Math.round((value * 8_000_000) / 3600);
+
+const createEntries = ({
+  brand,
+  camera,
+  codec,
+  profile,
+  source,
+  baseResolution,
+  baseFrameRate,
+  baseMbps,
+  resolutions,
+  codecRateName,
+}: {
+  brand: string;
+  camera: string;
+  codec: string;
+  profile: string;
+  source: string;
+  baseResolution: string;
+  baseFrameRate: string;
+  baseMbps: number;
+  resolutions: Array<{ resolution: string; frameRates: string[] }>;
+  codecRateName?: string;
+}): VideoFileSizePreset[] =>
+  resolutions.flatMap(({ resolution, frameRates }) =>
+    frameRates.map((frameRate) => ({
+      brand,
+      camera,
+      codec,
+      resolution,
+      frameRate,
+      videoMbps: scaleMbps(baseMbps, baseResolution, baseFrameRate, resolution, frameRate),
+      source,
+      profile,
+      codecRateName,
+    }))
+  );
+
+const createMappedEntries = (
+  entries: ReadonlyArray<readonly [string, string, number]>,
+  config: Omit<VideoFileSizePreset, "resolution" | "frameRate" | "videoMbps">
+): VideoFileSizePreset[] =>
+  entries.map(([resolution, frameRate, videoMbps]) => ({
+    ...config,
+    resolution,
+    frameRate,
+    videoMbps,
+  }));
+
+const arriAlexa35Presets = [
+  ...createEntries({
+    brand: 'ARRI',
+    camera: 'ALEXA 35',
+    codec: 'ARRIRAW',
+    profile: 'LogC4 / RAW',
+    source: 'data-calc structure + ARRI 1h reference',
+    codecRateName: 'ARRIRAW',
+    baseResolution: '4608 × 3164',
+    baseFrameRate: '24',
+    baseMbps: tbPerHourToMbps(1.915),
+    resolutions: [
+      { resolution: '4608 × 3164', frameRates: ['20', '23.976', '24', '25', '27', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75'] },
+      { resolution: '4608 × 2592', frameRates: ['20', '23.976', '24', '25', '27', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75'] },
+      { resolution: '4096 × 2304', frameRates: ['20', '23.976', '24', '25', '27', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75', '90', '96', '100', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'ARRI',
+    camera: 'ALEXA 35',
+    codec: 'ARRIRAW HDE',
+    profile: 'LogC4 / RAW',
+    source: 'data-calc structure + ARRI HDE',
+    codecRateName: 'ARRIRAW  HDE',
+    baseResolution: '4608 × 3164',
+    baseFrameRate: '24',
+    baseMbps: Math.round(tbPerHourToMbps(1.915) * 0.72),
+    resolutions: [
+      { resolution: '4608 × 3164', frameRates: ['20', '23.976', '24', '25', '27', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75'] },
+      { resolution: '4608 × 2592', frameRates: ['20', '23.976', '24', '25', '27', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75'] },
+      { resolution: '4096 × 2304', frameRates: ['20', '23.976', '24', '25', '27', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75', '90', '96', '100', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'ARRI',
+    camera: 'ALEXA 35',
+    codec: 'Apple ProRes 422 HQ',
+    profile: 'LogC4',
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 422 HQ',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 707,
+    resolutions: [
+      { resolution: '4608 × 3164', frameRates: ['20', '23.976', '24', '25', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60'] },
+      { resolution: '4608 × 2592', frameRates: ['20', '23.976', '24', '25', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75'] },
+      { resolution: '4096 × 2304', frameRates: ['20', '23.976', '24', '25', '27', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75', '90', '96', '100', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'ARRI',
+    camera: 'ALEXA 35',
+    codec: 'Apple ProRes 4444',
+    profile: 'LogC4',
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 4444',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 990,
+    resolutions: [
+      { resolution: '4608 × 3164', frameRates: ['20', '23.976', '24', '25', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60'] },
+      { resolution: '4608 × 2592', frameRates: ['20', '23.976', '24', '25', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75'] },
+      { resolution: '4096 × 2304', frameRates: ['20', '23.976', '24', '25', '27', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'ARRI',
+    camera: 'ALEXA 35',
+    codec: 'Apple ProRes 4444 XQ',
+    profile: 'LogC4',
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 4444 XQ',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 1150,
+    resolutions: [
+      { resolution: '4608 × 3164', frameRates: ['20', '23.976', '24', '25', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60'] },
+      { resolution: '4608 × 2592', frameRates: ['20', '23.976', '24', '25', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75'] },
+      { resolution: '4096 × 2304', frameRates: ['20', '23.976', '24', '25', '27', '29.97', '30', '35', '40', '45', '48', '50', '59.94', '60', '72', '75'] },
+    ],
+  }),
+];
+
+const sonyFx3Presets: VideoFileSizePreset[] = [
+  ...createMappedEntries([
+    ['4096 × 2160', '23.976', 240],
+    ['4096 × 2160', '25', 250],
+    ['4096 × 2160', '29.97', 300],
+    ['4096 × 2160', '50', 500],
+    ['4096 × 2160', '59.94', 600],
+    ['3840 × 2160', '23.976', 240],
+    ['3840 × 2160', '25', 250],
+    ['3840 × 2160', '29.97', 300],
+    ['3840 × 2160', '50', 500],
+    ['3840 × 2160', '59.94', 600],
+  ] as const, {
     brand: 'Sony',
     camera: 'FX3',
-    codec: 'XAVC S-I 4K',
-    resolution: '3840×2160',
-    frameRate: '24p',
-    videoMbps: 240,
-    source: 'Sony Help Guide',
+    codec: 'Sony XAVC S-I',
+    source: 'data-calc structure + Sony Help Guide',
     profile: 'S-Log3',
-  },
-  {
+    codecRateName: 'Sony XAVC S-I',
+  }),
+  ...createMappedEntries([
+    ['3840 × 2160', '23.976', 100],
+    ['3840 × 2160', '25', 100],
+    ['3840 × 2160', '29.97', 100],
+    ['3840 × 2160', '50', 200],
+    ['3840 × 2160', '59.94', 200],
+    ['3840 × 2160', '100', 280],
+    ['3840 × 2160', '119.88', 280],
+  ] as const, {
     brand: 'Sony',
     camera: 'FX3',
-    codec: 'XAVC S-I 4K',
-    resolution: '3840×2160',
-    frameRate: '60p',
-    videoMbps: 600,
-    source: 'Sony Help Guide',
+    codec: 'Sony XAVC S 4K',
+    source: 'data-calc structure + Sony Help Guide',
     profile: 'S-Log3',
-  },
-  {
+    codecRateName: 'Sony XAVC S 4K',
+  }),
+  ...createMappedEntries([
+    ['3840 × 2160', '23.976', 50],
+    ['3840 × 2160', '25', 50],
+    ['3840 × 2160', '29.97', 50],
+    ['3840 × 2160', '50', 100],
+    ['3840 × 2160', '59.94', 100],
+    ['3840 × 2160', '100', 200],
+    ['3840 × 2160', '119.88', 200],
+  ] as const, {
     brand: 'Sony',
     camera: 'FX3',
-    codec: 'XAVC S-I 4K',
-    resolution: '3840×2160',
-    frameRate: '120p',
-    videoMbps: 1200,
-    source: 'Sony Help Guide',
+    codec: 'Sony XAVC HS 4K',
+    source: 'data-calc structure + Sony Help Guide',
     profile: 'S-Log3',
-  },
-  {
+    codecRateName: 'Sony XAVC HS 4K',
+  }),
+  ...createMappedEntries([
+    ['1920 × 1080', '23.976', 222],
+    ['1920 × 1080', '25', 222],
+    ['1920 × 1080', '29.97', 222],
+    ['1920 × 1080', '50', 222],
+    ['1920 × 1080', '59.94', 222],
+  ] as const, {
     brand: 'Sony',
     camera: 'FX3',
-    codec: 'XAVC S-I 4K',
-    resolution: '3840×2160',
-    frameRate: '24p',
-    videoMbps: 100,
-    source: 'Sony Help Guide',
+    codec: 'Sony XAVC S-I',
+    source: 'data-calc structure + Sony Help Guide',
     profile: 'S-Log3',
-  },
-  {
+    codecRateName: 'Sony XAVC S-I',
+  }),
+  ...createMappedEntries([
+    ['1920 × 1080', '23.976', 50],
+    ['1920 × 1080', '25', 50],
+    ['1920 × 1080', '29.97', 50],
+    ['1920 × 1080', '50', 50],
+    ['1920 × 1080', '59.94', 50],
+  ] as const, {
+    brand: 'Sony',
+    camera: 'FX3',
+    codec: 'Sony XAVC S',
+    source: 'data-calc structure + Sony Help Guide',
+    profile: 'S-Log3',
+    codecRateName: 'Sony XAVC S',
+  }),
+];
+
+const sonyVenice2Presets = [
+  ...createEntries({
+    brand: 'Sony',
+    camera: 'VENICE 2 8K',
+    codec: 'Sony X-OCN XT',
+    profile: 'S-Log3 / RAW',
+    source: 'data-calc structure + Sony X-OCN scaling',
+    codecRateName: 'Sony X-OCN XT',
+    baseResolution: '8640 × 5760',
+    baseFrameRate: '24',
+    baseMbps: 3400,
+    resolutions: [
+      { resolution: '8640 × 5760', frameRates: ['23.976', '24', '25', '29.97'] },
+      { resolution: '8192 × 4320', frameRates: ['23.976', '24', '25', '29.97'] },
+      { resolution: '7680 × 4320', frameRates: ['23.976', '24', '25', '29.97'] },
+      { resolution: '5760 × 4820', frameRates: ['23.976', '24', '25', '29.97', '47.95'] },
+      { resolution: '5760 × 3040', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94', '75'] },
+      { resolution: '5434 × 3056', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94', '75'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Sony',
+    camera: 'VENICE 2 8K',
+    codec: 'Sony X-OCN ST',
+    profile: 'S-Log3 / RAW',
+    source: 'data-calc structure + Sony X-OCN scaling',
+    codecRateName: 'Sony X-OCN ST',
+    baseResolution: '8640 × 5760',
+    baseFrameRate: '24',
+    baseMbps: 2500,
+    resolutions: [
+      { resolution: '8640 × 5760', frameRates: ['23.976', '24', '25', '29.97'] },
+      { resolution: '8192 × 4320', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94'] },
+      { resolution: '7680 × 4320', frameRates: ['23.976', '24', '25', '29.97'] },
+      { resolution: '5760 × 4820', frameRates: ['23.976', '24', '25', '29.97', '47.95'] },
+      { resolution: '5760 × 3040', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94', '75', '90'] },
+      { resolution: '5434 × 3056', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94', '75', '90'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Sony',
+    camera: 'VENICE 2 8K',
+    codec: 'Sony X-OCN LT',
+    profile: 'S-Log3 / RAW',
+    source: 'data-calc structure + Sony X-OCN scaling',
+    codecRateName: 'Sony X-OCN LT',
+    baseResolution: '8640 × 5760',
+    baseFrameRate: '24',
+    baseMbps: 1700,
+    resolutions: [
+      { resolution: '8640 × 5760', frameRates: ['23.976', '24', '25', '29.97'] },
+      { resolution: '8192 × 4320', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94'] },
+      { resolution: '7680 × 4320', frameRates: ['23.976', '24', '25', '29.97'] },
+      { resolution: '5760 × 4820', frameRates: ['23.976', '24', '25', '29.97', '47.95'] },
+      { resolution: '5760 × 3040', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94', '75', '90'] },
+      { resolution: '5434 × 3056', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94', '75', '90'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Sony',
+    camera: 'VENICE 2 8K',
+    codec: 'Apple ProRes 4444',
+    profile: 'S-Log3',
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 4444',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 990,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Sony',
+    camera: 'VENICE 2 8K',
+    codec: 'Apple ProRes 422 HQ',
+    profile: 'S-Log3',
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 422 HQ',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 707,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94', '75', '90'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '47.95', '50', '59.94', '75', '90'] },
+    ],
+  }),
+];
+
+const sonyFx6Presets = [
+  ...createMappedEntries([
+    ['4096 × 2160', '23.976', 240],
+    ['4096 × 2160', '25', 250],
+    ['4096 × 2160', '29.97', 300],
+    ['3840 × 2160', '23.976', 240],
+    ['3840 × 2160', '25', 250],
+    ['3840 × 2160', '29.97', 300],
+    ['3840 × 2160', '50', 600],
+    ['3840 × 2160', '59.94', 600],
+  ] as const, {
+    brand: 'Sony',
+    camera: 'FX6',
+    codec: 'Sony XAVC-I',
+    source: 'data-calc structure + Sony Help Guide',
+    profile: 'S-Log3',
+    codecRateName: 'Sony XAVC-I',
+  }),
+  ...createMappedEntries([
+    ['3840 × 2160', '23.976', 100],
+    ['3840 × 2160', '25', 100],
+    ['3840 × 2160', '29.97', 100],
+    ['3840 × 2160', '50', 150],
+    ['3840 × 2160', '59.94', 150],
+    ['1920 × 1080', '23.976', 50],
+    ['1920 × 1080', '25', 50],
+    ['1920 × 1080', '29.97', 50],
+    ['1920 × 1080', '50', 100],
+    ['1920 × 1080', '59.94', 100],
+    ['1920 × 1080', '100', 100],
+    ['1920 × 1080', '119.88', 100],
+  ] as const, {
+    brand: 'Sony',
+    camera: 'FX6',
+    codec: 'Sony XAVC-L',
+    source: 'data-calc structure + Sony Help Guide',
+    profile: 'S-Log3',
+    codecRateName: 'Sony XAVC-L',
+  }),
+];
+
+const sonyBuranoPresets = [
+  ...createEntries({
+    brand: 'Sony',
+    camera: 'BURANO',
+    codec: 'Sony X-OCN LT',
+    profile: 'S-Log3 / RAW',
+    source: 'data-calc structure + Sony BURANO codec scaling',
+    codecRateName: 'Sony X-OCN LT',
+    baseResolution: '8640 × 5760',
+    baseFrameRate: '24',
+    baseMbps: 2100,
+    resolutions: [
+      { resolution: '8640 × 5760', frameRates: ['23.976', '24', '25', '29.97', '30'] },
+      { resolution: '6912 × 4320', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60', '100', '119.88'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Sony',
+    camera: 'BURANO',
+    codec: 'Sony XAVC H-I',
+    profile: 'S-Log3',
+    source: 'data-calc structure + Sony codec family scaling',
+    codecRateName: 'Sony XAVC H-I HQ',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 600,
+    resolutions: [
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88'] },
+    ],
+  }),
+];
+
+const canonC70Presets: VideoFileSizePreset[] = [
+  ...createEntries({
     brand: 'Canon',
     camera: 'C70',
-    codec: 'XF-AVC Intra',
-    resolution: '4K',
-    frameRate: '60p',
-    videoMbps: 600,
-    source: 'Canon USA',
+    codec: 'Canon XF-AVC',
     profile: 'Canon Log 2 / 3',
-  },
-  {
-    brand: 'Sony',
-    camera: 'FX3',
-    codec: 'XAVC S 4K',
-    resolution: '3840×2160',
-    frameRate: '60p',
-    videoMbps: 200,
-    source: 'Sony Help Guide',
-    profile: 'S-Log3',
-  },
-  {
-    brand: 'Sony',
-    camera: 'FX3',
-    codec: 'XAVC S 4K',
-    resolution: '3840×2160',
-    frameRate: '120p',
-    videoMbps: 280,
-    source: 'Sony Help Guide',
-    profile: 'S-Log3',
-  },
-  {
+    source: 'Canon EOS C70 official mode support + data-calc Canon XF-AVC rate',
+    codecRateName: 'Canon XF-AVC',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 240,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94'] },
+      { resolution: '3840 × 2160', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94'] },
+      { resolution: '1920 × 1080', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94', '100', '119.88'] },
+    ],
+  }),
+];
+
+const canonC80Presets: VideoFileSizePreset[] = [
+  ...createEntries({
+    brand: 'Canon',
+    camera: 'C80',
+    codec: 'Canon XF-AVC',
+    profile: 'Canon Log 2 / 3',
+    source: 'Canon EOS C80 official mode support + data-calc Canon XF-AVC rate',
+    codecRateName: 'Canon XF-AVC',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 240,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94', '100', '119.88'] },
+      { resolution: '3840 × 2160', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94', '100', '119.88'] },
+      { resolution: '2048 × 1080', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94', '100', '119.88', '150', '180'] },
+      { resolution: '1920 × 1080', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94', '100', '119.88', '150', '180'] },
+    ],
+  }),
+  ...createMappedEntries([
+    ['4096 × 2160', '23.98', 135],
+    ['4096 × 2160', '24', 135],
+    ['4096 × 2160', '25', 135],
+    ['4096 × 2160', '29.97', 135],
+    ['4096 × 2160', '50', 225],
+    ['4096 × 2160', '59.94', 225],
+    ['3840 × 2160', '23.98', 135],
+    ['3840 × 2160', '24', 135],
+    ['3840 × 2160', '25', 135],
+    ['3840 × 2160', '29.97', 135],
+    ['3840 × 2160', '50', 225],
+    ['3840 × 2160', '59.94', 225],
+    ['2048 × 1080', '23.98', 50],
+    ['2048 × 1080', '24', 50],
+    ['2048 × 1080', '25', 50],
+    ['2048 × 1080', '29.97', 50],
+    ['2048 × 1080', '50', 50],
+    ['2048 × 1080', '59.94', 50],
+    ['1920 × 1080', '23.98', 50],
+    ['1920 × 1080', '24', 50],
+    ['1920 × 1080', '25', 50],
+    ['1920 × 1080', '29.97', 50],
+    ['1920 × 1080', '50', 50],
+    ['1920 × 1080', '59.94', 50],
+  ] as const, {
+    brand: 'Canon',
+    camera: 'C80',
+    codec: 'XF-HEVC S 4:2:2 10-bit',
+    profile: 'Canon Log 2 / 3',
+    source: 'Canon EOS C80 official technical specifications',
+  }),
+  ...createMappedEntries([
+    ['4096 × 2160', '23.98', 100],
+    ['4096 × 2160', '24', 100],
+    ['4096 × 2160', '25', 100],
+    ['4096 × 2160', '29.97', 100],
+    ['4096 × 2160', '50', 150],
+    ['4096 × 2160', '59.94', 150],
+    ['3840 × 2160', '23.98', 100],
+    ['3840 × 2160', '24', 100],
+    ['3840 × 2160', '25', 100],
+    ['3840 × 2160', '29.97', 100],
+    ['3840 × 2160', '50', 150],
+    ['3840 × 2160', '59.94', 150],
+    ['2048 × 1080', '23.98', 35],
+    ['2048 × 1080', '24', 35],
+    ['2048 × 1080', '25', 35],
+    ['2048 × 1080', '29.97', 35],
+    ['2048 × 1080', '50', 35],
+    ['2048 × 1080', '59.94', 35],
+    ['1920 × 1080', '23.98', 35],
+    ['1920 × 1080', '24', 35],
+    ['1920 × 1080', '25', 35],
+    ['1920 × 1080', '29.97', 35],
+    ['1920 × 1080', '50', 35],
+    ['1920 × 1080', '59.94', 35],
+  ] as const, {
+    brand: 'Canon',
+    camera: 'C80',
+    codec: 'XF-HEVC S 4:2:0 10-bit',
+    profile: 'Canon Log 2 / 3',
+    source: 'Canon EOS C80 official technical specifications',
+  }),
+  ...createMappedEntries([
+    ['4096 × 2160', '23.98', 150],
+    ['4096 × 2160', '24', 150],
+    ['4096 × 2160', '25', 150],
+    ['4096 × 2160', '29.97', 150],
+    ['4096 × 2160', '50', 250],
+    ['4096 × 2160', '59.94', 250],
+    ['3840 × 2160', '23.98', 150],
+    ['3840 × 2160', '24', 150],
+    ['3840 × 2160', '25', 150],
+    ['3840 × 2160', '29.97', 150],
+    ['3840 × 2160', '50', 250],
+    ['3840 × 2160', '59.94', 250],
+    ['2048 × 1080', '23.98', 50],
+    ['2048 × 1080', '24', 50],
+    ['2048 × 1080', '25', 50],
+    ['2048 × 1080', '29.97', 50],
+    ['2048 × 1080', '50', 50],
+    ['2048 × 1080', '59.94', 50],
+    ['1920 × 1080', '23.98', 50],
+    ['1920 × 1080', '24', 50],
+    ['1920 × 1080', '25', 50],
+    ['1920 × 1080', '29.97', 50],
+    ['1920 × 1080', '50', 50],
+    ['1920 × 1080', '59.94', 50],
+  ] as const, {
+    brand: 'Canon',
+    camera: 'C80',
+    codec: 'XF-AVC S 4:2:2 10-bit',
+    profile: 'Canon Log 2 / 3',
+    source: 'Canon EOS C80 official technical specifications',
+  }),
+  ...createMappedEntries([
+    ['4096 × 2160', '23.98', 100],
+    ['4096 × 2160', '24', 100],
+    ['4096 × 2160', '25', 100],
+    ['4096 × 2160', '29.97', 100],
+    ['4096 × 2160', '50', 150],
+    ['4096 × 2160', '59.94', 150],
+    ['3840 × 2160', '23.98', 100],
+    ['3840 × 2160', '24', 100],
+    ['3840 × 2160', '25', 100],
+    ['3840 × 2160', '29.97', 100],
+    ['3840 × 2160', '50', 150],
+    ['3840 × 2160', '59.94', 150],
+    ['2048 × 1080', '23.98', 35],
+    ['2048 × 1080', '24', 35],
+    ['2048 × 1080', '25', 35],
+    ['2048 × 1080', '29.97', 35],
+    ['2048 × 1080', '50', 35],
+    ['2048 × 1080', '59.94', 35],
+    ['1920 × 1080', '23.98', 35],
+    ['1920 × 1080', '24', 35],
+    ['1920 × 1080', '25', 35],
+    ['1920 × 1080', '29.97', 35],
+    ['1920 × 1080', '50', 35],
+    ['1920 × 1080', '59.94', 35],
+  ] as const, {
+    brand: 'Canon',
+    camera: 'C80',
+    codec: 'XF-AVC S 4:2:0 8-bit',
+    profile: 'Canon 709 / Wide DR',
+    source: 'Canon EOS C80 official technical specifications',
+  }),
+];
+
+const canonC400Presets: VideoFileSizePreset[] = [
+  ...createEntries({
+    brand: 'Canon',
+    camera: 'C400',
+    codec: 'Cinema RAW Light LT',
+    profile: 'Canon Log 2 / 3 / RAW',
+    source: 'data-calc reference + Canon RAW Light scaling',
+    codecRateName: 'Canon Cinema RAW Light LT',
+    baseResolution: '6000 × 3164',
+    baseFrameRate: '24',
+    baseMbps: 960,
+    resolutions: [
+      { resolution: '6000 × 3164', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94'] },
+      { resolution: '4096 × 2160', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94', '100', '119.88'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Canon',
+    camera: 'C400',
+    codec: 'Canon XF-AVC',
+    profile: 'Canon Log 2 / 3',
+    source: 'Canon EOS C400 official mode support + data-calc Canon XF-AVC rate',
+    codecRateName: 'Canon XF-AVC',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 240,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94'] },
+      { resolution: '3840 × 2160', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94'] },
+      { resolution: '1920 × 1080', frameRates: ['23.98', '24', '25', '29.97', '50', '59.94', '100', '119.88'] },
+    ],
+  }),
+];
+
+const redVRaptorPresets = [
+  ...createEntries({
+    brand: 'RED',
+    camera: 'V-RAPTOR 8K VV',
+    codec: 'REDCODE HQ',
+    profile: 'Log3G10 / RWG',
+    source: 'data-calc structure + REDCODE scaling',
+    codecRateName: 'REDCODE HQ',
+    baseResolution: '8192 × 4320',
+    baseFrameRate: '24',
+    baseMbps: 950,
+    resolutions: [
+      { resolution: '8192 × 4320', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '7680 × 4320', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60', '96', '100', '119.88'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'RED',
+    camera: 'V-RAPTOR 8K VV',
+    codec: 'REDCODE MQ',
+    profile: 'Log3G10 / RWG',
+    source: 'data-calc structure + REDCODE scaling',
+    codecRateName: 'REDCODE MQ',
+    baseResolution: '8192 × 4320',
+    baseFrameRate: '24',
+    baseMbps: 700,
+    resolutions: [
+      { resolution: '8192 × 4320', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '7680 × 4320', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60', '96', '100', '119.88'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'RED',
+    camera: 'V-RAPTOR 8K VV',
+    codec: 'Apple ProRes 422 HQ',
+    profile: 'Log3G10 / RWG',
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 422 HQ',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 707,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+    ],
+  }),
+];
+
+const redKomodoXPresets = [
+  ...createEntries({
+    brand: 'RED',
+    camera: 'KOMODO-X',
+    codec: 'REDCODE HQ',
+    profile: 'Log3G10 / RWG',
+    source: 'data-calc reference + REDCODE scaling',
+    codecRateName: 'REDCODE HQ',
+    baseResolution: '6144 × 3240',
+    baseFrameRate: '24',
+    baseMbps: 450,
+    resolutions: [
+      { resolution: '6144 × 3240', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60', '96', '100', '119.88'] },
+      { resolution: '2048 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60', '96', '100', '119.88', '240'] },
+    ],
+  }),
+];
+
+const blackmagicP6KProPresets = [
+  ...createEntries({
     brand: 'Blackmagic',
-    camera: 'Cinema Camera 6K',
-    codec: 'Blackmagic RAW 5:1',
-    resolution: '6K',
-    frameRate: '24p',
-    videoMbps: 192,
-    source: 'Blackmagic Tech Specs',
+    camera: 'Pocket 6K Pro',
+    codec: 'Blackmagic RAW 3:1',
     profile: 'Film / Extended Video',
-  },
-  {
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 3:1',
+    baseResolution: '6144 × 3456',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(323),
+    resolutions: [
+      { resolution: '6144 × 3456', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94'] },
+      { resolution: '6144 × 2560', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '5744 × 3024', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Blackmagic RAW 5:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 5:1',
+    baseResolution: '6144 × 3456',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(194),
+    resolutions: [
+      { resolution: '6144 × 3456', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94'] },
+      { resolution: '6144 × 2560', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '5744 × 3024', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Blackmagic RAW 8:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 8:1',
+    baseResolution: '6144 × 3456',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(121),
+    resolutions: [
+      { resolution: '6144 × 3456', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94'] },
+      { resolution: '6144 × 2560', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '5744 × 3024', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Blackmagic RAW 12:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 12:1',
+    baseResolution: '6144 × 3456',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(81),
+    resolutions: [
+      { resolution: '6144 × 3456', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94'] },
+      { resolution: '6144 × 2560', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '5744 × 3024', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Apple ProRes 422',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 422',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 471,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Apple ProRes LT',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes LT',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 328,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Apple ProRes Proxy',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes Proxy',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 145,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Blackmagic RAW Q0',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic Q constant quality',
+    codecRateName: 'Blackmagic RAW Q0',
+    baseResolution: '6144 × 3456',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(280),
+    resolutions: [
+      { resolution: '6144 × 3456', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94'] },
+      { resolution: '6144 × 2560', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '5744 × 3024', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3728 × 3104', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '2868 × 1512', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Blackmagic RAW Q1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic Q constant quality',
+    codecRateName: 'Blackmagic RAW Q1',
+    baseResolution: '6144 × 3456',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(220),
+    resolutions: [
+      { resolution: '6144 × 3456', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94'] },
+      { resolution: '6144 × 2560', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '5744 × 3024', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3728 × 3104', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '2868 × 1512', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Blackmagic RAW Q3',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic Q constant quality',
+    codecRateName: 'Blackmagic RAW Q3',
+    baseResolution: '6144 × 3456',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(150),
+    resolutions: [
+      { resolution: '6144 × 3456', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94'] },
+      { resolution: '6144 × 2560', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '5744 × 3024', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3728 × 3104', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '2868 × 1512', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 6K Pro',
+    codec: 'Blackmagic RAW Q5',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic Q constant quality',
+    codecRateName: 'Blackmagic RAW Q5',
+    baseResolution: '6144 × 3456',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(105),
+    resolutions: [
+      { resolution: '6144 × 3456', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94'] },
+      { resolution: '6144 × 2560', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '5744 × 3024', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3728 × 3104', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '2868 × 1512', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+];
+
+const blackmagicP4KPresets = [
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Blackmagic RAW 3:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 3:1',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(129),
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Blackmagic RAW 5:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 5:1',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(77),
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Blackmagic RAW 8:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 8:1',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(48),
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Blackmagic RAW 12:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 12:1',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(32),
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Blackmagic RAW Q0',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic Q constant quality',
+    codecRateName: 'Blackmagic RAW Q0',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(112),
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Blackmagic RAW Q1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic Q constant quality',
+    codecRateName: 'Blackmagic RAW Q1',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(90),
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Blackmagic RAW Q3',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic Q constant quality',
+    codecRateName: 'Blackmagic RAW Q3',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(64),
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Blackmagic RAW Q5',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic Q constant quality',
+    codecRateName: 'Blackmagic RAW Q5',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(43),
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Apple ProRes 422',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 422',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 471,
+    resolutions: [
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Apple ProRes LT',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes LT',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 328,
+    resolutions: [
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Apple ProRes Proxy',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes Proxy',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 145,
+    resolutions: [
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Pocket 4K',
+    codec: 'Apple ProRes 422 HQ',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 422 HQ',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 707,
+    resolutions: [
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+];
+
+const blackmagicCinema6KFFPresets = [
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Cinema 6K FF',
+    codec: 'Blackmagic RAW 3:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 3:1',
+    baseResolution: '6048 × 4032',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(387),
+    resolutions: [
+      { resolution: '6048 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '6048 × 2520', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Cinema 6K FF',
+    codec: 'Blackmagic RAW 5:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 5:1',
+    baseResolution: '6048 × 4032',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(232),
+    resolutions: [
+      { resolution: '6048 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '6048 × 2520', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Cinema 6K FF',
+    codec: 'Blackmagic RAW 8:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 8:1',
+    baseResolution: '6048 × 4032',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(145),
+    resolutions: [
+      { resolution: '6048 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '6048 × 2520', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Cinema 6K FF',
+    codec: 'Blackmagic RAW 12:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 12:1',
+    baseResolution: '6048 × 4032',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(97),
+    resolutions: [
+      { resolution: '6048 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '6048 × 2520', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Cinema 6K FF',
+    codec: 'Apple ProRes 422',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 422',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 471,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60', '100', '119.88'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Cinema 6K FF',
+    codec: 'Apple ProRes LT',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes LT',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 328,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60', '100', '119.88'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Cinema 6K FF',
+    codec: 'Apple ProRes Proxy',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes Proxy',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 145,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60', '100', '119.88'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'Cinema 6K FF',
+    codec: 'Apple ProRes 422 HQ',
+    profile: 'Film / Extended Video',
+    source: 'data-calc reference + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 422 HQ',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 707,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['23.976', '24', '25', '29.97', '30', '48', '50', '59.94', '60', '100', '119.88'] },
+    ],
+  }),
+];
+
+const blackmagicUrsaMiniPro12KPresets = [
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'URSA Mini Pro 12K',
+    codec: 'Blackmagic RAW 5:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 5:1',
+    baseResolution: '12288 × 6480',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(1546),
+    resolutions: [
+      { resolution: '12288 × 6480', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '8192 × 4320', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '120'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '220', '240'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'URSA Mini Pro 12K',
+    codec: 'Blackmagic RAW 8:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 8:1',
+    baseResolution: '12288 × 6480',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(966),
+    resolutions: [
+      { resolution: '12288 × 6480', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '8192 × 4320', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '120'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '220', '240'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'URSA Mini Pro 12K',
+    codec: 'Blackmagic RAW 12:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 12:1',
+    baseResolution: '12288 × 6480',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(644),
+    resolutions: [
+      { resolution: '12288 × 6480', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '8192 × 4320', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '120'] },
+      { resolution: '4096 × 2160', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60', '220', '240'] },
+    ],
+  }),
+];
+
+const blackmagicPyxis6KPresets = [
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'PYXIS 6K',
+    codec: 'Blackmagic RAW 3:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 3:1',
+    baseResolution: '6048 × 4032',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(387),
+    resolutions: [
+      { resolution: '6048 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '4832 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '6048 × 3408', frameRates: ['23.976', '24', '25', '29.97', '30', '46'] },
+      { resolution: '6048 × 3200', frameRates: ['23.976', '24', '25', '29.97', '30', '48'] },
+      { resolution: '6048 × 2520', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '4096 × 3072', frameRates: ['23.976', '24', '25', '29.97', '30', '50'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'PYXIS 6K',
+    codec: 'Blackmagic RAW 5:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 5:1',
+    baseResolution: '6048 × 4032',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(232),
+    resolutions: [
+      { resolution: '6048 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '4832 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '6048 × 3408', frameRates: ['23.976', '24', '25', '29.97', '30', '46'] },
+      { resolution: '6048 × 3200', frameRates: ['23.976', '24', '25', '29.97', '30', '48'] },
+      { resolution: '6048 × 2520', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '4096 × 3072', frameRates: ['23.976', '24', '25', '29.97', '30', '50'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'PYXIS 6K',
+    codec: 'Blackmagic RAW 8:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 8:1',
+    baseResolution: '6048 × 4032',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(145),
+    resolutions: [
+      { resolution: '6048 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '4832 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '6048 × 3408', frameRates: ['23.976', '24', '25', '29.97', '30', '46'] },
+      { resolution: '6048 × 3200', frameRates: ['23.976', '24', '25', '29.97', '30', '48'] },
+      { resolution: '6048 × 2520', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '4096 × 3072', frameRates: ['23.976', '24', '25', '29.97', '30', '50'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Blackmagic',
+    camera: 'PYXIS 6K',
+    codec: 'Blackmagic RAW 12:1',
+    profile: 'Film / Extended Video',
+    source: 'data-calc structure + Blackmagic data rate reference',
+    codecRateName: 'Blackmagic RAW 12:1',
+    baseResolution: '6048 × 4032',
+    baseFrameRate: '24',
+    baseMbps: mbPerSecondToMbps(97),
+    resolutions: [
+      { resolution: '6048 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '4832 × 4032', frameRates: ['23.976', '24', '25', '29.97', '30', '36'] },
+      { resolution: '6048 × 3408', frameRates: ['23.976', '24', '25', '29.97', '30', '46'] },
+      { resolution: '6048 × 3200', frameRates: ['23.976', '24', '25', '29.97', '30', '48'] },
+      { resolution: '6048 × 2520', frameRates: ['23.976', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '4096 × 3072', frameRates: ['23.976', '24', '25', '29.97', '30', '50'] },
+    ],
+  }),
+];
+
+const nikonZ8Presets = [
+  ...createEntries({
     brand: 'Nikon',
     camera: 'Z8',
-    codec: 'N-RAW HQ',
-    resolution: '8256×4644',
-    frameRate: '24p',
-    videoMbps: 2780,
-    source: 'Nikon Online Manual',
+    codec: 'Nikon N-RAW',
     profile: 'RAW',
-  },
-  {
+    source: 'data-calc structure + Nikon manual',
+    codecRateName: 'Nikon N-RAW',
+    baseResolution: '8256 × 4644',
+    baseFrameRate: '24',
+    baseMbps: 2780,
+    resolutions: [
+      { resolution: '8256 × 4644', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '4128 × 2322', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['24', '25', '30', '50', '60', '120'] },
+    ],
+  }),
+  ...createEntries({
     brand: 'Nikon',
     camera: 'Z8',
-    codec: 'N-RAW HQ',
-    resolution: '8256×4644',
-    frameRate: '30p',
-    videoMbps: 3470,
-    source: 'Nikon Online Manual',
-    profile: 'RAW',
-  },
-  {
-    brand: 'Nikon',
-    camera: 'Z8',
-    codec: 'N-RAW HQ',
-    resolution: '8256×4644',
-    frameRate: '60p',
-    videoMbps: 5780,
-    source: 'Nikon Online Manual',
-    profile: 'RAW',
-  },
-  {
-    brand: 'Nikon',
-    camera: 'Z8',
-    codec: 'N-RAW HQ',
-    resolution: '4128×2322',
-    frameRate: '24p',
-    videoMbps: 700,
-    source: 'Nikon Online Manual',
-    profile: 'RAW',
-  },
-  {
-    brand: 'Nikon',
-    camera: 'Z8',
-    codec: 'N-RAW HQ',
-    resolution: '4128×2322',
-    frameRate: '60p',
-    videoMbps: 1740,
-    source: 'Nikon Online Manual',
-    profile: 'RAW',
-  },
-  {
-    brand: 'Nikon',
-    camera: 'Z8',
-    codec: 'N-RAW HQ',
-    resolution: '4128×2322',
-    frameRate: '120p',
-    videoMbps: 3480,
-    source: 'Nikon Online Manual',
-    profile: 'RAW',
-  },
-  {
-    brand: 'Nikon',
-    camera: 'Z8',
-    codec: 'ProRes 422 HQ',
-    resolution: '3840×2160',
-    frameRate: '24p',
-    videoMbps: 705,
-    source: 'Apple ProRes target rate + Nikon support',
+    codec: 'Apple ProRes 422 HQ',
     profile: 'N-Log',
-  },
-  {
+    source: 'data-calc structure + Apple ProRes target rate',
+    codecRateName: 'Apple ProRes 422 HQ',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 707,
+    resolutions: [
+      { resolution: '5376 × 3024', frameRates: ['24', '25', '30'] },
+      { resolution: '3840 × 2160', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['24', '25', '30', '50', '60', '100', '120'] },
+    ],
+  }),
+  ...createEntries({
     brand: 'Nikon',
     camera: 'Z8',
-    codec: 'ProRes 422 HQ',
-    resolution: '3840×2160',
-    frameRate: '60p',
-    videoMbps: 1763,
-    source: 'Apple ProRes target rate + Nikon support',
+    codec: 'H.265 10-bit',
     profile: 'N-Log',
-  },
-] as const;
+    source: 'data-calc structure + Nikon codec family estimate',
+    codecRateName: 'H.265 10-bit',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 100,
+    resolutions: [
+      { resolution: '5376 × 3024', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['24', '25', '30', '50', '60', '100', '120'] },
+      { resolution: '1920 × 1080', frameRates: ['24', '25', '30', '50', '60', '100', '120', '200', '240'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Nikon',
+    camera: 'Z8',
+    codec: 'H.265 8-bit',
+    profile: 'Standard',
+    source: 'data-calc structure + Nikon codec family estimate',
+    codecRateName: 'H.265 8-bit',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 70,
+    resolutions: [
+      { resolution: '5376 × 3024', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '3840 × 2160 DX', frameRates: ['24', '25', '30', '50', '60', '100', '120'] },
+      { resolution: '1920 × 1080', frameRates: ['24', '25', '30', '50', '60', '100', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Nikon',
+    camera: 'Z8',
+    codec: 'H.264',
+    profile: 'Standard',
+    source: 'data-calc structure + Nikon codec family estimate',
+    codecRateName: 'H.264',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 50,
+    resolutions: [
+      { resolution: '3840 × 2160', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['24', '25', '30', '50', '60', '100', '120'] },
+    ],
+  }),
+];
+
+const nikonZ6IIIPresets = [
+  ...createEntries({
+    brand: 'Nikon',
+    camera: 'Z6III',
+    codec: 'Nikon N-RAW',
+    profile: 'RAW',
+    source: 'Nikon Z6III official specifications',
+    codecRateName: 'Nikon N-RAW',
+    baseResolution: '6048 × 3402',
+    baseFrameRate: '24',
+    baseMbps: 1870,
+    resolutions: [
+      { resolution: '6048 × 3402', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '4032 × 2268', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '3984 × 2240', frameRates: ['24', '25', '30', '50', '60', '100', '120'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Nikon',
+    camera: 'Z6III',
+    codec: 'Apple ProRes 422 HQ',
+    profile: 'N-Log',
+    source: 'Nikon Z6III official specifications',
+    codecRateName: 'Apple ProRes 422 HQ',
+    baseResolution: '5376 × 3024',
+    baseFrameRate: '24',
+    baseMbps: 1380,
+    resolutions: [
+      { resolution: '5376 × 3024', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['24', '25', '30', '50', '60', '100', '120'] },
+      { resolution: '1920 × 1080', frameRates: ['24', '25', '30', '50', '60', '100', '120', '200', '240'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Nikon',
+    camera: 'Z6III',
+    codec: 'H.265 10-bit',
+    profile: 'N-Log',
+    source: 'Nikon Z6III official specifications',
+    codecRateName: 'H.265 10-bit',
+    baseResolution: '5376 × 3024',
+    baseFrameRate: '24',
+    baseMbps: 125,
+    resolutions: [
+      { resolution: '5376 × 3024', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['24', '25', '30', '50', '60', '100', '120'] },
+      { resolution: '1920 × 1080', frameRates: ['24', '25', '30', '50', '60', '100', '120', '200', '240'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Nikon',
+    camera: 'Z6III',
+    codec: 'H.264',
+    profile: 'Standard',
+    source: 'Nikon Z6III official specifications',
+    codecRateName: 'H.264',
+    baseResolution: '3840 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 65,
+    resolutions: [
+      { resolution: '3840 × 2160', frameRates: ['24', '25', '30', '50', '60'] },
+      { resolution: '1920 × 1080', frameRates: ['24', '25', '30', '50', '60', '100', '120', '200', '240'] },
+    ],
+  }),
+];
+
+const fujifilmXH2SPresets = [
+  ...createEntries({
+    brand: 'Fujifilm',
+    camera: 'X-H2S',
+    codec: 'Apple ProRes 422 HQ',
+    profile: 'F-Log2 / F-Log',
+    source: 'Fujifilm X-H2S official specifications',
+    codecRateName: 'Apple ProRes 422 HQ',
+    baseResolution: '6240 × 4160',
+    baseFrameRate: '24',
+    baseMbps: 2200,
+    resolutions: [
+      { resolution: '6240 × 4160', frameRates: ['23.98', '24', '25', '29.97', '30'] },
+      { resolution: '4096 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Fujifilm',
+    camera: 'X-H2S',
+    codec: 'Apple ProRes 422',
+    profile: 'F-Log2 / F-Log',
+    source: 'Fujifilm X-H2S official specifications',
+    codecRateName: 'Apple ProRes 422',
+    baseResolution: '6240 × 4160',
+    baseFrameRate: '24',
+    baseMbps: 1460,
+    resolutions: [
+      { resolution: '6240 × 4160', frameRates: ['23.98', '24', '25', '29.97', '30'] },
+      { resolution: '4096 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Fujifilm',
+    camera: 'X-H2S',
+    codec: 'Apple ProRes LT',
+    profile: 'F-Log2 / F-Log',
+    source: 'Fujifilm X-H2S official specifications',
+    codecRateName: 'Apple ProRes LT',
+    baseResolution: '6240 × 4160',
+    baseFrameRate: '24',
+    baseMbps: 1020,
+    resolutions: [
+      { resolution: '6240 × 4160', frameRates: ['23.98', '24', '25', '29.97', '30'] },
+      { resolution: '4096 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+      { resolution: '3840 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Fujifilm',
+    camera: 'X-H2S',
+    codec: 'H.265 10-bit',
+    profile: 'F-Log2 / F-Log',
+    source: 'Fujifilm X-H2S official specifications',
+    codecRateName: 'H.265 10-bit',
+    baseResolution: '6240 × 4160',
+    baseFrameRate: '24',
+    baseMbps: 360,
+    resolutions: [
+      { resolution: '6240 × 4160', frameRates: ['23.98', '24', '25', '29.97', '30'] },
+      { resolution: '4096 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+      { resolution: '3840 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+      { resolution: '2048 × 1080', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120', '200', '239.76', '240'] },
+      { resolution: '1920 × 1080', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120', '200', '239.76', '240'] },
+    ],
+  }),
+  ...createEntries({
+    brand: 'Fujifilm',
+    camera: 'X-H2S',
+    codec: 'H.264',
+    profile: 'Standard',
+    source: 'Fujifilm X-H2S official specifications',
+    codecRateName: 'H.264',
+    baseResolution: '4096 × 2160',
+    baseFrameRate: '24',
+    baseMbps: 200,
+    resolutions: [
+      { resolution: '4096 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+      { resolution: '3840 × 2160', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120'] },
+      { resolution: '2048 × 1080', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120', '200', '239.76', '240'] },
+      { resolution: '1920 × 1080', frameRates: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60', '100', '119.88', '120', '200', '239.76', '240'] },
+    ],
+  }),
+];
+
+const VIDEO_FILE_SIZE_PRESETS: VideoFileSizePreset[] = [
+  ...arriAlexa35Presets,
+  ...sonyFx3Presets,
+  ...sonyFx6Presets,
+  ...sonyVenice2Presets,
+  ...sonyBuranoPresets,
+  ...canonC70Presets,
+  ...canonC80Presets,
+  ...canonC400Presets,
+  ...redVRaptorPresets,
+  ...redKomodoXPresets,
+  ...blackmagicP4KPresets,
+  ...blackmagicP6KProPresets,
+  ...blackmagicCinema6KFFPresets,
+  ...blackmagicUrsaMiniPro12KPresets,
+  ...blackmagicPyxis6KPresets,
+  ...nikonZ8Presets,
+  ...nikonZ6IIIPresets,
+  ...fujifilmXH2SPresets,
+];
 
 function MicroAppModal({
   title,
   children,
   onClose,
+  headerAction,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  headerAction?: ReactNode;
 }) {
   return (
     <div className="microapp-backdrop" onClick={onClose}>
@@ -2450,9 +4050,12 @@ function MicroAppModal({
             <span className="microapp-modal-eyebrow">Others</span>
             <h2>{title}</h2>
           </div>
-          <button type="button" className="microapp-close" onClick={onClose} aria-label="Close">
-            <X size={16} />
-          </button>
+          <div className="microapp-modal-actions">
+            {headerAction}
+            <button type="button" className="microapp-close" onClick={onClose} aria-label="Close">
+              <X size={16} />
+            </button>
+          </div>
         </div>
         {children}
       </div>
@@ -2664,7 +4267,7 @@ function VideoFileSizeCalculator() {
     preset.frameRate === frameRate
   ) ?? VIDEO_FILE_SIZE_PRESETS[0];
 
-  const videoMbps = selectedPreset.videoMbps;
+  const videoMbps = resolveCodecVideoMbps(selectedPreset.codecRateName, selectedPreset.resolution, selectedPreset.frameRate) ?? selectedPreset.videoMbps;
   const audioKbps = Number(audioBitrate) || 0;
   const durationSeconds = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60 + (Number(seconds) || 0);
   const totalMbps = videoMbps + audioKbps / 1000;
@@ -2741,28 +4344,17 @@ function VideoFileSizeCalculator() {
             <AudioLines size={14} />
             <span>Audio Bitrate (kbps)</span>
           </label>
-          <input
-            type="number"
-            min="0"
-            step="1"
+          <select
             value={audioBitrate}
             onChange={(event) => setAudioBitrate(event.target.value)}
-            className="crop-factor-input"
-            placeholder="256"
-          />
-          <div className="crop-factor-inline-note">Common</div>
-          <div className="crop-factor-chip-row compact">
+            className="crop-factor-input micro-tool-select"
+          >
             {COMMON_AUDIO_BITRATES.map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`crop-factor-chip ${Number(audioBitrate) === value ? "active" : ""}`}
-                onClick={() => setAudioBitrate(String(value))}
-              >
-                <span>{value} kbps</span>
-              </button>
+              <option key={value} value={value}>
+                {value} kbps
+              </option>
             ))}
-          </div>
+          </select>
         </div>
 
         <div className="micro-tool-field">
@@ -2825,6 +4417,469 @@ function VideoFileSizeCalculator() {
         <div className="crop-factor-result-card">
           <span className="crop-factor-result-label">Large Media</span>
           <strong>{totalTerabytes >= 1 ? `${totalTerabytes.toFixed(2)} TB` : "Below 1 TB"}</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AspectRatioCalculator() {
+  const [width, setWidth] = useState("1920");
+  const [height, setHeight] = useState("1080");
+  const [targetPresetLabel, setTargetPresetLabel] = useState<string>(ASPECT_DELIVERY_PRESETS[0].label);
+
+  const widthValue = Number(width) || 0;
+  const heightValue = Number(height) || 0;
+
+  const roundedWidth = Math.max(1, Math.round(widthValue || 1));
+  const roundedHeight = Math.max(1, Math.round(heightValue || 1));
+
+  const gcd = (a: number, b: number): number => {
+    let x = Math.abs(a);
+    let y = Math.abs(b);
+    while (y !== 0) {
+      const next = x % y;
+      x = y;
+      y = next;
+    }
+    return x || 1;
+  };
+
+  const divisor = gcd(roundedWidth, roundedHeight);
+  const ratioWidth = roundedWidth / divisor;
+  const ratioHeight = roundedHeight / divisor;
+  const decimalRatio = heightValue > 0 ? widthValue / heightValue : 0;
+  const heightAt1920 = decimalRatio > 0 ? 1920 / decimalRatio : 0;
+  const widthAt1080 = decimalRatio > 0 ? 1080 * decimalRatio : 0;
+  const targetPreset = ASPECT_DELIVERY_PRESETS.find((preset) => preset.label === targetPresetLabel) ?? ASPECT_DELIVERY_PRESETS[0];
+  const targetRatio = targetPreset.width / targetPreset.height;
+  const fitHeightForTarget = widthValue > 0 && targetRatio > 0 ? widthValue / targetRatio : 0;
+  const fitWidthForTarget = heightValue > 0 && targetRatio > 0 ? heightValue * targetRatio : 0;
+  const cropsSides = decimalRatio > targetRatio && decimalRatio > 0 ? (1 - targetRatio / decimalRatio) * 100 : 0;
+  const cropsTopBottom = decimalRatio < targetRatio && targetRatio > 0 ? (1 - decimalRatio / targetRatio) * 100 : 0;
+
+  const nearestPreset = decimalRatio > 0
+    ? ASPECT_RATIO_PRESETS.reduce<(typeof ASPECT_RATIO_PRESETS)[number] | null>((closest, preset) => {
+        const presetRatio = preset.width / preset.height;
+        if (!closest) return preset;
+        const closestRatio = closest.width / closest.height;
+        return Math.abs(presetRatio - decimalRatio) < Math.abs(closestRatio - decimalRatio) ? preset : closest;
+      }, null)
+    : null;
+
+  return (
+    <div className="micro-tool-app">
+      <div className="micro-tool-inputs">
+        <div className="micro-tool-field">
+          <label className="crop-factor-label">
+            <Ruler size={14} />
+            <span>Width</span>
+          </label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={width}
+            onChange={(event) => setWidth(event.target.value)}
+            className="crop-factor-input"
+            placeholder="1920"
+          />
+        </div>
+
+        <div className="micro-tool-field">
+          <label className="crop-factor-label">
+            <Ruler size={14} />
+            <span>Height</span>
+          </label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={height}
+            onChange={(event) => setHeight(event.target.value)}
+            className="crop-factor-input"
+            placeholder="1080"
+          />
+        </div>
+
+        <div className="micro-tool-field">
+          <label className="crop-factor-label">
+            <Scaling size={14} />
+            <span>Common Ratios</span>
+          </label>
+          <div className="crop-factor-chip-row">
+            {ASPECT_RATIO_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                className={`crop-factor-chip ${ratioWidth === preset.width && ratioHeight === preset.height ? "active" : ""}`}
+                onClick={() => {
+                  setWidth(String(preset.width));
+                  setHeight(String(preset.height));
+                }}
+              >
+                <span>{preset.label}</span>
+                <small>{preset.note}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="micro-tool-field" style={{ gridColumn: "1 / -1" }}>
+          <label className="crop-factor-label">
+            <LayoutGrid size={14} />
+            <span>Common Frames</span>
+          </label>
+          <div className="crop-factor-chip-row">
+            {ASPECT_RESOLUTION_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                className={`crop-factor-chip ${roundedWidth === preset.width && roundedHeight === preset.height ? "active" : ""}`}
+                onClick={() => {
+                  setWidth(String(preset.width));
+                  setHeight(String(preset.height));
+                }}
+              >
+                <span>{preset.label}</span>
+                <small>{preset.note}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="micro-tool-field" style={{ gridColumn: "1 / -1" }}>
+          <label className="crop-factor-label">
+            <Film size={14} />
+            <span>Delivery Presets</span>
+          </label>
+          <div className="crop-factor-chip-row">
+            {ASPECT_DELIVERY_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                className={`crop-factor-chip ${targetPreset.label === preset.label ? "active" : ""}`}
+                onClick={() => setTargetPresetLabel(preset.label)}
+              >
+                <span>{preset.label}</span>
+                <small>{preset.note}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="micro-tool-results">
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Simplified Ratio</span>
+          <strong>{widthValue > 0 && heightValue > 0 ? `${ratioWidth}:${ratioHeight}` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Decimal Ratio</span>
+          <strong>{decimalRatio ? `${decimalRatio.toFixed(3)}:1` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Closest Standard</span>
+          <strong>{nearestPreset ? nearestPreset.label : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Height at 1920 Width</span>
+          <strong>{heightAt1920 ? `${Math.round(heightAt1920)} px` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Width at 1080 Height</span>
+          <strong>{widthAt1080 ? `${Math.round(widthAt1080)} px` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Current Frame</span>
+          <strong>{widthValue > 0 && heightValue > 0 ? `${roundedWidth} × ${roundedHeight}` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">{targetPreset.label} Fit Height</span>
+          <strong>{fitHeightForTarget ? `${Math.round(fitHeightForTarget)} px` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">{targetPreset.label} Fit Width</span>
+          <strong>{fitWidthForTarget ? `${Math.round(fitWidthForTarget)} px` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card">
+          <span className="crop-factor-result-label">Crop Needed</span>
+          <strong>
+            {cropsSides > 0
+              ? `${cropsSides.toFixed(1)}% sides`
+              : cropsTopBottom > 0
+                ? `${cropsTopBottom.toFixed(1)}% top / bottom`
+                : "No crop"}
+          </strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TransferTimeCalculator({ resetNonce = 0 }: { resetNonce?: number }) {
+  const [sizeValue, setSizeValue] = useState("256");
+  const [sizeUnit, setSizeUnit] = useState<string>("GB");
+  const [sourceLabel, setSourceLabel] = useState<string>(TRANSFER_SOURCE_PRESETS[2].label);
+  const [interfaceLabel, setInterfaceLabel] = useState<string>(TRANSFER_INTERFACE_PRESETS[1].label);
+  const [destinationLabel, setDestinationLabel] = useState<string>(TRANSFER_DESTINATION_PRESETS[0].label);
+  const [efficiency, setEfficiency] = useState("100");
+
+  const sizeUnitConfig = TRANSFER_SIZE_UNITS.find((unit) => unit.label === sizeUnit) ?? TRANSFER_SIZE_UNITS[1];
+  const sourcePreset = TRANSFER_SOURCE_PRESETS.find((preset) => preset.label === sourceLabel) ?? TRANSFER_SOURCE_PRESETS[0];
+  const interfacePreset = TRANSFER_INTERFACE_PRESETS.find((preset) => preset.label === interfaceLabel) ?? TRANSFER_INTERFACE_PRESETS[0];
+  const destinationPreset = TRANSFER_DESTINATION_PRESETS.find((preset) => preset.label === destinationLabel) ?? TRANSFER_DESTINATION_PRESETS[0];
+  const sourceUnitConfig = TRANSFER_SPEED_UNITS.find((unit) => unit.label === sourcePreset.unit) ?? TRANSFER_SPEED_UNITS[0];
+  const interfaceUnitConfig = TRANSFER_SPEED_UNITS.find((unit) => unit.label === interfacePreset.unit) ?? TRANSFER_SPEED_UNITS[0];
+  const destinationUnitConfig = TRANSFER_SPEED_UNITS.find((unit) => unit.label === destinationPreset.unit) ?? TRANSFER_SPEED_UNITS[0];
+
+  const totalBytes = (Number(sizeValue) || 0) * sizeUnitConfig.bytes;
+  const sourceBytesPerSecond = sourcePreset.value * sourceUnitConfig.bytesPerSecond;
+  const interfaceBytesPerSecond = interfacePreset.value * interfaceUnitConfig.bytesPerSecond;
+  const destinationBytesPerSecond = destinationPreset.value * destinationUnitConfig.bytesPerSecond;
+  const bottleneckBytesPerSecond = Math.min(sourceBytesPerSecond, interfaceBytesPerSecond, destinationBytesPerSecond);
+  const hasBottleneck = new Set([sourceBytesPerSecond, interfaceBytesPerSecond, destinationBytesPerSecond]).size > 1;
+  const effectiveBytesPerSecond = bottleneckBytesPerSecond * Math.max(0, Math.min(100, Number(efficiency) || 0)) / 100;
+  const transferSeconds = effectiveBytesPerSecond > 0 ? totalBytes / effectiveBytesPerSecond : 0;
+  const totalMinutes = transferSeconds / 60;
+  const totalHours = transferSeconds / 3600;
+  const effectiveMBps = effectiveBytesPerSecond / 1_000_000;
+  const effectiveGbps = effectiveBytesPerSecond * 8 / 1_000_000_000;
+  const bottleneckStage = bottleneckBytesPerSecond === sourceBytesPerSecond
+    ? "source"
+    : bottleneckBytesPerSecond === interfaceBytesPerSecond
+      ? "interface"
+      : "destination";
+
+  const computeTransferSeconds = (bytesPerSecond: number) => {
+    const adjusted = bytesPerSecond * Math.max(0, Math.min(100, Number(efficiency) || 0)) / 100;
+    return adjusted > 0 ? totalBytes / adjusted : 0;
+  };
+
+  const formatDuration = (seconds: number) => {
+    if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+    const days = Math.floor(seconds / 86_400);
+    const hours = Math.floor((seconds % 86_400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.round(seconds % 60);
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours || days) parts.push(`${hours}h`);
+    if (minutes || hours || days) parts.push(`${minutes}m`);
+    parts.push(`${secs}s`);
+    return parts.join(" ");
+  };
+
+  useEffect(() => {
+    setSizeValue("256");
+    setSizeUnit("GB");
+    setSourceLabel(TRANSFER_SOURCE_PRESETS[2].label);
+    setInterfaceLabel(TRANSFER_INTERFACE_PRESETS[1].label);
+    setDestinationLabel(TRANSFER_DESTINATION_PRESETS[0].label);
+    setEfficiency("100");
+  }, [resetNonce]);
+
+  return (
+    <div className="micro-tool-app">
+      <div className="micro-tool-results transfer-top-stats">
+        <div className="crop-factor-result-card transfer-stat-card transfer-time-card">
+          <div className="transfer-summary-head">
+            <span className="crop-factor-result-label">Transfer Time</span>
+          </div>
+          <strong>{formatDuration(transferSeconds)}</strong>
+        </div>
+        <div className="crop-factor-result-card transfer-stat-card">
+          <span className="crop-factor-result-label">Effective Speed</span>
+          <strong>{effectiveMBps > 0 ? `${effectiveMBps.toFixed(0)} MB/s` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card transfer-stat-card">
+          <span className="crop-factor-result-label">Effective Link Rate</span>
+          <strong>{effectiveGbps > 0 ? `${effectiveGbps.toFixed(2)} Gbps` : "—"}</strong>
+        </div>
+        <div className="crop-factor-result-card transfer-stat-card">
+          <span className="crop-factor-result-label">Duration</span>
+          <strong>
+            {totalMinutes > 0
+              ? `${totalMinutes.toFixed(1)} min · ${totalHours.toFixed(2)} h`
+              : "—"}
+          </strong>
+        </div>
+        <div className="crop-factor-result-card transfer-stat-card">
+          <span className="crop-factor-result-label">Calculation Basis</span>
+          <strong>{sizeValue ? `${sizeValue} ${sizeUnit}` : "—"}</strong>
+        </div>
+      </div>
+
+      <div className="micro-tool-inputs">
+        <div className="micro-tool-field">
+          <label className="crop-factor-label">
+            <HardDrive size={14} />
+            <span>Data Size</span>
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={sizeValue}
+            onChange={(event) => setSizeValue(event.target.value)}
+            className="crop-factor-input"
+            placeholder="256"
+          />
+          <select
+            value={sizeUnit}
+            onChange={(event) => setSizeUnit(event.target.value)}
+            className="crop-factor-input micro-tool-select"
+          >
+            {TRANSFER_SIZE_UNITS.map((unit) => (
+              <option key={unit.label} value={unit.label}>{unit.label}</option>
+            ))}
+          </select>
+          <div className="crop-factor-chip-row">
+            {TRANSFER_SIZE_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                className="crop-factor-chip"
+                onClick={() => {
+                  setSizeValue(String(preset.value));
+                  setSizeUnit(preset.unit);
+                }}
+              >
+                <span>{preset.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="micro-tool-field">
+          <label className="crop-factor-label">
+            <CircleDot size={14} />
+            <span>Efficiency</span>
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="100"
+            step="1"
+            value={efficiency}
+            onChange={(event) => setEfficiency(event.target.value)}
+            className="crop-factor-input"
+            placeholder="100"
+          />
+          <div className="micro-tool-source-note">
+            Use 100% for measured sustained speed. Lower it if your real copy pipeline runs below the rated interface speed.
+          </div>
+          <div className="crop-factor-chip-row compact">
+            {[100, 95, 90, 85, 80].map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`crop-factor-chip ${Number(efficiency) === value ? "active" : ""}`}
+                onClick={() => setEfficiency(String(value))}
+              >
+                {value}%
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="micro-tool-field">
+          <label className="crop-factor-label">
+            <FolderOpen size={14} />
+            <span>Ethernet Reference</span>
+          </label>
+          <div className="transfer-network-reference">
+            {TRANSFER_NETWORK_REFERENCE.map((entry) => (
+              <button
+                key={entry.label}
+                type="button"
+                className={`transfer-network-row ${interfaceLabel === entry.interface && destinationLabel === entry.destination ? "active" : ""}`}
+                onClick={() => {
+                  setInterfaceLabel(entry.interface);
+                  setDestinationLabel(entry.destination);
+                }}
+              >
+                <strong>{entry.label}</strong>
+                <span>{entry.throughput}</span>
+                <small>{formatDuration(computeTransferSeconds(entry.value * (TRANSFER_SPEED_UNITS.find((unit) => unit.label === entry.unit)?.bytesPerSecond ?? 0)))}</small>
+              </button>
+            ))}
+          </div>
+          <div className="micro-tool-source-note">
+            Practical sustained Ethernet backup speeds. Click a row to apply it to the flow.
+          </div>
+        </div>
+
+        <div className="micro-tool-field" style={{ gridColumn: "1 / -1" }}>
+          <div className="transfer-flow">
+            <div className="transfer-stage">
+              <div className="transfer-stage-head">
+                <HardDrive size={15} />
+                <span>Source media</span>
+                {hasBottleneck && bottleneckStage === "source" && <span className="transfer-inline-badge">Bottleneck</span>}
+              </div>
+              <select
+                value={sourceLabel}
+                onChange={(event) => setSourceLabel(event.target.value)}
+                className="crop-factor-input micro-tool-select"
+              >
+                {TRANSFER_SOURCE_PRESETS.map((preset) => (
+                  <option key={preset.label} value={preset.label}>{preset.label}</option>
+                ))}
+              </select>
+              <div className="transfer-stage-meta">
+                <span>{sourcePreset.note}</span>
+              </div>
+            </div>
+
+            <div className="transfer-stage-arrow">
+              <ArrowRight size={16} />
+            </div>
+
+            <div className="transfer-stage">
+              <div className="transfer-stage-head">
+                <Boxes size={15} />
+                <span>Interface</span>
+                {hasBottleneck && bottleneckStage === "interface" && <span className="transfer-inline-badge">Bottleneck</span>}
+              </div>
+              <select
+                value={interfaceLabel}
+                onChange={(event) => setInterfaceLabel(event.target.value)}
+                className="crop-factor-input micro-tool-select"
+              >
+                {TRANSFER_INTERFACE_PRESETS.map((preset) => (
+                  <option key={preset.label} value={preset.label}>{preset.label}</option>
+                ))}
+              </select>
+              <div className="transfer-stage-meta">
+                <span>{interfacePreset.note}</span>
+              </div>
+            </div>
+
+            <div className="transfer-stage-arrow">
+              <ArrowRight size={16} />
+            </div>
+
+            <div className="transfer-stage">
+              <div className="transfer-stage-head">
+                <FolderOpen size={15} />
+                <span>Destination</span>
+                {hasBottleneck && bottleneckStage === "destination" && <span className="transfer-inline-badge">Bottleneck</span>}
+              </div>
+              <select
+                value={destinationLabel}
+                onChange={(event) => setDestinationLabel(event.target.value)}
+                className="crop-factor-input micro-tool-select"
+              >
+                {TRANSFER_DESTINATION_PRESETS.map((preset) => (
+                  <option key={preset.label} value={preset.label}>{preset.label}</option>
+                ))}
+              </select>
+              <div className="transfer-stage-meta">
+                <span>{destinationPreset.note}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
