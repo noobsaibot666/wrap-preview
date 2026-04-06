@@ -103,10 +103,27 @@ function uniqueSuggestions(values: Array<string | null | undefined>) {
 
 function getVisibleSuggestions(suggestions: string[], currentValue: string, limit?: number) {
   const normalizedCurrent = currentValue.trim().toLowerCase();
+  
+  // If the field supports multiple values (comma-separated), filter out any that are already present
+  const currentValues = normalizedCurrent.split(",").map(v => v.trim()).filter(Boolean);
+  
   const filtered = normalizedCurrent
-    ? suggestions.filter((suggestion) => suggestion.trim().toLowerCase() !== normalizedCurrent)
+    ? suggestions.filter((suggestion) => {
+        const normalizedSuggestion = suggestion.trim().toLowerCase();
+        // Skip if already in the list
+        return !currentValues.includes(normalizedSuggestion);
+      })
     : suggestions;
+    
   return typeof limit === "number" ? filtered.slice(0, limit) : filtered;
+}
+
+function appendSuggestion(currentValue: string, suggestion: string) {
+  const values = currentValue.split(",").map(v => v.trim()).filter(Boolean);
+  if (!values.includes(suggestion.trim())) {
+    values.push(suggestion.trim());
+  }
+  return values.join(", ");
 }
 
 function parseCameraSetups(value: string) {
@@ -117,10 +134,12 @@ function parseCameraSetups(value: string) {
     .map((entry) => {
       if (entry.includes(CAMERA_SETUP_DELIMITER)) {
         const parts = entry.split(CAMERA_SETUP_DELIMITER);
+        // Expecting 8 fields: [camera, lens, accessory, media, support, movement, power, monitor]
         if (parts.length >= 8) {
           const [camera = "", lens = "", accessory = "", media = "", support = "", movement = "Static", power = "", monitor = ""] = parts;
           return { camera, lens, accessory, media, support, movement, power, monitor };
         }
+        // Handle older format (7 fields, missing movement)
         const [camera = "", lens = "", accessory = "", media = "", support = "", power = "", monitor = ""] = parts;
         return { camera, lens, accessory, media, support, movement: "Static", power, monitor };
       }
@@ -140,7 +159,11 @@ function parseCameraSetups(value: string) {
 
 function serializeCameraSetups(values: CameraSetup[]) {
   return values
-    .map((entry) => [entry.camera, entry.lens, entry.accessory, entry.media, entry.support, entry.movement, entry.power, entry.monitor].map((part) => part.trim()).join(CAMERA_SETUP_DELIMITER))
+    .map((entry) =>
+      [entry.camera, entry.lens, entry.accessory, entry.media, entry.support, entry.movement, entry.power, entry.monitor]
+        .map((part) => (part || "").trim())
+        .join(CAMERA_SETUP_DELIMITER),
+    )
     .filter((entry) => entry.split(CAMERA_SETUP_DELIMITER).some((part) => part.trim()))
     .join("\n");
 }
@@ -365,21 +388,21 @@ function getItemSuggestions(itemType: string) {
       return ["DJI Ronin RS4 Pro"];
     case "lens":
       return [
-        "Samyang 85mm f/1.4 (EF Mount)",
-        "Blazar Remus 35mm Anamorphic 1.5x T1.6 (EF/PL Mount)",
-        "Meike 50mm T2.1 S35 (EF Mount)",
-        "Sigma 18-35mm f/1.8 DC (EF Mount)",
-        "8mm Aspherical (EF Mount)",
-        "Nikon Z 24-70mm f/4 S",
-        "Nikon Z 85mm f/1.8 S",
-        "Zoom-Nikkor 35-105mm (Vintage)",
-        "Holga 60mm (EF Mount)",
-        "Albinar Ultra Wide Lens",
-        "Black Diffusion 1/4 + Variable ND2-32 (72mm)",
-        "Nano-X Variable ND32 (72mm)",
-        "Nano-X Shimmer Diffusion 1 MRC (72mm)",
-        "Cinehaze Filter (77mm)",
-        "Neewer MRC CPL Pro (72mm)",
+        "Samyang 85mm f/1.4",
+        "Blazar Remus 35mm",
+        "Meike 50mm T2.1",
+        "Sigma 18-35mm f/1.8",
+        "8mm Aspherical",
+        "Nikon Z 24-70mm f/4",
+        "Nikon Z 85mm f/1.8",
+        "Zoom-Nikkor 35-105mm",
+        "Holga 60mm",
+        "Albinar Ultra Wide",
+        "Black Diffusion 1/4 + V-ND",
+        "Nano-X V-ND32",
+        "Nano-X Shimmer 1",
+        "CineHaze Filter",
+        "Neewer CPL Pro",
       ];
     case "grip":
       return ["Flash Diffuser Filter", "Vanguard Case"];
@@ -398,9 +421,9 @@ function getItemSuggestions(itemType: string) {
       ];
     case "media":
       return [
-        "Samsung T5 SSD 2TB",
-        "Samsung T5 SSD 1TB",
-        "Samsung T7 SSD 2TB",
+        "T5 SSD 2TB",
+        "T5 SSD 1TB",
+        "T7 SSD 2TB",
         "SD Card 128GB",
         "SD Card 256GB",
         "CFexpress Type B 256GB",
@@ -490,6 +513,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
   const [collapsedRowIds, setCollapsedRowIds] = useState<Set<string>>(new Set());
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<Set<string>>(new Set());
   const [collapsedItemIds, setCollapsedItemIds] = useState<Set<string>>(new Set());
+  const saveTasksRef = useRef<Record<string, () => Promise<void>>>({});
   const saveTimersRef = useRef<Record<string, number>>({});
   const actionsMenuRef = useRef<HTMLDivElement>(null);
   const newListMenuRef = useRef<HTMLDivElement>(null);
@@ -661,6 +685,14 @@ export default function ShotList({ appVersion }: ShotListProps) {
     ]);
   }, [bundle?.items, importedSuggestionsByCategory]);
 
+  const mediaSuggestions = useMemo(() => {
+    return uniqueSuggestions([
+      ...getItemSuggestions("media"),
+      ...(bundle?.items || []).filter((item) => item.item_type === "media").flatMap((item) => [item.item_name, item.camera_label]),
+      ...(importedSuggestionsByCategory.get("media") || []),
+    ]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
+
   const accessorySuggestions = useMemo(() => {
     return uniqueSuggestions([
       ...getItemSuggestions("grip"),
@@ -737,18 +769,72 @@ export default function ShotList({ appVersion }: ShotListProps) {
     if (saveTimersRef.current[key]) {
       window.clearTimeout(saveTimersRef.current[key]);
     }
+    
+    saveTasksRef.current[key] = task;
+
     saveTimersRef.current[key] = window.setTimeout(async () => {
       setSaveState("saving");
       try {
         await task();
+        // If auto-saving and we have a path, schedule a file write too
+        if (wrapFilePath) {
+          void scheduleSave("file", async () => {
+            await saveWrapDocument(wrapFilePath);
+          }, 1500);
+        }
         setSaveState("saved");
       } catch {
         setSaveState("error");
       } finally {
         delete saveTimersRef.current[key];
+        delete saveTasksRef.current[key];
       }
     }, delay);
   };
+
+  const flushPendingSaves = async () => {
+    const tasksToRun = Object.values(saveTasksRef.current);
+    const hasPath = !!wrapFilePath;
+
+    if (tasksToRun.length === 0 && !hasPath) {
+      setSaveState("saved");
+      return;
+    }
+
+    setSaveState("saving");
+    // Stop all countdowns
+    Object.values(saveTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+    saveTimersRef.current = {};
+    
+    // Clear the task queue to avoid re-runs
+    const processingTasks = [...tasksToRun];
+    saveTasksRef.current = {};
+
+    try {
+      // Flush database tasks
+      if (processingTasks.length > 0) {
+        await Promise.all(processingTasks.map((t) => t()));
+      }
+      // If we have a file path, update the file now
+      if (hasPath) {
+        await saveWrapDocument(wrapFilePath);
+      }
+      setSaveState("saved");
+    } catch {
+      setSaveState("error");
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) {
+        e.preventDefault();
+        void flushPendingSaves();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [wrapFilePath, bundle]); // Re-bind when state changes to have the right context
 
   const updateProject = (patch: Partial<ShotListProject>) => {
     if (!bundle) return;
@@ -758,11 +844,13 @@ export default function ShotList({ appVersion }: ShotListProps) {
   };
 
   const updateRow = (rowId: string, patch: Partial<ShotListRow>) => {
-    if (!bundle) return;
-    const nextRows = bundle.rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row));
-    const updatedRow = nextRows.find((row) => row.id === rowId);
-    setBundle({ ...bundle, rows: nextRows });
-    if (updatedRow) void scheduleSave(`row:${rowId}`, () => invokeGuarded("shot_list_save_row", { row: updatedRow }));
+    setBundle((prev) => {
+      if (!prev) return prev;
+      const nextRows = prev.rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row));
+      const updatedRow = nextRows.find((row) => row.id === rowId);
+      if (updatedRow) void scheduleSave(`row:${rowId}`, () => invokeGuarded("shot_list_save_row", { row: updatedRow }));
+      return { ...prev, rows: nextRows };
+    });
   };
 
   const updateRowCameraSetups = (rowId: string, setups: CameraSetup[]) => {
@@ -1517,7 +1605,7 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                 type="button"
                                 className="shot-list-suggestion-pill"
                                 onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => updateRow(row.id, { shot_type: suggestion })}
+                                onClick={() => updateRow(row.id, { shot_type: appendSuggestion(row.shot_type, suggestion) })}
                               >
                                 {suggestion}
                               </button>
@@ -1839,10 +1927,10 @@ export default function ShotList({ appVersion }: ShotListProps) {
                                       updateRowCameraSetups(row.id, next);
                                     }}
                                   />
-                                  {(importedSuggestionsByCategory.get("media") || []).length > 0 && (
+                                  {mediaSuggestions.length > 0 && (
                                     <div className="shot-list-field-options">
                                       <div className="shot-list-suggestion-pills">
-                                        {getVisibleSuggestions(importedSuggestionsByCategory.get("media") || [], setup.media, 6).map((suggestion) => (
+                                        {getVisibleSuggestions(mediaSuggestions, setup.media, 6).map((suggestion) => (
                                           <button
                                             key={`${row.id}-${setupIndex}-media-${suggestion}`}
                                             type="button"

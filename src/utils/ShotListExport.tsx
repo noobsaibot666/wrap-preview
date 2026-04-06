@@ -14,6 +14,31 @@ import type {
 } from "../types";
 import { getShotListIconComponent } from "../modules/PreProduction/ShotListConfig";
 
+// Senior Developer Design System Tokens - Carbon Grey High Contrast
+const EXPORT_PAGE_WIDTH = 2480; 
+const EXPORT_PAGE_HEIGHT = 3508;
+const EXPORT_MARGIN_X = 120;
+const EXPORT_SAFE_Y = 180;
+
+const COLORS = {
+  PAGE_BG: "#cbd5e1", // Slate 300 (Deep Grey Page)
+  CARD_BG: "#f8fafc", // Slate 50 (Very Light Grey, No Pure White)
+  CARD_ACCENT: "#ffffff",
+  BLACK: "#020617",   // Slate 950 (Absolute Black)
+  PRIMARY: "#0f172a", // Slate 900 (Main Header)
+  SECONDARY: "#334155", // Slate 700
+  ACCENT: "#10b981",  // Emerald 600
+  LABEL: "#020617",   // Absolute Black Labels
+  MUTED: "#475569",   // Slate 600
+  BORDER: "#020617",  // Absolute Black Border (High Contrast Layering)
+  SUCCESS: "#10b981", // Emerald 600
+  ACCENT_BG: "#dcfce7", // Emerald 100
+} as const;
+
+const CAMERA_SETUP_DELIMITER = "__SLCAM__";
+const LOCATION_TIME_DELIMITER = "__SLTIME__";
+const LOGO_DATA_URL = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXBCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHJ4PSIxOCIgZmlsbD0id2hpdGUiLz48cmVjdCB4PSIxMiIgeT0iMTIiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcng9IjExIiBmaWxsPSIjMDkwOTA5Ii8+PHJlY3QgeD0iNDMiIHk9IjEyIiB3aWR0aD0iOSIgaGVpZ2h0PSI0MCIgcng9IjQiIGZpbGw9IiMxMGI5ODEiLz48L3N2Zz4=";
+
 interface ShotListExportPayload {
   project: ShotListProject;
   rows: ShotListRow[];
@@ -24,572 +49,318 @@ interface ShotListExportPayload {
   clientName?: string;
 }
 
-const EXPORT_HEADER_BG = "#0f1115";
-const iconCache = new Map<string, Promise<string>>();
-const CAMERA_SETUP_DELIMITER = "__SLCAM__";
-const LOCATION_TIME_DELIMITER = "__SLTIME__";
-
-function sectionItems(
-  sectionId: string,
-  items: ShotListEquipmentItem[],
-) {
-  return items
-    .filter((item) => item.section_id === sectionId)
-    .sort((a, b) => a.sort_order - b.sort_order);
+interface RowLayoutInfo {
+  row: ShotListRow;
+  height: number;
+  descriptionLines: string[];
+  setups: string[];
 }
 
-async function getIconDataUrl(iconName: string, size = 56, color = "#38bdf8"): Promise<string> {
-  const cacheKey = `${iconName}:${size}:${color}`;
-  if (!iconCache.has(cacheKey)) {
-    iconCache.set(
-      cacheKey,
-      (async () => {
-        try {
-          const Icon = getShotListIconComponent(iconName);
-          const svgBody = renderToStaticMarkup(
-            createElement(Icon, { size: size - 12, strokeWidth: 1.8, color }),
-          );
-          
-          // Re-wrap the Lucide icon SVG with a custom rounded background container
-          const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-            <rect x="1" y="1" width="${size - 2}" height="${size - 2}" rx="${Math.round(size * 0.28)}" fill="#ffffff" stroke="${color}" stroke-opacity="0.25" />
-            <g transform="translate(6, 6)">
-              ${svgBody}
-            </g>
-          </svg>`;
+const iconCacheMap = new Map<string, Promise<string>>();
 
-          const svgBlob = new Blob([fullSvg], { type: 'image/svg+xml;charset=utf-8' });
-          const url = URL.createObjectURL(svgBlob);
-          
-          const image = new Image();
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            image.onload = () => {
-              const canvas = document.createElement("canvas");
-              const dpr = window.devicePixelRatio || 2;
-              const scaledSize = size * dpr;
-              canvas.width = scaledSize;
-              canvas.height = scaledSize;
-              const ctx = canvas.getContext("2d");
-              if (!ctx) {
-                URL.revokeObjectURL(url);
-                return reject(new Error("Canvas context unavailable"));
-              }
-              ctx.imageSmoothingEnabled = true;
-              ctx.imageSmoothingQuality = "high";
-              ctx.scale(dpr, dpr);
-              ctx.drawImage(image, 0, 0, size, size);
-              const result = canvas.toDataURL("image/png");
-              URL.revokeObjectURL(url);
-              resolve(result);
-            };
-            image.onerror = () => {
-              URL.revokeObjectURL(url);
-              reject(new Error(`Failed to rasterize icon: ${iconName}`));
-            };
-            image.src = url;
-          });
-          
-          return dataUrl;
-        } catch (err) {
-          console.error(`Rasterization error for ${iconName}:`, err);
-          // Fallback to a plain colored square or empty string if it fails
-          const canvas = document.createElement("canvas");
-          canvas.width = size;
-          canvas.height = size;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-              ctx.fillStyle = color;
-              ctx.globalAlpha = 0.1;
-              ctx.fillRect(2, 2, size - 4, size - 4);
-          }
-          return canvas.toDataURL("image/png");
-        }
-      })(),
-    );
+/**
+ * High-performance SVG to Raster converter.
+ */
+async function getRasterIconUrl(name: string, size = 64, color: string = COLORS.ACCENT): Promise<string> {
+  const key = `${name}:${size}:${color}`;
+  if (!iconCacheMap.has(key)) {
+    iconCacheMap.set(key, (async () => {
+      try {
+        const Icon = getShotListIconComponent(name);
+        const svg = renderToStaticMarkup(createElement(Icon, { size: size - 16, color, strokeWidth: 3.5 }));
+        const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><g transform="translate(8, 8)">${svg}</g></svg>`;
+        const blob = new Blob([fullSvg], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        return await new Promise<string>((res) => {
+          img.onload = () => {
+            const cv = document.createElement("canvas");
+            cv.width = size * 2; cv.height = size * 2;
+            const ctx = cv.getContext("2d")!; ctx.scale(2, 2);
+            ctx.drawImage(img, 0, 0, size, size);
+            URL.revokeObjectURL(url);
+            res(cv.toDataURL("image/png"));
+          };
+          img.onerror = () => res("");
+          img.src = url;
+        });
+      } catch { return ""; }
+    })());
   }
-  return iconCache.get(cacheKey)!;
+  return iconCacheMap.get(key)!;
 }
 
-function formatCameraSetupsForExport(value: string) {
-  const entries = value
-    .split("\n")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  if (entries.length === 0) return "—";
-  return entries
-    .map((entry, index) => {
-      if (entry.includes(CAMERA_SETUP_DELIMITER)) {
-        const parts = entry.split(CAMERA_SETUP_DELIMITER).map((part) => part.trim());
-        const formatted = (parts.length >= 8
-          ? [parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7]]
-          : parts)
-          .filter(Boolean)
-          .join(" / ");
-        return formatted ? `Cam ${index + 1}: ${formatted}` : "";
-      }
-      return `Cam ${index + 1}: ${entry}`;
-    })
-    .filter(Boolean)
-    .join(" • ");
-}
-
-function getPrimaryCameraMovement(row: ShotListRow) {
-  const entries = (row.camera_lens || "")
-    .split("\n")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-  if (entries.length > 0 && entries[0].includes(CAMERA_SETUP_DELIMITER)) {
-    const parts = entries[0].split(CAMERA_SETUP_DELIMITER).map((entry) => entry.trim());
-    if (parts.length >= 8 && parts[5]) return parts[5];
+/**
+ * Smart Canvas Text Wrapper.
+ */
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
+  const words = (text || "").split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const lines: string[] = [];
+  let cur = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const w = words[i];
+    if (ctx.measureText(`${cur} ${w}`).width < maxW) cur += ` ${w}`;
+    else { lines.push(cur); cur = w; }
   }
-  return row.camera_movement || row.movement || "Static";
+  lines.push(cur);
+  return lines;
 }
 
-function formatLocationTimingForExport(row: ShotListRow) {
-  if (row.location || row.timing) {
-    return [row.location, row.timing].filter(Boolean).join(" / ") || "—";
-  }
-  if (!row.location_time || !row.location_time.includes(LOCATION_TIME_DELIMITER)) {
-    return row.location_time || "—";
-  }
-  const [location = "", start = "", end = ""] = row.location_time.split(LOCATION_TIME_DELIMITER).map((entry) => entry.trim());
-  return [location, start && end ? `${start}-${end}` : start || end].filter(Boolean).join(" / ") || "—";
-}
+/**
+ * High-fidelity layout pass.
+ */
+function solveProductionLayout(ctx: CanvasRenderingContext2D, rows: ShotListRow[]): RowLayoutInfo[][] {
+  const pages: RowLayoutInfo[][] = [];
+  let currentBatch: RowLayoutInfo[] = [];
+  let cy = 350;
+  const limit = EXPORT_PAGE_HEIGHT - (EXPORT_SAFE_Y + 150);
 
-function formatEquipmentItemMetaForExport(item: ShotListEquipmentItem) {
-  return [
-    item.camera_label?.trim(),
-    item.media_type?.trim(),
-    item.capacity_value ? `${item.capacity_value}${item.capacity_unit || ""}` : "",
-    item.notes?.trim(),
-  ]
-    .filter(Boolean)
-    .join(" • ");
-}
-
-const EXPORT_PAGE_WIDTH = 3508; // A4 @ 300 DPI
-const EXPORT_PAGE_HEIGHT = 2480;
-const EXPORT_MARGIN_X = 120;
-
-function sanitizeFileStem(value: string) {
-  const cleaned = value.trim().replace(/[<>:"/\\|?*\u0000-\u001F]+/g, "_").replace(/\s+/g, "_");
-  return cleaned || "ShotList";
-}
-
-function drawBrandMark(ctx: CanvasRenderingContext2D, x: number, y: number) {
-  ctx.fillStyle = "#ffffff";
-  roundRect(ctx, x, y, 40, 40, 11, true, false);
-  ctx.fillStyle = "#0f1115";
-  roundRect(ctx, x + 8, y + 8, 24, 24, 7, true, false);
-  ctx.fillStyle = "#38bdf8";
-  roundRect(ctx, x + 25, y + 8, 7, 24, 3, true, false);
-}
-
-function drawMetaInfoChip(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  label: string,
-  value: string,
-  accent: string = "#38bdf8"
-) {
-  ctx.fillStyle = "rgba(0,0,0,0.03)";
-  roundRect(ctx, x, y, width, 72, 14, true, false);
-  ctx.fillStyle = accent;
-  roundRect(ctx, x + 16, y + 20, 8, 32, 4, true, false);
-  ctx.fillStyle = "#6b7280";
-  ctx.font = "800 12px Inter, system-ui, sans-serif";
-  ctx.fillText(label.toUpperCase(), x + 34, y + 28);
-  ctx.fillStyle = "#111827";
-  ctx.font = "700 20px Inter, system-ui, sans-serif";
-  ctx.fillText(value, x + 34, y + 54);
-}
-
-async function drawBrantedHeader(
-  ctx: CanvasRenderingContext2D,
-  payload: ShotListExportPayload,
-  title: string,
-  pageLabel?: string
-) {
-  const margin = EXPORT_MARGIN_X;
-  const width = EXPORT_PAGE_WIDTH;
-
-  ctx.fillStyle = EXPORT_HEADER_BG;
-  roundRect(ctx, margin, 32, width - margin * 2, 160, 32, true, false);
-
-  drawBrandMark(ctx, margin + 32, 64);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "700 16px Inter, system-ui, sans-serif";
-  ctx.fillText((payload.brandName || "WRAP PREVIEW").toUpperCase(), margin + 88, 76);
-  ctx.font = "800 34px Inter, system-ui, sans-serif";
-  ctx.fillText(title, margin + 88, 118);
-
-  ctx.fillStyle = "rgba(255,255,255,0.7)";
-  ctx.font = "600 18px Inter, system-ui, sans-serif";
-  const projectInfo = [payload.project.title || "Untitled Project", payload.clientName && `Client: ${payload.clientName}`].filter(Boolean).join(" • ");
-  ctx.fillText(projectInfo, margin + 88, 150);
-
-  const chipWidth = 200;
-  const chipGap = 16;
-  let chipX = width - margin - (pageLabel ? chipWidth * 2 + chipGap : chipWidth) - 32;
-
-  drawMetaInfoChip(ctx, chipX, 64, chipWidth, "DAY SHEET", payload.project.day_label || "Day 1");
-  chipX += chipWidth + chipGap;
-  if (pageLabel) {
-    drawMetaInfoChip(ctx, chipX, 64, chipWidth, "PROGRESS", pageLabel, "#a855f7");
-    chipX += chipWidth + chipGap;
-  }
-}
-
-async function createExportPage(
-  payload: ShotListExportPayload,
-  title: string,
-  pageLabel?: string
-): Promise<{ canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }> {
-  const canvas = document.createElement("canvas");
-  canvas.width = EXPORT_PAGE_WIDTH;
-  canvas.height = EXPORT_PAGE_HEIGHT;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Shot list export canvas unavailable");
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, EXPORT_PAGE_WIDTH, EXPORT_PAGE_HEIGHT);
-  await drawBrantedHeader(ctx, payload, title, pageLabel);
-  return { canvas, ctx };
-}
-
-// Removed drawExportPageMeta as it is handled by drawBrantedHeader
-
-async function renderRowsCanvasPage(
-  payload: ShotListExportPayload,
-  pageRows: ShotListRow[],
-  pageIndex: number,
-  totalPages: number,
-): Promise<HTMLCanvasElement> {
-  const { canvas, ctx } = await createExportPage(payload, "Production Shot List", `Sheet ${pageIndex + 1}/${totalPages}`);
-
-  const rowsPerPage = 5;
-  const rowHeight = (EXPORT_PAGE_HEIGHT - 320 - 120) / rowsPerPage;
-  let y = 240;
-
-  for (let i = 0; i < pageRows.length; i += 1) {
-    const row = pageRows[i];
-    const rowY = y + i * rowHeight;
-    const rowWidth = EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X * 2;
-
-    // Row Background (Clean & Premium)
-    ctx.fillStyle = "#ffffff";
-    roundRect(ctx, EXPORT_MARGIN_X, rowY, rowWidth, rowHeight - 20, 24, true, false);
+  for (const row of rows) {
+    ctx.font = "700 38px Inter, sans-serif";
+    const dLines = wrapCanvasText(ctx, row.description || "Action description not defined.", EXPORT_PAGE_WIDTH - 400);
+    const setups = (row.camera_lens || "").split("\n").filter(s => s.trim().length > 0);
+    const h = 220 + (dLines.length * 56) + 280 + (setups.length > 0 ? 120 + (setups.length * 104) : 0) + 60;
     
-    // Border
-    ctx.strokeStyle = "rgba(0,0,0,0.06)";
-    ctx.lineWidth = 2;
-    roundRect(ctx, EXPORT_MARGIN_X, rowY, rowWidth, rowHeight - 20, 24, false, true);
-
-    // Sidebar Accent (Lavender for Shot List)
-    ctx.fillStyle = "#6366f1";
-    roundRect(ctx, EXPORT_MARGIN_X + 16, rowY + 16, 6, rowHeight - 52, 3, true, false);
-
-    // Number + Icon Group
-    const labelX = EXPORT_MARGIN_X + 48;
-    ctx.fillStyle = "#0f1115";
-    ctx.font = "800 32px Inter, system-ui, sans-serif";
-    ctx.fillText(`${row.sort_order}`.padStart(2, "0"), labelX, rowY + 70);
-
-    // Capture Type Icon
-    const iconDataUrl = await getIconDataUrl(row.capture_type === "photo" ? "Camera" : "Video", 88, "#6366f1");
-    const iconImg = await loadImage(iconDataUrl);
-    ctx.drawImage(iconImg, labelX + 72, rowY + 34, 72, 72);
-
-    // Shot Number / Scene
-    ctx.fillStyle = "#111827";
-    ctx.font = "800 34px Inter, system-ui, sans-serif";
-    const title = `${row.shot_number || "SHOT"} ${row.scene ? `— ${row.scene}` : ""}`;
-    ctx.fillText(trimText(ctx, title, 1000), labelX + 168, rowY + 68);
-
-    // Shot Type / Movement sub-header
-    ctx.fillStyle = "#6366f1";
-    ctx.font = "700 20px Inter, system-ui, sans-serif";
-    const subTitle = `${row.shot_type || "Medium"} • ${getPrimaryCameraMovement(row)}`;
-    ctx.fillText(trimText(ctx, subTitle.toUpperCase(), 1000), labelX + 168, rowY + 98);
-
-    // Description / Action (Left Column)
-    ctx.fillStyle = "#4b5563";
-    ctx.font = "500 22px Inter, system-ui, sans-serif";
-    const desc = row.description || "No specific instructions provided for this setup.";
-    ctx.fillText(trimText(ctx, desc, 1200), labelX + 168, rowY + 138);
-
-    // Details Grid (Layout below)
-    let detailsY = rowY + 180;
-    const detailColWidth = 600;
-    
-    // Talent / Props
-    ctx.fillStyle = "#111827";
-    ctx.font = "700 18px Inter, system-ui, sans-serif";
-    ctx.fillText("TALENT / PROPS", labelX + 168, detailsY);
-    ctx.fillStyle = "#6b7280";
-    ctx.font = "500 18px Inter, system-ui, sans-serif";
-    const talentProps = [row.talent_subjects, row.props_details].filter(Boolean).join(" • ") || "None";
-    ctx.fillText(trimText(ctx, talentProps, detailColWidth), labelX + 168, detailsY + 28);
-
-    // Audio / Lighting
-    ctx.fillStyle = "#111827";
-    ctx.font = "700 18px Inter, system-ui, sans-serif";
-    ctx.fillText("AUDIO / LIGHTING", labelX + 168 + detailColWidth + 40, detailsY);
-    ctx.fillStyle = "#6b7280";
-    ctx.font = "500 18px Inter, system-ui, sans-serif";
-    const audioLight = [row.audio_notes, row.lighting_notes].filter(Boolean).join(" • ") || "Default Setup";
-    ctx.fillText(trimText(ctx, audioLight, detailColWidth), labelX + 168 + detailColWidth + 40, detailsY + 28);
-
-    // Info Chips (Right Aligned)
-    let metaX = EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X - 1000;
-
-    // Camera / Equipment Chip
-    drawMetaInfoChip(ctx, metaX, rowY + 34, 380, "EQUIPMENT", trimText(ctx, formatCameraSetupsForExport(row.camera_lens || ""), 220), "#a855f7");
-    metaX += 400;
-
-    // Location / Timing Chip
-    drawMetaInfoChip(ctx, metaX, rowY + 34, 580, "LOCATION / TIMING", formatLocationTimingForExport(row), "#14b8a6");
-  }
-
-  drawFooter(
-    {
-      kind: "canvas",
-      ctx,
-      canvasWidth: EXPORT_PAGE_WIDTH,
-      canvasHeight: EXPORT_PAGE_HEIGHT,
-      marginX: EXPORT_MARGIN_X,
-    },
-    payload.brandName || "Wrap Preview",
-  );
-  return canvas;
-}
-
-async function renderEquipmentCanvasPages(payload: ShotListExportPayload): Promise<HTMLCanvasElement[]> {
-  const pages: HTMLCanvasElement[] = [];
-  const cards = payload.sections.map((section) => ({
-    section,
-    items: sectionItems(section.id, payload.items),
-  }));
-
-  let cardIndex = 0;
-  while (cardIndex < cards.length) {
-    const { canvas, ctx } = await createExportPage(payload, "Equipment Inventory", `Pack ${pages.length + 1}`);
-
-    let y = 260;
-    let column = 0;
-    let rowHeight = 0;
-    const gap = 48;
-    const cardWidth = (EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X * 2 - gap) / 2;
-    const xPositions = [EXPORT_MARGIN_X, EXPORT_MARGIN_X + cardWidth + gap];
-
-    while (cardIndex < cards.length) {
-      const { section, items } = cards[cardIndex];
-      const itemsHeight = items.length * 72;
-      const cardHeight = Math.max(340, 160 + itemsHeight);
-      
-      // If the card is too tall for this column or page
-      if (column === 0 && y + cardHeight > EXPORT_PAGE_HEIGHT - 120) break;
-      if (column === 1 && y + cardHeight > EXPORT_PAGE_HEIGHT - 120) break;
-
-      const x = xPositions[column];
-      
-      // Card Container
-      ctx.fillStyle = "#ffffff";
-      roundRect(ctx, x, y, cardWidth, cardHeight, 32, true, false);
-      ctx.strokeStyle = "rgba(0,0,0,0.06)";
-      ctx.lineWidth = 2;
-      roundRect(ctx, x, y, cardWidth, cardHeight, 32, false, true);
-
-      // Section Header (Dark/Premium)
-      ctx.fillStyle = "#0f1115";
-      roundRect(ctx, x + 16, y + 16, cardWidth - 32, 110, 24, true, false);
-
-      const sectionIcon = await loadImage(await getIconDataUrl(section.icon_name, 80, "#ffffff"));
-      ctx.drawImage(sectionIcon, x + 36, y + 31, 80, 80);
-      
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "800 32px Inter, system-ui, sans-serif";
-      ctx.fillText(section.section_name.toUpperCase(), x + 136, y + 68);
-      
-      ctx.fillStyle = "rgba(255,255,255,0.5)";
-      ctx.font = "600 18px Inter, system-ui, sans-serif";
-      ctx.fillText(`${items.length} ITEMS LOGGED`, x + 136, y + 100);
-
-      let itemY = y + 146;
-      for (const item of items) {
-        // Item Row
-        ctx.fillStyle = "rgba(0,0,0,0.02)";
-        roundRect(ctx, x + 16, itemY, cardWidth - 32, 60, 16, true, false);
-
-        const itemIcon = await loadImage(await getIconDataUrl(item.icon_name, 56, "#6366f1"));
-        ctx.drawImage(itemIcon, x + 24, itemY + 12, 36, 36);
-
-        ctx.fillStyle = "#111827";
-        ctx.font = "700 22px Inter, system-ui, sans-serif";
-        ctx.fillText(trimText(ctx, item.item_name || "Gear", cardWidth - 180), x + 76, itemY + 28);
-        
-        ctx.fillStyle = "#6b7280";
-        ctx.font = "500 16px Inter, system-ui, sans-serif";
-        const meta = formatEquipmentItemMetaForExport(item) || item.item_type || "Item";
-        ctx.fillText(trimText(ctx, meta, cardWidth - 180), x + 76, itemY + 48);
-        
-        itemY += 72;
-      }
-
-      rowHeight = Math.max(rowHeight, cardHeight + gap);
-      if (column === 1) {
-        column = 0;
-        y += rowHeight;
-        rowHeight = 0;
-      } else {
-        column = 1;
-      }
-      cardIndex += 1;
+    if (cy + h > limit && currentBatch.length > 0) {
+      pages.push(currentBatch); currentBatch = []; cy = 350;
     }
-
-    drawFooter(
-      {
-        kind: "canvas",
-        ctx,
-        canvasWidth: EXPORT_PAGE_WIDTH,
-        canvasHeight: EXPORT_PAGE_HEIGHT,
-        marginX: EXPORT_MARGIN_X,
-      },
-      payload.brandName || "Wrap Preview",
-    );
-
-    pages.push(canvas);
+    currentBatch.push({ row, height: h, descriptionLines: dLines, setups });
+    cy += h + 60;
   }
-
+  if (currentBatch.length > 0) pages.push(currentBatch);
   return pages;
 }
 
-async function buildShotListExportPages(payload: ShotListExportPayload): Promise<HTMLCanvasElement[]> {
-  // Ensure fonts are loaded before starting expensive canvas operations
-  if (typeof document !== "undefined") {
-    await document.fonts.ready;
-  }
-  
-  const pages: HTMLCanvasElement[] = [];
-  const rowsPerPage = 5;
-  const rowPages: ShotListRow[][] = [];
-  for (let index = 0; index < payload.rows.length; index += rowsPerPage) {
-    rowPages.push(payload.rows.slice(index, index + rowsPerPage));
-  }
-  if (rowPages.length === 0) rowPages.push([]);
+async function renderPremiumHeader(ctx: CanvasRenderingContext2D, payload: ShotListExportPayload, title: string, pageLabel: string) {
+  // Main Backdrop (Absolute Contrast)
+  ctx.fillStyle = COLORS.PRIMARY;
+  roundRect(ctx, EXPORT_MARGIN_X, 64, EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X * 2, 240, 24, true, false);
+  ctx.strokeStyle = COLORS.BLACK; ctx.lineWidth = 4;
+  roundRect(ctx, EXPORT_MARGIN_X, 64, EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X * 2, 240, 24, false, true);
 
-  for (let index = 0; index < rowPages.length; index += 1) {
-    pages.push(await renderRowsCanvasPage(payload, rowPages[index], index, rowPages.length));
-  }
-  if (payload.sections.length > 0) {
-    pages.push(...(await renderEquipmentCanvasPages(payload)));
-  }
-  return pages;
+  const logo = await safeLoad(LOGO_DATA_URL);
+  if (logo) ctx.drawImage(logo, EXPORT_MARGIN_X + 64, 104, 112, 112);
+
+  ctx.fillStyle = "rgba(255,255,255,0.4)"; ctx.font = "900 24px Inter, sans-serif";
+  ctx.fillText("PRODUCTION PORTAL", EXPORT_MARGIN_X + 210, 126);
+
+  ctx.fillStyle = "#ffffff"; ctx.font = "900 85px Inter, sans-serif";
+  ctx.fillText(trimText(ctx, title, 900), EXPORT_MARGIN_X + 210, 204);
+
+  ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.font = "700 30px Inter, sans-serif";
+  ctx.fillText(payload.clientName || "Wrap Studio", EXPORT_MARGIN_X + 210, 252);
+
+  const sx = EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X - 600;
+  const drawStat = (x: number, lbl: string, val: string, cr: string, w: number) => {
+     ctx.fillStyle = "rgba(0,0,0,0.5)";
+     roundRect(ctx, x, 88, w, 192, 16, true, false);
+     ctx.fillStyle = cr; roundRect(ctx, x + 24, 134, 12, 100, 6, true, false);
+     ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.font = "900 18px Inter, sans-serif"; ctx.fillText(lbl.toUpperCase(), x + 56, 136);
+     ctx.fillStyle = "#ffffff"; ctx.font = "900 36px Inter, sans-serif"; ctx.fillText(trimText(ctx, val, w - 100), x + 56, 190);
+  };
+  drawStat(sx, "Day / Status", payload.project.day_label || "Day 01", "#10b981", 360);
+  drawStat(sx + 390, "Page", pageLabel, COLORS.ACCENT, 210);
 }
 
-export async function exportShotListPdf(payload: ShotListExportPayload): Promise<boolean> {
-  const filePath = await save({
-    filters: [{ name: "PDF Document", extensions: ["pdf"] }],
-    defaultPath: `${sanitizeFileStem(payload.project.title)}_ShotList.pdf`,
-  });
-  if (!filePath) return false;
+async function exportProductionPage(payload: ShotListExportPayload, items: RowLayoutInfo[], idx: number, total: number, targetH?: number) {
+  const cn = document.createElement("canvas");
+  cn.width = EXPORT_PAGE_WIDTH; cn.height = targetH || EXPORT_PAGE_HEIGHT;
+  const ctx = cn.getContext("2d")!;
+  ctx.fillStyle = COLORS.PAGE_BG; ctx.fillRect(0, 0, cn.width, cn.height);
+  await renderPremiumHeader(ctx, payload, "Production Shot List", `${idx + 1}/${total}`);
 
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  doc.setProperties({
-    title: `${payload.project.title} - Shot List`,
-    subject: "Shot List & Equipment Inventory",
-    author: payload.brandName || "Wrap Preview",
-    creator: "Wrap Preview",
-  });
-  const pages = await buildShotListExportPages(payload);
-  for (let index = 0; index < pages.length; index += 1) {
-    if (index > 0) doc.addPage();
-    const pageDataUrl = pages[index].toDataURL("image/jpeg", 1.0);
-    doc.addImage(pageDataUrl, "JPEG", 0, 0, 297, 210);
+  let y = 350;
+  for (const info of items) {
+    const isDone = info.row.status?.toLowerCase() === "done";
+    const accent = isDone ? COLORS.SUCCESS : COLORS.ACCENT;
+    const rw = EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X * 2;
+    const mx = EXPORT_MARGIN_X;
+
+    // Carbon Card (Non-white)
+    ctx.shadowColor = "rgba(0,0,0,0.2)"; ctx.shadowBlur = 60; ctx.shadowOffsetY = 20;
+    ctx.fillStyle = COLORS.CARD_BG; roundRect(ctx, mx, y, rw, info.height, 32, true, false);
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = COLORS.BLACK; ctx.lineWidth = 5; roundRect(ctx, mx, y, rw, info.height, 32, false, true);
+
+    // Identity Strip
+    ctx.fillStyle = accent; roundRect(ctx, mx + 20, y + 40, 14, info.height - 84, 7, true, false);
+
+    ctx.fillStyle = COLORS.PRIMARY; ctx.font = "900 64px Inter, sans-serif"; ctx.fillText(`${info.row.sort_order}`.padStart(2, "0"), mx + 90, y + 90);
+    const mIcoData = await getRasterIconUrl(info.row.capture_type === "photo" ? "photo" : "video", 80, accent as string);
+    const mIco = await safeLoad(mIcoData);
+    if (mIco) ctx.drawImage(mIco, mx + 180, y + 36, 80, 80);
+    
+    ctx.fillStyle = COLORS.BLACK; ctx.font = "900 75px Inter, sans-serif";
+    const titleText = [info.row.shot_number || "SHOT", info.row.scene].filter(Boolean).join(" — ");
+    ctx.fillText(trimText(ctx, titleText, rw - 480), mx + 290, y + 95);
+
+    ctx.fillStyle = accent; ctx.font = "900 36px Inter, sans-serif";
+    const subline = `${info.row.shot_type || "Medium"} • ${(info.setups[0] || "").split(CAMERA_SETUP_DELIMITER)[5] || "Static"}`.toUpperCase();
+    ctx.fillText(trimText(ctx, subline, rw - 400), mx + 290, y + 148);
+
+    ctx.fillStyle = COLORS.PRIMARY; ctx.font = "700 40px Inter, sans-serif";
+    info.descriptionLines.forEach((line, i) => ctx.fillText(line, mx + 90, y + 225 + i * 58));
+
+    const gy = y + 245 + (info.descriptionLines.length * 58);
+    const cw = (rw - 180) / 3;
+    const drawMetaCell = async (c: number, r: number, ico: string, lbl: string, val: string, clr: string) => {
+      const gx = mx + 90 + c * cw; const gcy = gy + r * 115;
+      ctx.fillStyle = `${clr}33`; roundRect(ctx, gx, gcy - 52, 72, 72, 16, true, false);
+      const iconUrl = await getRasterIconUrl(ico, 60, clr);
+      const iconImg = await safeLoad(iconUrl);
+      if (iconImg) ctx.drawImage(iconImg, gx + 6, gcy - 46, 60, 60);
+      ctx.fillStyle = COLORS.SECONDARY; ctx.font = "900 18px Inter, sans-serif"; ctx.fillText(lbl.toUpperCase(), gx + 96, gcy - 24);
+      ctx.fillStyle = COLORS.BLACK; ctx.font = "900 34px Inter, sans-serif"; ctx.fillText(trimText(ctx, val || "—", cw - 120), gx + 96, gcy + 22);
+    };
+
+    const locText = getFormattedLoc(info.row);
+    await drawMetaCell(0, 0, "location", "LOCATION / TIMING", locText, "#0d9488");
+    await drawMetaCell(1, 0, "timing", "SCENE GROUP", info.row.scene || "Intro", "#ea580c");
+    await drawMetaCell(2, 0, "rig", "TALENT", info.row.talent_subjects || "—", "#7c3aed");
+    await drawMetaCell(0, 1, "grip", "PROPS", info.row.props_details || "—", "#db2777");
+    await drawMetaCell(1, 1, "sound", "AUDIO NOTES", info.row.audio_notes || "Muted", "#0891b2");
+    await drawMetaCell(2, 1, "light", "LIGHTING", info.row.lighting_notes || "Available", "#c2410c");
+
+    if (info.setups.length > 0) {
+      const sy = y + 490 + (info.descriptionLines.length * 58);
+      ctx.fillStyle = COLORS.BLACK; roundRect(ctx, mx + 90, sy - 44, 340, 52, 8, true, false);
+      ctx.fillStyle = "#ffffff"; ctx.font = "900 20px Inter, sans-serif"; ctx.fillText("CAMERA REGISTRATIONS", mx + 116, sy - 10);
+      for (let si = 0; si < info.setups.length; si++) {
+        const parts = info.setups[si].split(CAMERA_SETUP_DELIMITER).map(v => v.trim());
+        const by = sy + 44 + si * 104;
+        ctx.fillStyle = "rgba(0,0,0,0.05)"; roundRect(ctx, mx + 90, by - 48, rw - 180, 92, 12, true, false);
+        ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 2; roundRect(ctx, mx + 90, by - 48, rw - 180, 92, 12, false, true);
+        ctx.fillStyle = accent; ctx.font = "900 30px Inter, sans-serif"; ctx.fillText(`CAM 0${si+1}`, mx + 130, by + 12);
+        const drawSub = (ox: number, sl: string, sv: string, sw: number) => {
+          ctx.fillStyle = COLORS.MUTED; ctx.font = "900 15px Inter, sans-serif"; ctx.fillText(sl.toUpperCase(), mx + ox, by - 16);
+          ctx.fillStyle = COLORS.BLACK; ctx.font = "900 25px Inter, sans-serif"; ctx.fillText(trimText(ctx, sv || "—", sw), mx + ox, by + 18);
+        };
+        drawSub(300, "BODY", parts[0], 360); drawSub(720, "LENS", parts[1], 360); drawSub(1140, "MEDIA", parts[3], 260); drawSub(1460, "SUPPORT", parts[4], 260); drawSub(1780, "MOVEMENT", parts[5], 260);
+      }
+    }
+    y += info.height + 60;
   }
-
-  await writeFile(filePath, new Uint8Array(doc.output("arraybuffer")));
-  return true;
+  drawFooter({ kind: "canvas", ctx, canvasWidth: EXPORT_PAGE_WIDTH, canvasHeight: targetH || EXPORT_PAGE_HEIGHT, marginX: EXPORT_MARGIN_X }, payload.brandName || "Wrap Preview");
+  return cn;
 }
 
-export async function exportShotListImage(payload: ShotListExportPayload): Promise<boolean> {
-  const filePath = await save({
-    filters: [{ name: "JPEG Image", extensions: ["jpg", "jpeg"] }],
-    defaultPath: `${sanitizeFileStem(payload.project.title)}_ShotList.jpg`,
-  });
-  if (!filePath) return false;
+export async function exportShotListPdf(payload: ShotListExportPayload) {
+  try {
+    const p = await save({ filters: [{ name: "PDF Export", extensions: ["pdf"] }], defaultPath: `${payload.project.title}_Carbon_HD.pdf` });
+    if (!p) return false;
+    const dummy = document.createElement("canvas"); dummy.width = 1; dummy.height = 1;
+    const layouts = solveProductionLayout(dummy.getContext("2d")!, payload.rows);
+    const doc = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
+    for (let i = 0; i < layouts.length; i++) {
+        if (i > 0) doc.addPage();
+        const cn = await exportProductionPage(payload, layouts[i], i, layouts.length);
+        doc.addImage(cn.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, 210, 297);
+    }
+    if (payload.sections.length > 0) {
+      const inv = await renderPremiumInventory(payload);
+      for (const ic of inv) { doc.addPage(); doc.addImage(ic.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297); }
+    }
+    await writeFile(p, new Uint8Array(doc.output("arraybuffer")));
+    return true;
+  } catch (e) { return false; }
+}
 
-  const pages = await buildShotListExportPages(payload);
-  const canvas = document.createElement("canvas");
-  const gap = 28;
-  canvas.width = EXPORT_PAGE_WIDTH;
-  canvas.height = pages.reduce((sum, page) => sum + page.height, 0) + gap * Math.max(0, pages.length - 1);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Shot list image export canvas unavailable");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  let y = 0;
-  for (const page of pages) {
-    ctx.drawImage(page, 0, y, page.width, page.height);
-    y += page.height + gap;
+export async function exportShotListImage(payload: ShotListExportPayload) {
+  try {
+    const p = await save({ filters: [{ name: "Image Export", extensions: ["png"] }], defaultPath: "ShotList_Carbon_Master.png" });
+    if (!p) return false;
+    const dummy = document.createElement("canvas"); dummy.width = 1; dummy.height = 1;
+    const layouts = solveProductionLayout(dummy.getContext("2d")!, payload.rows);
+    const totalH = layouts.length * EXPORT_PAGE_HEIGHT;
+    const finalCn = document.createElement("canvas");
+    finalCn.width = EXPORT_PAGE_WIDTH; finalCn.height = totalH;
+    const fctx = finalCn.getContext("2d")!;
+    fctx.fillStyle = COLORS.PAGE_BG; fctx.fillRect(0, 0, finalCn.width, finalCn.height);
+    for (let i = 0; i < layouts.length; i++) {
+        const pageCn = await exportProductionPage(payload, layouts[i], i, layouts.length);
+        fctx.drawImage(pageCn, 0, i * EXPORT_PAGE_HEIGHT);
+    }
+    const bin = atob(finalCn.toDataURL("image/png").split(",")[1]);
+    const b = new Uint8Array(bin.length);
+    for (let l = 0; l < bin.length; l++) b[l] = bin.charCodeAt(l);
+    await writeFile(p, b);
+    return true;
+  } catch (e) { return false; }
+}
+
+function getFormattedLoc(r: ShotListRow) {
+  if (r.location || r.timing) return [r.location, r.timing].filter(Boolean).join(" / ") || "—";
+  const p = (r.location_time || "").split(LOCATION_TIME_DELIMITER).map(s => s.trim());
+  return [p[0], p[1] && p[2] ? `${p[1]}-${p[2]}` : p[1] || p[2]].filter(Boolean).join(" / ") || "—";
+}
+
+async function safeLoad(u: string): Promise<HTMLImageElement | null> {
+  const i = new Image(); i.src = u;
+  return new Promise(res => { i.onload = () => res(i); i.onerror = () => res(null); });
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, f: boolean, s: boolean) {
+  const r2 = Math.min(r, w/2, h/2); ctx.beginPath(); ctx.moveTo(x+r2, y); ctx.arcTo(x+w, y, x+w, y+h, r2); ctx.arcTo(x+w, y+h, x, y+h, r2); ctx.arcTo(x, y+h, x, y, r2); ctx.arcTo(x, y, x+w, y, r2); ctx.closePath();
+  if (f) ctx.fill(); if (s) ctx.stroke();
+}
+
+function trimText(ctx: CanvasRenderingContext2D, t: string, m: number) {
+  if (ctx.measureText(t || "—").width <= m) return t || "—";
+  let s = t || "—"; while (s.length > 1 && ctx.measureText(`${s}…`).width > m) s = s.slice(0, -1);
+  return `${s}…`;
+}
+
+async function renderPremiumInventory(p: ShotListExportPayload) {
+  const pgs: HTMLCanvasElement[] = [];
+  let cy = 350; let col = 0; const gap = 60; const cw = (EXPORT_PAGE_WIDTH - EXPORT_MARGIN_X * 2 - gap) / 2;
+  const offs = [EXPORT_MARGIN_X, EXPORT_MARGIN_X + cw + gap];
+  const setupBase = async (pg: number) => {
+    const res = await createExportCanvas(p, "Equipment Inventory", `${pg + 1}/?`);
+    return res;
+  };
+  let res = await setupBase(0); let canvas = res.cn; let ctx = res.ctx;
+  for (const s of p.sections) {
+    const its = p.items.filter(i => i.section_id === s.id).sort((a,b) => a.sort_order - b.sort_order);
+    if (!its.length) continue;
+    const h = 200 + its.length * 88;
+    if (cy + h > EXPORT_PAGE_HEIGHT - 240) {
+      if (col === 0) { col = 1; cy = 350; }
+      else {
+        drawFooter({ kind: "canvas", ctx, canvasWidth: EXPORT_PAGE_WIDTH, canvasHeight: EXPORT_PAGE_HEIGHT, marginX: EXPORT_MARGIN_X }, p.brandName || "Wrap Preview");
+        pgs.push(canvas); res = await setupBase(pgs.length);
+        canvas = res.cn; ctx = res.ctx; cy = 350; col = 0;
+      }
+    }
+    const x = offs[col];
+    ctx.fillStyle = COLORS.CARD_BG; roundRect(ctx, x, cy, cw, h, 32, true, false);
+    ctx.strokeStyle = COLORS.BLACK; ctx.lineWidth = 5; roundRect(ctx, x, cy, cw, h, 32, false, true);
+    ctx.fillStyle = COLORS.PRIMARY; roundRect(ctx, x+24, cy+24, cw-48, 130, 16, true, false);
+    const icoData = await getRasterIconUrl(s.icon_name, 96, "#ffffff");
+    const img = await safeLoad(icoData); if (img) ctx.drawImage(img, x+56, cy+42, 90, 90);
+    ctx.fillStyle = "#ffffff"; ctx.font = "900 40px Inter, sans-serif"; ctx.fillText(s.section_name.toUpperCase(), x+164, cy+95);
+    let iy = cy + 180;
+    for (const i of its) {
+      ctx.fillStyle = "rgba(0,0,0,0.06)"; roundRect(ctx, x+24, iy, cw-48, 76, 12, true, false);
+      const ii = await getRasterIconUrl(i.icon_name, 64, COLORS.ACCENT as string);
+      const ig = await safeLoad(ii); if (ig) ctx.drawImage(ig, x+36, iy+14, 48, 48);
+      ctx.fillStyle = COLORS.BLACK; ctx.font = "900 26px Inter, sans-serif"; ctx.fillText(trimText(ctx, i.item_name, cw - 140), x+98, iy+34);
+      const m = [i.camera_label, i.media_type, i.capacity_value ? `${i.capacity_value}${i.capacity_unit}` : "", i.notes].filter(Boolean).join(" • ");
+      ctx.fillStyle = COLORS.SECONDARY; ctx.font = "900 19px Inter, sans-serif"; ctx.fillText(trimText(ctx, m, cw - 140), x+98, iy+62);
+      iy += 88;
+    }
+    cy += h + 40;
   }
-
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((nextBlob) => {
-      if (nextBlob) resolve(nextBlob);
-      else reject(new Error("Shot list image export failed to create a blob"));
-    }, "image/jpeg", 1.0);
-  });
-  await writeFile(filePath, new Uint8Array(await blob.arrayBuffer()));
-  return true;
+  drawFooter({ kind: "canvas", ctx, canvasWidth: EXPORT_PAGE_WIDTH, canvasHeight: EXPORT_PAGE_HEIGHT, marginX: EXPORT_MARGIN_X }, p.brandName || "Wrap Preview");
+  pgs.push(canvas);
+  return pgs;
 }
 
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-  fill: boolean,
-  stroke: boolean,
-) {
-  const safeRadius = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + safeRadius, y);
-  ctx.arcTo(x + width, y, x + width, y + height, safeRadius);
-  ctx.arcTo(x + width, y + height, x, y + height, safeRadius);
-  ctx.arcTo(x, y + height, x, y, safeRadius);
-  ctx.arcTo(x, y, x + width, y, safeRadius);
-  ctx.closePath();
-  if (fill) ctx.fill();
-  if (stroke) ctx.stroke();
-}
-
-
-function trimText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
-  const clean = text || "—";
-  if (ctx.measureText(clean).width <= maxWidth) return clean;
-  let trimmed = clean;
-  while (trimmed.length > 1 && ctx.measureText(`${trimmed}…`).width > maxWidth) {
-    trimmed = trimmed.slice(0, -1);
-  }
-  return `${trimmed}…`;
-}
-
-async function loadImage(dataUrl: string): Promise<HTMLImageElement> {
-  const image = new Image();
-  image.decoding = "sync";
-  image.crossOrigin = "anonymous";
-  image.src = dataUrl;
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error("Shot list export image failed to load"));
-  });
-  return image;
+async function createExportCanvas(p: ShotListExportPayload, t: string, pl: string) {
+  const cn = document.createElement("canvas");
+  cn.width = EXPORT_PAGE_WIDTH; cn.height = EXPORT_PAGE_HEIGHT;
+  const ctx = cn.getContext("2d")!;
+  ctx.fillStyle = COLORS.PAGE_BG; ctx.fillRect(0, 0, EXPORT_PAGE_WIDTH, EXPORT_PAGE_HEIGHT);
+  await renderPremiumHeader(ctx, p, t, pl);
+  return { cn, ctx };
 }
