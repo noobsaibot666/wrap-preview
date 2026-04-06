@@ -343,27 +343,78 @@ function getItemDetailMeta(itemType: string) {
 function getItemSuggestions(itemType: string) {
   switch (itemType) {
     case "camera":
-      return ["A-cam", "B-cam", "FX3", "Komodo", "Pocket 6K"];
+      return [
+        "Blackmagic Pocket Cinema Camera 6K G2",
+        "Blackmagic Pocket Cinema Camera 4K",
+        "Nikon Z6 III",
+        "DJI Osmo Nano",
+        "Fujifilm X100V",
+        "Canon Legria (AVCHD)",
+        "Ricoh GR III HDF",
+        "Leica M8",
+        "Canon AE-1 (Film)",
+        "Reto (Film Camera)",
+      ];
     case "sound":
-      return ["Shotgun mic", "Lav kit", "Field recorder", "XLR cable kit", "Headphones"];
+      return ["DJI Mic Mini (Lavalier System)"];
     case "light":
-      return ["Key light", "Tube light", "Practical light", "Softbox", "Light stand"];
+      return ["Neewer Z2 N Pro Flash", "Godox iT30 Pro N Flash"];
     case "tripod":
       return ["Tripod", "Monopod", "Hi-hat", "Fluid head", "Slider"];
     case "motion":
-      return ["Gimbal", "Slider", "Jib", "Dolly", "Car mount"];
+      return ["DJI Ronin RS4 Pro"];
     case "lens":
-      return ["24-70", "70-200", "Prime set", "Macro lens", "Filter kit"];
+      return [
+        "Samyang 85mm f/1.4 (EF Mount)",
+        "Blazar Remus 35mm Anamorphic 1.5x T1.6 (EF/PL Mount)",
+        "Meike 50mm T2.1 S35 (EF Mount)",
+        "Sigma 18-35mm f/1.8 DC (EF Mount)",
+        "8mm Aspherical (EF Mount)",
+        "Nikon Z 24-70mm f/4 S",
+        "Nikon Z 85mm f/1.8 S",
+        "Zoom-Nikkor 35-105mm (Vintage)",
+        "Holga 60mm (EF Mount)",
+        "Albinar Ultra Wide Lens",
+        "Black Diffusion 1/4 + Variable ND2-32 (72mm)",
+        "Nano-X Variable ND32 (72mm)",
+        "Nano-X Shimmer Diffusion 1 MRC (72mm)",
+        "Cinehaze Filter (77mm)",
+        "Neewer MRC CPL Pro (72mm)",
+      ];
     case "grip":
-      return ["C-stand", "Clamp kit", "Flag", "Diffusion", "Sandbags"];
+      return ["Flash Diffuser Filter", "Vanguard Case"];
     case "monitor":
-      return ["Director monitor", "Onboard monitor", "Wireless TX/RX", "Sun hood", "Monitor arm"];
+      return ["Atomos Shinobi 7"];
     case "power":
-      return ["V-mount battery", "NP-F set", "Charger", "Extension cable", "Power distro"];
+      return [
+        "Blackmagic 6K Battery Grip",
+        "NP-F550",
+        "NP-F960",
+        "LP-E6",
+        "EN-EL15C",
+        "Blackmagic Chargers",
+        "NP-F550 Charger",
+        "LP-E6 Charger",
+      ];
     case "media":
-      return ["SSD", "SD cards", "CFexpress", "Card wallet", "Offload shuttle"];
+      return [
+        "Samsung T5 SSD 2TB",
+        "Samsung T5 SSD 1TB",
+        "Samsung T7 SSD 2TB",
+        "SD Card 128GB",
+        "SD Card 256GB",
+        "CFexpress Type B 256GB",
+      ];
     default:
-      return ["Accessory", "Case", "Toolkit", "Backup item"];
+      return [
+        "EF to Z Adapter",
+        "M42 to EF Adapter",
+        "Leica M to M43 Adapter",
+        "Accessory",
+        "Case",
+        "Toolkit",
+        "Backup item",
+      ];
   }
 }
 
@@ -516,33 +567,13 @@ export default function ShotList({ appVersion }: ShotListProps) {
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest(".shot-list-option-field")) return;
+      if (!(event.target instanceof Element) || event.target.closest(".shot-list-option-field")) return;
       setActiveOptionField(null);
-      window.requestAnimationFrame(() => {
-        if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur();
-        }
-      });
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
 
-  useEffect(() => {
-    const handleWrapperMouseDown = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const wrapper = target.closest(
-        ".shot-list-row-grid label, .shot-list-equipment-item-grid label, .shot-list-equipment-title-fields label",
-      );
-      if (!wrapper) return;
-      if (target.closest("input, textarea, select, button, option")) return;
-      event.preventDefault();
-    };
-    document.addEventListener("mousedown", handleWrapperMouseDown, true);
-    return () => document.removeEventListener("mousedown", handleWrapperMouseDown, true);
-  }, []);
 
   useEffect(() => {
     if (!successMessage) return;
@@ -589,95 +620,102 @@ export default function ShotList({ appVersion }: ShotListProps) {
   }, [importedInventory.entries]);
 
   const cameraNameSuggestions = useMemo(() => {
-    if (!bundle) return importedSuggestionsByCategory.get("camera") || [];
     return uniqueSuggestions([
-      ...bundle.items.filter((item) => item.item_type === "camera").flatMap((item) => [item.item_name, item.camera_label]),
+      ...getItemSuggestions("camera"),
+      ...(bundle?.items || []).filter((item) => item.item_type === "camera").flatMap((item) => [item.item_name, item.camera_label]),
       ...(importedSuggestionsByCategory.get("camera") || []),
     ]);
-  }, [bundle, importedSuggestionsByCategory]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const lensSuggestions = useMemo(() => {
-    if (!bundle) return importedSuggestionsByCategory.get("lens") || [];
     return uniqueSuggestions([
-      ...bundle.items.filter((item) => item.item_type === "lens").flatMap((item) => [item.item_name, item.camera_label]),
+      ...getItemSuggestions("lens"),
+      ...(bundle?.items || []).filter((item) => item.item_type === "lens").flatMap((item) => [item.item_name, item.camera_label]),
       ...(importedSuggestionsByCategory.get("lens") || []),
     ]);
-  }, [bundle, importedSuggestionsByCategory]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const supportSuggestions = useMemo(() => {
-    if (!bundle) return uniqueSuggestions([...(importedSuggestionsByCategory.get("tripod") || []), ...(importedSuggestionsByCategory.get("motion") || [])]);
     return uniqueSuggestions([
-      ...bundle.items.filter((item) => item.item_type === "tripod" || item.item_type === "motion").flatMap((item) => [item.item_name, item.camera_label]),
+      ...getItemSuggestions("tripod"),
+      ...getItemSuggestions("motion"),
+      ...(bundle?.items || []).filter((item) => item.item_type === "tripod" || item.item_type === "motion").flatMap((item) => [item.item_name, item.camera_label]),
       ...(importedSuggestionsByCategory.get("tripod") || []),
       ...(importedSuggestionsByCategory.get("motion") || []),
     ]);
-  }, [bundle, importedSuggestionsByCategory]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const powerSuggestions = useMemo(() => {
-    if (!bundle) return importedSuggestionsByCategory.get("power") || [];
     return uniqueSuggestions([
-      ...bundle.items.filter((item) => item.item_type === "power").flatMap((item) => [item.item_name, item.camera_label]),
+      ...getItemSuggestions("power"),
+      ...(bundle?.items || []).filter((item) => item.item_type === "power").flatMap((item) => [item.item_name, item.camera_label]),
       ...(importedSuggestionsByCategory.get("power") || []),
     ]);
-  }, [bundle, importedSuggestionsByCategory]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const monitorSuggestions = useMemo(() => {
-    if (!bundle) return importedSuggestionsByCategory.get("monitor") || [];
     return uniqueSuggestions([
-      ...bundle.items.filter((item) => item.item_type === "monitor").flatMap((item) => [item.item_name, item.camera_label]),
+      ...getItemSuggestions("monitor"),
+      ...(bundle?.items || []).filter((item) => item.item_type === "monitor").flatMap((item) => [item.item_name, item.camera_label]),
       ...(importedSuggestionsByCategory.get("monitor") || []),
     ]);
-  }, [bundle, importedSuggestionsByCategory]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const accessorySuggestions = useMemo(() => {
-    if (!bundle) return uniqueSuggestions([...(importedSuggestionsByCategory.get("grip") || []), ...(importedSuggestionsByCategory.get("misc") || [])]);
     return uniqueSuggestions([
-      ...bundle.items
+      ...getItemSuggestions("grip"),
+      ...getItemSuggestions("misc"),
+      ...(bundle?.items || [])
         .filter((item) => ["grip", "misc"].includes(item.item_type))
         .flatMap((item) => [item.item_name, item.camera_label]),
       ...(importedSuggestionsByCategory.get("grip") || []),
       ...(importedSuggestionsByCategory.get("misc") || []),
     ]);
-  }, [bundle, importedSuggestionsByCategory]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const movementSuggestions = useMemo(() => {
     const defaults = ["Static", "Handheld", "Tripod", "Gimbal", "Slider", "Pan", "Tilt", "Crane", "Dolly"];
-    const derived = bundle
-      ? bundle.items
-          .filter((item) => item.item_type === "tripod" || item.item_type === "motion")
-          .map((item) => item.item_name)
-      : [];
-    return uniqueSuggestions([...defaults, ...derived, ...(importedSuggestionsByCategory.get("tripod") || []), ...(importedSuggestionsByCategory.get("motion") || [])]);
-  }, [bundle, importedSuggestionsByCategory]);
+    const derived = (bundle?.items || [])
+      .filter((item) => item.item_type === "tripod" || item.item_type === "motion")
+      .map((item) => item.item_name);
+    return uniqueSuggestions([
+      ...defaults,
+      ...derived,
+      ...getItemSuggestions("motion"),
+      ...(importedSuggestionsByCategory.get("tripod") || []),
+      ...(importedSuggestionsByCategory.get("motion") || []),
+    ]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const shotTypeSuggestions = useMemo(() => {
     return ["Wide", "Medium", "Close-up", "Extreme Close-up", "Long Shot", "Full Shot", "Medium Wide", "Medium Close-up", "Choker", "Macro", "Over the Shoulder", "POV"];
   }, []);
 
   const audioSuggestions = useMemo(() => {
-    if (!bundle) return importedSuggestionsByCategory.get("sound") || [];
     return uniqueSuggestions([
-      ...bundle.items.filter((item) => item.item_type === "sound").map((item) => item.item_name),
+      ...getItemSuggestions("sound"),
+      ...(bundle?.items || []).filter((item) => item.item_type === "sound").map((item) => item.item_name),
       ...(importedSuggestionsByCategory.get("sound") || []),
     ]);
-  }, [bundle, importedSuggestionsByCategory]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const lightingSuggestions = useMemo(() => {
-    if (!bundle) return importedSuggestionsByCategory.get("light") || [];
     return uniqueSuggestions([
-      ...bundle.items.filter((item) => item.item_type === "light").map((item) => item.item_name),
+      ...getItemSuggestions("light"),
+      ...(bundle?.items || []).filter((item) => item.item_type === "light").map((item) => item.item_name),
       ...(importedSuggestionsByCategory.get("light") || []),
     ]);
-  }, [bundle, importedSuggestionsByCategory]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const propsSuggestions = useMemo(() => {
-    if (!bundle) return uniqueSuggestions([...(importedSuggestionsByCategory.get("grip") || []), ...(importedSuggestionsByCategory.get("misc") || [])]);
     return uniqueSuggestions([
-      ...bundle.items.filter((item) => ["grip", "misc"].includes(item.item_type)).map((item) => item.item_name),
+      ...getItemSuggestions("grip"),
+      ...getItemSuggestions("misc"),
+      ...(bundle?.items || []).filter((item) => ["grip", "misc"].includes(item.item_type)).map((item) => item.item_name),
       ...(importedSuggestionsByCategory.get("grip") || []),
       ...(importedSuggestionsByCategory.get("misc") || []),
     ]);
-  }, [bundle, importedSuggestionsByCategory]);
+  }, [bundle?.items, importedSuggestionsByCategory]);
 
   const getMergedItemSuggestions = (itemType: string) =>
     uniqueSuggestions([
