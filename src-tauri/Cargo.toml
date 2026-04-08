@@ -1,6 +1,6 @@
 [package]
 name = "wrap-preview"
-version = "1.0.0-beta.4"
+version = "1.0.0"
 description = "Wrap Preview — Video Contact Sheet Generator"
 authors = ["you"]
 edition = "2021"
@@ -15,6 +15,7 @@ chrono = { version = "0.4", features = ["clock"] }
 
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-shell = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"

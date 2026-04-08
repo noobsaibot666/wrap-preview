@@ -19,6 +19,7 @@ mod verification;
 
 use commands::AppState;
 use std::sync::Arc;
+// Unused imports removed
 
 fn cache_root_dir() -> std::path::PathBuf {
     #[cfg(debug_assertions)]
@@ -76,11 +77,16 @@ pub fn run() {
     });
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(app_state.clone())
-        .setup(move |_| {
+        .setup(move |app| {
+            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+            let handle = app.handle();
+            crate::tools::init(handle.clone());
             let server_url = crate::review_core::server::start_review_core_server(
                 app_state.db.clone(),
                 app_state.review_core_base_dir.clone(),
@@ -88,6 +94,50 @@ pub fn run() {
             if let Ok(mut lock) = app_state.review_core_server_base_url.lock() {
                 *lock = Some(server_url);
             }
+
+            // Implementation of standard macOS menu for HIG compliance
+            let app = handle;
+            let about_menu = Submenu::with_id(app, "about", "Wrap Preview", true)?;
+            let settings = MenuItem::with_id(app, "settings", "Settings...", true, Some(","))?;
+            
+            about_menu.append(&PredefinedMenuItem::about(app, Some("Wrap Preview"), None)?)?;
+            about_menu.append(&PredefinedMenuItem::separator(app)?)?;
+            about_menu.append(&settings)?;
+            about_menu.append(&PredefinedMenuItem::separator(app)?)?;
+            about_menu.append(&PredefinedMenuItem::services(app, None)?)?;
+            about_menu.append(&PredefinedMenuItem::separator(app)?)?;
+            about_menu.append(&PredefinedMenuItem::hide(app, None)?)?;
+            about_menu.append(&PredefinedMenuItem::hide_others(app, None)?)?;
+            about_menu.append(&PredefinedMenuItem::show_all(app, None)?)?;
+            about_menu.append(&PredefinedMenuItem::separator(app)?)?;
+            about_menu.append(&PredefinedMenuItem::quit(app, None)?)?;
+
+            let edit_menu = Submenu::with_id(app, "edit", "Edit", true)?;
+            edit_menu.append(&PredefinedMenuItem::undo(app, None)?)?;
+            edit_menu.append(&PredefinedMenuItem::redo(app, None)?)?;
+            edit_menu.append(&PredefinedMenuItem::separator(app)?)?;
+            edit_menu.append(&PredefinedMenuItem::cut(app, None)?)?;
+            edit_menu.append(&PredefinedMenuItem::copy(app, None)?)?;
+            edit_menu.append(&PredefinedMenuItem::paste(app, None)?)?;
+            edit_menu.append(&PredefinedMenuItem::select_all(app, None)?)?;
+
+            let view_menu = Submenu::with_id(app, "view", "View", true)?;
+            view_menu.append(&PredefinedMenuItem::fullscreen(app, None)?)?;
+
+            let window_menu = Submenu::with_id(app, "window", "Window", true)?;
+            window_menu.append(&PredefinedMenuItem::minimize(app, None)?)?;
+            window_menu.append(&PredefinedMenuItem::maximize(app, None)?)?;
+            window_menu.append(&PredefinedMenuItem::separator(app)?)?;
+            window_menu.append(&PredefinedMenuItem::close_window(app, None)?)?;
+
+            let menu = Menu::with_items(app, &[&about_menu, &edit_menu, &view_menu, &window_menu])?;
+            app.set_menu(menu)?;
+
+            // Note: Menu events (like clicking "Settings") can be handled here or in a separate listener:
+            // app.on_menu_event(move |app_handle, event| {
+            //    if event.id() == "settings" { ... }
+            // });
+
             #[cfg(debug_assertions)]
             {
                 let table_status = app_state
