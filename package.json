@@ -11,8 +11,11 @@
   },
   "dependencies": {
     "@lucide/lab": "^0.1.2",
-    "@tauri-apps/api": "^1.5.3",
-    "@tauri-apps/shell": "^2.0.0-beta.9",
+    "@tauri-apps/api": "^2.1.0",
+    "@tauri-apps/plugin-dialog": "^2.2.0",
+    "@tauri-apps/plugin-fs": "^2.2.0",
+    "@tauri-apps/plugin-opener": "^2.2.0",
+    "@tauri-apps/plugin-shell": "^2.2.0",
     "clsx": "^2.1.0",
     "framer-motion": "^11.0.8",
     "lucide-react": "^0.344.0",
@@ -23,7 +26,7 @@
     "tailwind-merge": "^2.2.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.5.11",
+    "@tauri-apps/cli": "^2.1.0",
     "@types/node": "^20.11.24",
     "@types/react": "^18.2.61",
     "@types/react-dom": "^18.2.19",
