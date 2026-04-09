@@ -29,10 +29,10 @@ export function PdfHeader({ projectName, dateStr, logoSrc, appVersion }: PdfHead
         <div className="print-date">{dateStr}</div>
       </div>
       <div className="print-header-right">
-        <div className="print-subtitle">Wrap Preview v{appVersion}</div>
+        <div className="print-subtitle">CineFlow Suite v{appVersion}</div>
       </div>
       <div className="print-smart-copy">
-        Generated with Wrap Preview v{appVersion} — an offline, professional media control tool built for creative teams. Designed to verify, review, organize, and deliver production footage with confidence.
+        Generated with CineFlow Suite v{appVersion} — an offline, professional media control tool built for creative teams. Designed to verify, review, organize, and deliver production footage with confidence.
       </div>
     </div>
   );

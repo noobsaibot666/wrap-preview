@@ -55,6 +55,16 @@
     },
     "fs:default",
     "fs:write-all",
-    "core:webview:allow-print"
+    "core:webview:allow-print",
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        { "name": "bin/ffmpeg", "sidecar": true, "args": true },
+        { "name": "bin/ffprobe", "sidecar": true, "args": true },
+        { "name": "bin/braw_bridge", "sidecar": true, "args": true },
+        { "name": "bin/REDline", "sidecar": true, "args": true }
+      ]
+    }
   ]
 }

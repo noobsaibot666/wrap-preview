@@ -1240,7 +1240,6 @@ impl Database {
         Ok(db)
     }
 
-    #[allow(dead_code)]
     pub fn reset_file(&self) -> Result<(), String> {
         let db_path = (*self._path).clone();
         if let Some(parent) = Path::new(&db_path).parent() {

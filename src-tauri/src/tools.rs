@@ -11,20 +11,18 @@ pub fn init(handle: AppHandle) {
 }
 
 pub fn find_executable(name: &str) -> String {
-    // 1. Try to find as a Tauri Sidecar first (recommended for App Store)
+    // 1. Try to find as a Tauri Sidecar first
     if let Some(handle) = APP_HANDLE.get() {
-        if let Ok(_sidecar) = handle.shell().sidecar(name) {
-            // We need to get the path of the sidecar. 
-            // In Tauri 2, sidecar() returns a Command builder, but we want the path for some logic.
-            // However, most of our logic uses Command::new(path).
-            // Sidecars are special. Let's try to resolve the path manually if sidecar(name) exists.
-            
-            // For now, let's just use the name and hope the sidecar logic handles it, 
-            // OR we can return a special token.
+        use tauri_plugin_shell::ShellExt;
+        if let Ok(_sidecar_command) = handle.shell().sidecar(name) {
+            // In Tauri 2, we can't easily get the raw path from the command builder
+            // but we can try to resolve it for known sidecars if they are in the bin folder.
+            // For production builds, Tauri manages this. 
+            // For our internal "exists" checks, we can use this name.
         }
     }
 
-    // 2. Try which
+    // 2. Try which (useful for dev environment where tools are in PATH)
     if let Ok(output) = Command::new("which").arg(name).output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -34,13 +32,35 @@ pub fn find_executable(name: &str) -> String {
         }
     }
 
-    // 3. Check common macOS paths
-    let common_paths = ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"];
+    // 3. Check common macOS paths (legacy fallback)
+    #[cfg(target_os = "macos")]
+    {
+        let common_paths = ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"];
+        for path in common_paths {
+            let full_path = PathBuf::from(path).join(name);
+            if full_path.exists() {
+                return full_path.to_string_lossy().to_string();
+            }
+        }
+    }
 
-    for path in common_paths {
-        let full_path = PathBuf::from(path).join(name);
-        if full_path.exists() {
-            return full_path.to_string_lossy().to_string();
+    // 4. Check common Windows paths
+    #[cfg(target_os = "windows")]
+    {
+        let common_paths = [
+            "C:\\Program Files",
+            "C:\\Program Files (x86)",
+            "C:\\Windows\\System32",
+        ];
+        for path in common_paths {
+            let full_path = PathBuf::from(path).join(name);
+            if full_path.exists() {
+                return full_path.to_string_lossy().to_string();
+            }
+            let exe_path = PathBuf::from(path).join(format!("{}.exe", name));
+            if exe_path.exists() {
+                return exe_path.to_string_lossy().to_string();
+            }
         }
     }
 
@@ -48,7 +68,8 @@ pub fn find_executable(name: &str) -> String {
     name.to_string()
 }
 
-/// Helper to run a command that might be a sidecar
+/// Helper to run a command that might be a sidecar (reserved for future shell migration)
+#[allow(dead_code)]
 pub fn create_command(name: &str) -> Command {
     if let Some(handle) = APP_HANDLE.get() {
         if let Ok(_sidecar_command) = handle.shell().sidecar(name) {

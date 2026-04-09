@@ -241,7 +241,7 @@ async function exportProductionPage(payload: ShotListExportPayload, items: RowLa
     }
     y += info.height + 60;
   }
-  drawFooter({ kind: "canvas", ctx, canvasWidth: EXPORT_PAGE_WIDTH, canvasHeight: targetH || EXPORT_PAGE_HEIGHT, marginX: EXPORT_MARGIN_X }, payload.brandName || "Wrap Preview");
+  drawFooter({ kind: "canvas", ctx, canvasWidth: EXPORT_PAGE_WIDTH, canvasHeight: targetH || EXPORT_PAGE_HEIGHT, marginX: EXPORT_MARGIN_X }, payload.brandName || "CineFlow Suite");
   return cn;
 }
 
@@ -327,7 +327,7 @@ async function renderPremiumInventory(p: ShotListExportPayload) {
     if (cy + h > EXPORT_PAGE_HEIGHT - 240) {
       if (col === 0) { col = 1; cy = 350; }
       else {
-        drawFooter({ kind: "canvas", ctx, canvasWidth: EXPORT_PAGE_WIDTH, canvasHeight: EXPORT_PAGE_HEIGHT, marginX: EXPORT_MARGIN_X }, p.brandName || "Wrap Preview");
+        drawFooter({ kind: "canvas", ctx, canvasWidth: EXPORT_PAGE_WIDTH, canvasHeight: EXPORT_PAGE_HEIGHT, marginX: EXPORT_MARGIN_X }, p.brandName || "CineFlow Suite");
         pgs.push(canvas); res = await setupBase(pgs.length);
         canvas = res.cn; ctx = res.ctx; cy = 350; col = 0;
       }
@@ -351,7 +351,7 @@ async function renderPremiumInventory(p: ShotListExportPayload) {
     }
     cy += h + 40;
   }
-  drawFooter({ kind: "canvas", ctx, canvasWidth: EXPORT_PAGE_WIDTH, canvasHeight: EXPORT_PAGE_HEIGHT, marginX: EXPORT_MARGIN_X }, p.brandName || "Wrap Preview");
+  drawFooter({ kind: "canvas", ctx, canvasWidth: EXPORT_PAGE_WIDTH, canvasHeight: EXPORT_PAGE_HEIGHT, marginX: EXPORT_MARGIN_X }, p.brandName || "CineFlow Suite");
   pgs.push(canvas);
   return pgs;
 }

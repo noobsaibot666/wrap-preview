@@ -149,7 +149,7 @@ export const ClipCard = memo(function ClipCard({
                 setWaveformEnvelope([]);
                 if (import.meta.env.DEV && !waveformWarningKeys.has(clip.id)) {
                     waveformWarningKeys.add(clip.id);
-                    console.warn("[Wrap Preview] Failed to extract review waveform", clip.filename, error);
+                    console.warn("[CineFlow Suite] Failed to extract review waveform", clip.filename, error);
                 }
             });
         return () => {

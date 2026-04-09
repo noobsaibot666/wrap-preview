@@ -303,7 +303,7 @@ async function preparePage(
       margin: MARGIN,
     },
     {
-      appName: "Wrap Preview",
+      appName: "CineFlow Suite",
       appVersion,
       exportedAt: new Date(),
       projectName,
@@ -329,7 +329,7 @@ function preparePageSync(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
   doc.setTextColor(24);
-  doc.text("Wrap Preview", MARGIN, 20);
+  doc.text("CineFlow Suite", MARGIN, 20);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(130);
@@ -350,7 +350,7 @@ function finalizePage(doc: jsPDF, pageNumber: number) {
       margin: MARGIN,
       pageLabel: `Page ${pageNumber}`,
     },
-    "Wrap Preview"
+    "CineFlow Suite"
   );
 }
 

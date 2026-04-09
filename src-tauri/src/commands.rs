@@ -2547,7 +2547,7 @@ pub async fn get_app_info() -> Result<AppInfo, String> {
         macos_version: command_first_line("sw_vers", &["-productVersion"])
             .unwrap_or_else(|| "Unknown".to_string()),
         arch: std::env::consts::ARCH.to_string(),
-        braw_bridge_active: command_exists("braw-decode"),
+        braw_bridge_active: command_exists("braw_bridge") || command_exists("braw-decode"),
         redline_bridge_active: command_exists("REDline") || command_exists("redline"),
     })
 }
@@ -5875,11 +5875,29 @@ fn summarize_fs_error(path: &str, error: &std::io::Error) -> String {
 }
 
 fn command_exists(bin: &str) -> bool {
-    Command::new("sh")
-        .args(["-lc", &format!("command -v {} >/dev/null 2>&1", bin)])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let path = crate::tools::find_executable(bin);
+    if path == bin {
+        // find_executable returns the name itself if not found in common paths/sidecars
+        // We verify if 'which' or equivalent works for the fallback
+        #[cfg(not(target_os = "windows"))]
+        {
+            Command::new("sh")
+                .args(["-lc", &format!("command -v {} >/dev/null 2>&1", bin)])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        }
+        #[cfg(target_os = "windows")]
+        {
+            Command::new("where")
+                .arg(bin)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        }
+    } else {
+        std::path::Path::new(&path).exists()
+    }
 }
 
 fn last_export_metadata_path(cache_dir: &str) -> String {
@@ -6547,9 +6565,8 @@ pub async fn purge_cache(state: State<'_, Arc<AppState>>) -> Result<serde_json::
     }))
 }
 
-#[cfg(debug_assertions)]
 #[tauri::command]
-pub async fn dev_reset_all_data(
+pub async fn reset_app_data(
     state: State<'_, Arc<AppState>>,
 ) -> Result<serde_json::Value, String> {
     state.db.reset_file()?;
@@ -6568,7 +6585,10 @@ pub async fn dev_reset_all_data(
             }
         }
     }
-
+    
+    if std::path::Path::new(&state.cache_dir).exists() {
+        let _ = std::fs::remove_dir_all(&state.cache_dir);
+    }
     std::fs::create_dir_all(&state.app_data_dir).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&state.review_core_base_dir).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&state.cache_dir).map_err(|e| e.to_string())?;

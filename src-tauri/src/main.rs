@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    wrap_preview_lib::run()
+    cineflow_suite_lib::run()
 }

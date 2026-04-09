@@ -1,6 +1,6 @@
-# Wrap Preview — Video Contact Sheet Generator
+# CineFlow Suite — The Production & Post Hub
 
-**Wrap Preview** is a professional macOS application designed for film and video production. It allows users to quickly generate high-resolution contact sheets (PDF/PNG), manage shot lists, and review footage with precision.
+**CineFlow Suite** is a professional macOS application designed for film and video production. It allows users to quickly generate high-resolution contact sheets (PDF/PNG), manage shot lists, and review footage with precision.
 
 ## Key Features
 

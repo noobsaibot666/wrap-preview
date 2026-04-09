@@ -2,9 +2,9 @@ use std::path::{Component, Path, PathBuf};
 
 pub fn review_core_app_root() -> PathBuf {
     let app_dir = if cfg!(debug_assertions) {
-        "wrap-preview-dev"
+        "cineflow-suite-dev"
     } else {
-        "wrap-preview"
+        "cineflow-suite"
     };
 
     dirs_next::data_dir()
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn storage_paths_are_deterministic_and_scoped() {
-        let base = std::env::temp_dir().join("wrap-preview-review-core-test");
+        let base = std::env::temp_dir().join("cineflow-suite-review-core-test");
         let paths = build_version_paths(&base, "project1", "asset1", 2, "mov").unwrap();
         assert!(paths
             .original_abs_path

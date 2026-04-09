@@ -1,12 +1,12 @@
 [package]
-name = "wrap-preview"
+name = "cineflow-suite"
 version = "1.0.0"
-description = "Wrap Preview — Video Contact Sheet Generator"
+description = "CineFlow Suite — The Production & Post Hub"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "wrap_preview_lib"
+name = "cineflow_suite_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

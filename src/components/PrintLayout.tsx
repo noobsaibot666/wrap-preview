@@ -57,7 +57,7 @@ export function PrintLayout({ projectName, clips, thumbnailCache, brandProfile, 
           </div>
 
           {/* Footer */}
-          <PdfFooter brandName={brandProfile?.name || "Wrap Preview"} page={pageIdx + 1} totalPages={allPages.length} />
+          <PdfFooter brandName={brandProfile?.name || "CineFlow Suite"} page={pageIdx + 1} totalPages={allPages.length} />
         </div>
       ))}
     </div>

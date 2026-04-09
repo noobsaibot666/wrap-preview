@@ -198,27 +198,70 @@ fn extract_braw_thumbnail(
     output_path: &str,
     timestamp_ms: u64,
 ) -> Result<std::process::Output, String> {
-    let ff_fmt = Command::new("braw-decode")
+    let braw_decoder = crate::tools::find_executable("braw_bridge");
+    let ff_fmt = Command::new(&braw_decoder)
         .args(["-f", input_path])
         .output()
-        .map_err(|e| format!("Failed to run braw-decode -f: {}", e))?;
+        .map_err(|e| format!("Failed to run BRAW decoder probe ({}): {}", braw_decoder, e))?;
     if !ff_fmt.status.success() {
-        return Err(format!(
-            "braw-decode format probe failed: {}",
-            String::from_utf8_lossy(&ff_fmt.stderr)
-        ));
+        // Fallback to "braw-decode" if braw_bridge failed
+        let fallback_decoder = crate::tools::find_executable("braw-decode");
+        let fallback_fmt = Command::new(&fallback_decoder)
+            .args(["-f", input_path])
+            .output()
+            .map_err(|e| format!("Failed to run BRAW decoder probe fallback ({}): {}", fallback_decoder, e))?;
+        
+        if !fallback_fmt.status.success() {
+            return Err(format!(
+                "BRAW decoder format probe failed (tried {} and {}): {}",
+                braw_decoder, fallback_decoder,
+                String::from_utf8_lossy(&fallback_fmt.stderr)
+            ));
+        }
+        return process_braw_decode(&fallback_decoder, &String::from_utf8_lossy(&fallback_fmt.stdout), input_path, output_path, timestamp_ms);
     }
 
-    let fmt_args = String::from_utf8_lossy(&ff_fmt.stdout).trim().to_string();
+    process_braw_decode(&braw_decoder, &String::from_utf8_lossy(&ff_fmt.stdout), input_path, output_path, timestamp_ms)
+}
+
+fn process_braw_decode(
+    decoder: &str,
+    fmt_stdout: &str,
+    input_path: &str,
+    output_path: &str,
+    timestamp_ms: u64,
+) -> Result<std::process::Output, String> {
+    let fmt_args = fmt_stdout.trim().to_string();
     if fmt_args.is_empty() {
-        return Err("braw-decode returned empty ffmpeg format args".to_string());
+        return Err("BRAW decoder returned empty ffmpeg format args".to_string());
     }
 
     let fps = probe_fps(input_path).unwrap_or(24.0);
     let frame_index = ((timestamp_ms as f64 / 1000.0) * fps).round().max(0.0) as u64;
     let frame_end = frame_index.saturating_add(1);
+    
+    let ffmpeg = crate::tools::find_executable("ffmpeg");
+    
+    // On Windows, 'sh -lc' might not be available, so we use a direct command if possible 
+    // or cmd.exe. For now, let's keep the shell approach but adapt for platform.
+    #[cfg(target_os = "windows")]
     let cmd = format!(
-        "braw-decode -c rgba -i {frame} -o {frame_end} {input} | ffmpeg {fmt} -vframes 1 -vf scale={w}:-1 -f image2 -vcodec png -update 1 -y {output}",
+        "\"{}\" -c rgba -i {frame} -o {frame_end} {input} | \"{}\" {fmt} -vframes 1 -vf scale={w}:-1 -f image2 -vcodec png -update 1 -y {output}",
+        decoder,
+        ffmpeg,
+        frame = frame_index,
+        frame_end = frame_end,
+        input = shell_quote(input_path),
+        fmt = fmt_args,
+        w = MAX_WIDTH,
+        output = shell_quote(output_path)
+    );
+    
+    #[cfg(not(target_os = "windows"))]
+    let cmd = format!(
+        "{} -c rgba -i {frame} -o {frame_end} {input} | {} {fmt} -vframes 1 -vf scale={w}:-1 -f image2 -vcodec png -update 1 -y {output}",
+        decoder,
+        ffmpeg,
         frame = frame_index,
         frame_end = frame_end,
         input = shell_quote(input_path),
@@ -227,10 +270,21 @@ fn extract_braw_thumbnail(
         output = shell_quote(output_path)
     );
 
-    Command::new("sh")
-        .args(["-lc", &cmd])
-        .output()
-        .map_err(|e| format!("Failed to run BRAW thumbnail pipeline: {}", e))
+    #[cfg(not(target_os = "windows"))]
+    {
+        Command::new("sh")
+            .args(["-lc", &cmd])
+            .output()
+            .map_err(|e| format!("Failed to run BRAW thumbnail pipeline: {}", e))
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", &cmd])
+            .output()
+            .map_err(|e| format!("Failed to run BRAW thumbnail pipeline (Windows): {}", e))
+    }
 }
 
 /// Check if a thumbnail image is mostly black by sampling its mean luminance

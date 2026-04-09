@@ -184,7 +184,7 @@ export async function exportPdf(options: ExportOptions): Promise<boolean> {
   const exportDate = new Date();
 
   if (import.meta.env.DEV) {
-    console.info("[Wrap Preview] PDF export soak helper", {
+    console.info("[CineFlow Suite] PDF export soak helper", {
       projectName,
       clipCount: clips.length,
       pageCount: pages.length,
@@ -203,7 +203,7 @@ export async function exportPdf(options: ExportOptions): Promise<boolean> {
         margin,
       },
       {
-        appName: brandName || "Wrap Preview",
+        appName: brandName || "CineFlow Suite",
         appVersion,
         exportedAt: exportDate,
         projectName,
@@ -330,7 +330,7 @@ export async function exportPdf(options: ExportOptions): Promise<boolean> {
         margin,
         pageLabel: `Page ${pi + 1} of ${pages.length}`,
       },
-      brandName || "Wrap Preview"
+      brandName || "CineFlow Suite"
     );
   }
 
@@ -391,7 +391,7 @@ export async function exportImage(options: ExportOptions): Promise<boolean> {
       marginX,
     },
     {
-      appName: brandName || "Wrap Preview",
+      appName: brandName || "CineFlow Suite",
       appVersion,
       exportedAt: exportDate,
       projectName,
@@ -509,7 +509,7 @@ export async function exportImage(options: ExportOptions): Promise<boolean> {
       marginX,
       pageLabel: `${clips.length} clips  •  ${dateStr}`,
     },
-    brandName || "Wrap Preview"
+    brandName || "CineFlow Suite"
   );
 
   await invokeGuarded("save_image_data_url", { path: filePath, dataUrl: canvas.toDataURL("image/jpeg", 0.92) });
@@ -628,7 +628,7 @@ export async function exportMosaicPdf(options: ExportOptions): Promise<boolean> 
           pdf.addImage(normalized, "JPEG", x, y, tileSize, tileSize, undefined, "FAST");
         }
       } catch (error) {
-        console.warn("Failed to add mosaic thumb to PDF", error);
+        console.warn("[CineFlow Suite] Failed to extract review waveform", error);
       }
     }
   }

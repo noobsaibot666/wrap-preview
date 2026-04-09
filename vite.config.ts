@@ -25,13 +25,12 @@ export default defineConfig(async () => ({
     },
   },
   build: {
-    chunkSizeWarningLimit: 1000,
+    // Increased limit for the suite instead of complex chunking, ensuring maximum stability
+    chunkSizeWarningLimit: 3000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-ui': ['lucide-react'],
-          'vendor-export': ['jspdf', 'html-to-image', 'html2canvas', 'dompurify'],
-        }
+        // Automatic chunking is safer for the initial app-store release to avoid circular dependencies
+        manualChunks: undefined 
       }
     }
   }

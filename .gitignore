@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Sidecar Binaries (Staged manually per platform)
+src-tauri/bin/*
+!src-tauri/bin/.gitkeep
+docs/bin/*
+!docs/bin/.gitkeep
+
+# Exclude large graphic assets if needed
+*.dmg
+*.zip
+*.pkg

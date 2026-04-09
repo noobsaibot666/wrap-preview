@@ -37,7 +37,7 @@ Apple requires every binary inside your bundle to be signed with your Developer 
 
 ## 🚀 Final Submission Checklist
 
-Follow these steps to submit **Wrap Preview** to the macOS App Store.
+Follow these steps to submit **CineFlow Suite** to the macOS App Store.
 
 ## 1. Prerequisites
 

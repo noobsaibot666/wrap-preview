@@ -866,45 +866,64 @@ function AppContent() {
 
   const tourSteps: TourStep[] = [
     {
-      target: ".onboarding-grid-root",
-      title: "Modules",
-      description: "Start from the modules screen to choose between pre-production and post-production work.",
+      target: ".tour-app-logo",
+      title: "Welcome to CineFlow Suite",
+      description: "Welcome! CineFlow Suite is your high-performance suite for media control, designed to protect your vision from prep to post.",
       placement: "bottom",
       learnMore: [
-        "The left module covers planning before the shoot.",
-        "The right module covers review, verification, organization, and delivery after ingest."
+        "Use the sidebar and tabs to navigate various modules.",
+        "The app is sandboxed for security and App Store compliance."
       ]
     },
     {
-      target: ".btn-jobs",
-      title: "Jobs & Activity",
-      description: "Track processing, export progress, and surfaced issues in one drawer.",
-      placement: "bottom",
+      target: ".onboarding-grid-root",
+      title: "Navigation Hub",
+      description: "Modules are organized by project phase. Each hub contains specialized applications for that stage of production.",
+      placement: "top",
       learnMore: [
-        "Active jobs show live progress and cancel actions.",
-        "Completed jobs stay visible as history.",
-        "In dev builds, the drawer includes a Maintenance area for Reset Dev Data."
+        "Pre-production: Planning and project structure.",
+        "Production: Look development and on-set tools.",
+        "Post-production: Ingest, verification, and editorial handoff."
       ]
     },
     {
       target: ".tour-home-preproduction",
-      title: "Pre-Production",
-      description: "Use this module for Shot Planner and Folder Creator during prep.",
+      title: "Planning & Prep",
+      description: "Prepare for your shoot with the Shot List builder, Folder Creator, and visual Shot Planner.",
       placement: "bottom",
       learnMore: [
-        "Shot Planner helps review reference media and build selects before the shoot.",
-        "Folder Creator generates production folder structures."
+        "Generate automated folder structures for multi-platform projects.",
+        "Build rich reference sheets with embedded clip metadata."
       ]
     },
     {
       target: ".tour-home-postproduction",
-      title: "Post-Production",
-      description: "Use this module for Safe Copy, Review, Scene Blocks, Delivery, and Review Core.",
+      title: "Ingest & Review",
+      description: "Our high-speed post-production tools include Safe Copy for secure offloads and Review Core for visual verification.",
       placement: "bottom",
       learnMore: [
-        "Open Workspace / Review, Scene Blocks, and Delivery open after a workspace is loaded.",
-        "Safe Copy verifies transfers before editorial.",
-        "Review Core can run as an independent review surface."
+        "Safe Copy uses checksums to ensure file integrity.",
+        "Review Core provides a deterministic HLS proxy playback environment."
+      ]
+    },
+    {
+      target: ".btn-jobs",
+      title: "Background Engine",
+      description: "CineFlow Suite handles proxy extraction, metadata analysis, and exports in the background.",
+      placement: "bottom",
+      learnMore: [
+        "Monitor live progress for long-running queue tasks.",
+        "The engine utilizes native hardware acceleration for media processing."
+      ]
+    },
+    {
+      target: ".help-menu-wrapper",
+      title: "Help & Maintenance",
+      description: "Access system information, guides, and the Hard Reset utility for periodic maintenance.",
+      placement: "bottom",
+      learnMore: [
+        "Hard Reset deep-cleans all local databases and caches.",
+        "Check system health and sidecar binary status in the about panel."
       ]
     }
   ];
@@ -1206,7 +1225,7 @@ function AppContent() {
     const navigationActions = commandRefs.map((entry) => {
       const handler = commandRegistry[entry.id];
       if (!handler) {
-        console.warn(`[Wrap Preview] Missing command registry entry for "${entry.id}"`);
+        console.warn(`[CineFlow Suite] Missing command registry entry for "${entry.id}"`);
       }
       return {
         ...entry,
@@ -1322,9 +1341,9 @@ function AppContent() {
 
           <header className="app-header">
             <div className="app-header-left">
-              <div className="app-logo" onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
+              <div className="app-logo tour-app-logo" onClick={() => { setActiveTab('home'); setActivePreproductionApp(null); setActiveMediaWorkspaceApp(null); }}>
                 <img src={appLogo} alt="Logo" className="app-logo-img" />
-                <span className="app-title">Wrap Preview</span>
+                <span className="app-title">CineFlow Suite</span>
               </div>
               {projectName && (
                 <div className="header-project-info">
@@ -1400,7 +1419,7 @@ function AppContent() {
                       <div className="help-dropdown menu-dropdown">
                         <button className="dropdown-item menu-item" onClick={() => { setAboutOpen(true); setHelpMenuOpen(false); }}>
                           <span className="menu-item-icon"><Info size={16} /></span>
-                          <span className="menu-item-label">About Wrap Preview</span>
+                          <span className="menu-item-label">About CineFlow</span>
                         </button>
                         <div className="dropdown-divider menu-divider" />
                         <button className="dropdown-item menu-item" onClick={() => {
@@ -1415,22 +1434,22 @@ function AppContent() {
                   )}
                 </div>
 
-                <div className="others-menu-wrapper" style={{ position: 'relative' }}>
+                <div className="utilities-menu-wrapper" style={{ position: 'relative' }}>
                   <button
-                    className="btn btn-others"
+                    className="btn btn-utilities"
                     onClick={() => setOthersMenuOpen((prev) => !prev)}
                     aria-haspopup="menu"
                     aria-expanded={othersMenuOpen}
                   >
-                    <span>Others</span>
+                    <span>Utilities</span>
                     <ChevronDown size={14} />
                   </button>
                   {othersMenuOpen && (
                     <>
                       <div className="dropdown-backdrop" onClick={() => setOthersMenuOpen(false)} />
-                      <div className="help-dropdown menu-dropdown others-dropdown" role="menu">
+                      <div className="help-dropdown menu-dropdown utilities-dropdown" role="menu">
                         <button
-                          className="dropdown-item menu-item others-menu-item others-menu-item-crop"
+                          className="dropdown-item menu-item utilities-menu-item utilities-menu-item-crop"
                           onClick={() => {
                             setOthersMenuOpen(false);
                             setActiveMicroApp("crop-factor");
@@ -1443,7 +1462,7 @@ function AppContent() {
                           </span>
                         </button>
                         <button
-                          className="dropdown-item menu-item others-menu-item others-menu-item-file"
+                          className="dropdown-item menu-item utilities-menu-item utilities-menu-item-file"
                           onClick={() => {
                             setOthersMenuOpen(false);
                             setActiveMicroApp("video-file-size");
@@ -1456,7 +1475,7 @@ function AppContent() {
                           </span>
                         </button>
                         <button
-                          className="dropdown-item menu-item others-menu-item others-menu-item-aspect"
+                          className="dropdown-item menu-item utilities-menu-item utilities-menu-item-aspect"
                           onClick={() => {
                             setOthersMenuOpen(false);
                             setActiveMicroApp("aspect-ratio");
@@ -1469,7 +1488,7 @@ function AppContent() {
                           </span>
                         </button>
                         <button
-                          className="dropdown-item menu-item others-menu-item others-menu-item-transfer"
+                          className="dropdown-item menu-item utilities-menu-item utilities-menu-item-transfer"
                           onClick={() => {
                             setOthersMenuOpen(false);
                             setActiveMicroApp("transfer-time");
@@ -2094,7 +2113,7 @@ function AppContent() {
                 <div className="onboarding-container">
                   <div className="onboarding-header">
                     <span className="onboarding-eyebrow">Modules</span>
-                    <h1>Wrap Preview Suite</h1>
+                    <h1>CineFlow Suite</h1>
                     <p>Offline media control for shoots and post.</p>
                   </div>
                   <div className="onboarding-grid onboarding-grid-root">
@@ -4066,7 +4085,7 @@ function MicroAppModal({
       <div className={`microapp-modal ${className}`} onClick={(event) => event.stopPropagation()}>
         <div className="microapp-modal-header">
           <div className="microapp-modal-heading">
-            <span className="microapp-modal-eyebrow">Others</span>
+            <span className="microapp-modal-eyebrow">Utilities</span>
             <h2>{title}</h2>
           </div>
           <div className="microapp-modal-actions">

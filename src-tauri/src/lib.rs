@@ -31,19 +31,19 @@ fn cache_root_dir() -> std::path::PathBuf {
     {
         dirs_next::cache_dir()
             .unwrap_or_else(std::env::temp_dir)
-            .join("wrap-preview")
+            .join("cineflow-suite")
     }
 }
 
 fn sqlite_db_path() -> std::path::PathBuf {
     #[cfg(debug_assertions)]
     {
-        crate::review_core::storage::review_core_app_root().join("wrap-preview.db")
+        crate::review_core::storage::review_core_app_root().join("cineflow-suite.db")
     }
 
     #[cfg(not(debug_assertions))]
     {
-        cache_root_dir().join("wrap-preview.db")
+        cache_root_dir().join("cineflow-suite.db")
     }
 }
 
@@ -97,18 +97,23 @@ pub fn run() {
 
             // Implementation of standard macOS menu for HIG compliance
             let app = handle;
-            let about_menu = Submenu::with_id(app, "about", "Wrap Preview", true)?;
+            let about_menu = Submenu::with_id(app, "about", "CineFlow Suite", true)?;
             let settings = MenuItem::with_id(app, "settings", "Settings...", true, Some(","))?;
             
-            about_menu.append(&PredefinedMenuItem::about(app, Some("Wrap Preview"), None)?)?;
+            about_menu.append(&PredefinedMenuItem::about(app, Some("CineFlow Suite"), None)?)?;
             about_menu.append(&PredefinedMenuItem::separator(app)?)?;
             about_menu.append(&settings)?;
-            about_menu.append(&PredefinedMenuItem::separator(app)?)?;
-            about_menu.append(&PredefinedMenuItem::services(app, None)?)?;
-            about_menu.append(&PredefinedMenuItem::separator(app)?)?;
-            about_menu.append(&PredefinedMenuItem::hide(app, None)?)?;
-            about_menu.append(&PredefinedMenuItem::hide_others(app, None)?)?;
-            about_menu.append(&PredefinedMenuItem::show_all(app, None)?)?;
+            
+            #[cfg(target_os = "macos")]
+            {
+                about_menu.append(&PredefinedMenuItem::separator(app)?)?;
+                about_menu.append(&PredefinedMenuItem::services(app, None)?)?;
+                about_menu.append(&PredefinedMenuItem::separator(app)?)?;
+                about_menu.append(&PredefinedMenuItem::hide(app, None)?)?;
+                about_menu.append(&PredefinedMenuItem::hide_others(app, None)?)?;
+                about_menu.append(&PredefinedMenuItem::show_all(app, None)?)?;
+            }
+
             about_menu.append(&PredefinedMenuItem::separator(app)?)?;
             about_menu.append(&PredefinedMenuItem::quit(app, None)?)?;
 
@@ -345,8 +350,7 @@ pub fn run() {
             commands::production_matchlab_export_lut,
             commands::production_matchlab_export_calibration_package,
             commands::camera_match_analyze_clip,
-            #[cfg(debug_assertions)]
-            commands::dev_reset_all_data,
+            commands::reset_app_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

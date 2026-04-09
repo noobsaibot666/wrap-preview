@@ -1128,7 +1128,7 @@ pub fn probe_braw_ffmpeg_format(caps: &BrawDecoderCaps, input_path: &str) -> Res
     }
     let fmt_args = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if fmt_args.is_empty() {
-        return Err("braw-decode returned empty ffmpeg format args".to_string());
+        return Err("BRAW decoder returned empty ffmpeg format args".to_string());
     }
     Ok(fmt_args)
 }
@@ -1153,11 +1153,11 @@ pub fn create_braw_proxy_via_stdout(
 
     let mut braw_child = braw_decode_cmd
         .spawn()
-        .map_err(|e| format!("Failed to start braw-decode: {}", e))?;
+        .map_err(|e| format!("Failed to start BRAW decoder: {}", e))?;
     let stdout = braw_child
         .stdout
         .take()
-        .ok_or("Failed to capture braw-decode stdout".to_string())?;
+        .ok_or("Failed to capture BRAW decoder stdout".to_string())?;
 
     let ffmpeg = crate::tools::find_executable("ffmpeg");
     let mut ffmpeg_args: Vec<String> = vec!["-hide_banner".to_string(), "-y".to_string()];
@@ -1177,7 +1177,7 @@ pub fn create_braw_proxy_via_stdout(
         .map_err(|e| format!("Failed waiting for ffmpeg: {}", e))?;
     let braw_status = braw_child
         .wait()
-        .map_err(|e| format!("Failed waiting for braw-decode: {}", e))?;
+        .map_err(|e| format!("Failed waiting for BRAW decoder: {}", e))?;
 
     let ffmpeg_stderr = read_child_stderr(&mut ffmpeg_child);
     let braw_stderr = read_child_stderr(&mut braw_child);
@@ -1226,7 +1226,7 @@ pub fn create_braw_proxy_via_file(
     let decode_output = Command::new(executable)
         .args([input_path, output_flag, &decoded_path.to_string_lossy()])
         .output()
-        .map_err(|e| format!("Failed to start braw-decode file output: {}", e))?;
+        .map_err(|e| format!("Failed to start BRAW decoder file output: {}", e))?;
     if !decode_output.status.success() {
         return Err(format!(
             "Input: {}\nOutput: {}\nExit code: {}\n{}",
@@ -1284,7 +1284,23 @@ fn tail_lines(value: &str, limit: usize) -> String {
 }
 
 fn locate_braw_decoder() -> Option<String> {
-    if let Ok(output) = Command::new("which").arg("braw-decode").output() {
+    // 1. Try braw_bridge first (standard sidecar name)
+    let path = crate::tools::find_executable("braw_bridge");
+    if path != "braw_bridge" && Path::new(&path).exists() {
+        return Some(path);
+    }
+
+    // 2. Fallback to braw-decode
+    let path = crate::tools::find_executable("braw-decode");
+    if path != "braw-decode" && Path::new(&path).exists() {
+        return Some(path);
+    }
+
+    // 3. Last resort fallback for PATH
+    if let Ok(output) = Command::new(if cfg!(target_os = "windows") { "where" } else { "which" })
+        .arg("braw-decode")
+        .output()
+    {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
@@ -1292,15 +1308,8 @@ fn locate_braw_decoder() -> Option<String> {
             }
         }
     }
-    let common_paths = [
-        "/usr/local/bin/braw-decode",
-        "/opt/homebrew/bin/braw-decode",
-        "/usr/bin/braw-decode",
-    ];
-    common_paths
-        .into_iter()
-        .find(|path| Path::new(path).exists())
-        .map(|path| path.to_string())
+
+    None
 }
 
 fn locate_redline_decoder() -> Option<String> {

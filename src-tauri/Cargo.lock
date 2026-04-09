@@ -618,6 +618,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "cineflow-suite"
+version = "1.0.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "bcrypt",
+ "blake3",
+ "chrono",
+ "dirs-next",
+ "image",
+ "opencv",
+ "printpdf",
+ "rand 0.8.5",
+ "rayon",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-opener",
+ "tauri-plugin-shell",
+ "thiserror 1.0.69",
+ "tokio",
+ "trash",
+ "uuid",
+ "walkdir",
+ "zip",
+]
+
+[[package]]
 name = "cipher"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6045,39 +6078,6 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
-]
-
-[[package]]
-name = "wrap-preview"
-version = "1.0.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "bcrypt",
- "blake3",
- "chrono",
- "dirs-next",
- "image",
- "opencv",
- "printpdf",
- "rand 0.8.5",
- "rayon",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-opener",
- "tauri-plugin-shell",
- "thiserror 1.0.69",
- "tokio",
- "trash",
- "uuid",
- "walkdir",
- "zip",
 ]
 
 [[package]]
