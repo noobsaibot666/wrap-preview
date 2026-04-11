@@ -8809,9 +8809,12 @@ body {
 
 .frame-preview-safe-guide-overlay {
   position: absolute;
-  inset: 0;
+  top: 42px;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
   pointer-events: none;
-  z-index: 10;
+  z-index: 20;
   overflow: hidden;
 }
 
@@ -8827,11 +8830,12 @@ body {
 .frame-preview-guide-svg.composition rect,
 .frame-preview-guide-svg.composition circle {
   fill: none;
-  stroke: rgba(232, 228, 255, 0.62);
-  stroke-width: 0.9;
+  stroke: #4ade80;
+  stroke-width: 1.2;
   vector-effect: non-scaling-stroke;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
 }
 
 .frame-preview-guide-svg .frame-preview-guide-emphasis {
@@ -8842,11 +8846,12 @@ body {
 .frame-preview-guide-svg.social line,
 .frame-preview-guide-svg.social rect {
   fill: none;
-  stroke: rgba(103, 212, 255, 0.72);
-  stroke-width: 0.95;
+  stroke: #67d4ff;
+  stroke-width: 1.2;
   vector-effect: non-scaling-stroke;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
 }
 
 .frame-preview-empty-state {
@@ -8962,11 +8967,11 @@ body {
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: 2px;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .frame-preview-ratio-chips-group::-webkit-scrollbar {
-  height: 4px;
+  display: none;
 }
 
 .frame-preview-ratio-chips-group::-webkit-scrollbar-thumb {
@@ -9007,6 +9012,14 @@ body {
 .frame-preview-guide-menu {
   position: relative;
   z-index: 330;
+}
+
+.active-guide {
+  color: var(--color-accent) !important;
+}
+
+.active-guide svg {
+  color: var(--color-accent) !important;
 }
 
 .frame-preview-guide-dropdown {
@@ -9051,10 +9064,23 @@ body {
   align-items: center;
   gap: var(--space-md);
   background: rgba(0, 0, 0, 0.3);
-  padding: 4px 12px;
+  padding: 0 12px;
   border-radius: 100px;
   border: 1px solid rgba(255, 255, 255, 0.05);
-  width: 300px;
+  width: 200px;
+  height: 28px;
+}
+
+.playback-toggle-btn {
+  width: 20px;
+  height: 26px;
+  padding: 0;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-accent);
 }
 
 .frame-preview-scrubber {

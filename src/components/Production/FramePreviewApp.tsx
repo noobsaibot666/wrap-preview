@@ -1196,16 +1196,19 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
     }
   };
 
-  const fitToFrame = useCallback((ratio: RatioType) => {
+  const fitToFrame = useCallback((ratio: RatioType, mode: 'contain' | 'cover' = 'contain') => {
     if (!activeMedia) return;
     const renderedRect = renderedFrameRectMap[ratio];
     const frameWidth = Math.max((renderedRect?.width ?? 0) - 24, 1);
     const frameHeight = Math.max((renderedRect?.height ?? 0) - 54, 1);
     const containScale = Math.min(frameWidth / activeMedia.width, frameHeight / activeMedia.height);
     const coverScale = Math.max(frameWidth / activeMedia.width, frameHeight / activeMedia.height);
-    const nextScale = containScale > 0 ? Math.max(1, coverScale / containScale) : 1;
+    
+    // Calculate the scale needed to achieve contain or cover relative to the mount point
+    // We want the media to fill the 'mount room'
+    const nextScale = mode === 'cover' ? coverScale / containScale : 1;
 
-    updateTransform(activeMedia.id, ratio, { scale: nextScale, offsetX: 0, offsetY: 0 });
+    updateTransform(activeMedia.id, ratio, { scale: Math.max(0.1, nextScale), offsetX: 0, offsetY: 0 });
   }, [activeMedia, renderedFrameRectMap, updateTransform]);
 
   const arrangeFrames = useCallback(() => {
@@ -1215,12 +1218,8 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
   }, []);
 
   const handleFitButtonClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    if (event.shiftKey) {
-      arrangeFrames();
-      return;
-    }
-    fitToFrame(state.activeRatio);
-  }, [arrangeFrames, fitToFrame, state.activeRatio]);
+    fitToFrame(state.activeRatio, event.shiftKey ? 'cover' : 'contain');
+  }, [fitToFrame, state.activeRatio]);
 
   const handleRatioChipClick = (ratio: RatioType, event: React.MouseEvent) => {
     const shouldAutoFitNewRatio = !event.shiftKey
@@ -1256,6 +1255,7 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                                 type="button"
                                 className={`frame-preview-ratio-chip ${isVisible ? 'visible' : ''} ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
                                 onClick={(event) => handleRatioChipClick(r, event)}
+                                title="shift click to select"
                             >
                                 {r}
                             </button>
@@ -1269,7 +1269,7 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                 <div className="frame-preview-guide-menu" ref={compositionMenuRef}>
                     <button
                         type="button"
-                        className="btn btn-ghost btn-xs"
+                        className={`btn btn-ghost btn-xs ${selectedCompositionGuide !== 'none' ? 'active-guide' : ''}`}
                         onClick={() => {
                           setCompositionMenuOpen((open) => !open);
                           setSocialMenuOpen(false);
@@ -1298,7 +1298,7 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                 <div className="frame-preview-guide-menu" ref={socialMenuRef}>
                     <button
                         type="button"
-                        className="btn btn-ghost btn-xs"
+                        className={`btn btn-ghost btn-xs ${selectedSocialGuide !== 'none' ? 'active-guide' : ''}`}
                         onClick={() => {
                           setSocialMenuOpen((open) => !open);
                           setCompositionMenuOpen(false);
@@ -1329,8 +1329,8 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
             <div className="frame-preview-control-section playback">
                 {activeMedia.type === 'video' && (
                     <div className="frame-preview-playback-controls">
-                        <button className="btn-icon" onClick={toggleVideoPlayback}>
-                            {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+                        <button className="btn-icon playback-toggle-btn" onClick={toggleVideoPlayback}>
+                            {isPlaying ? <Pause size={14} /> : <Play size={14} />}
                         </button>
                         <input 
                             type="range" 
@@ -1351,8 +1351,8 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                 </div>
                 
                 <div className="frame-preview-btn-group">
-                    <button className="btn btn-ghost btn-xs" onClick={handleFitButtonClick} title="Fit to Frame. Shift-click to arrange all frames.">
-                        <Maximize2 size={14} /> <span>Fit</span>
+                    <button className="btn btn-ghost btn-xs" onClick={handleFitButtonClick} title="Fit to Frame. Shift-click to FILL (Cover) frame.">
+                        <Maximize2 size={14} /> <span>Fit / Fill</span>
                     </button>
                     <button className="btn btn-ghost btn-xs" onClick={() => activeMedia && resetTransform(activeMedia.id, state.activeRatio)}>
                         <RotateCcw size={14} /> <span>Reset</span>
@@ -1462,7 +1462,7 @@ export const FramePreviewApp: React.FC<FramePreviewAppProps> = ({ project, onBac
                                             <span className="frame-preview-master-button-label">M</span>
                                         </button>
                                         <button 
-                                            className={`frame-preview-btn-frame-action ${activeGuideVisible(ratio) ? 'active' : ''}`}
+                                            className={`frame-preview-btn-frame-action ${safeGuides[ratio] ? 'active' : ''}`}
                                             onClick={(e) => { e.stopPropagation(); toggleSafeGuide(ratio); }}
                                             title="Show or hide selected guides"
                                         >

@@ -12,7 +12,7 @@ const BLACK_THRESHOLD: f64 = 15.0;
 
 /// Image file extensions that need special thumbnail handling
 const IMAGE_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "webp", "tiff", "tif", "bmp", "heic", "heif", "nef", "nrw", "cr2", "cr3", "arw",
+    "jpg", "jpeg", "png", "webp", "tiff", "tif", "bmp", "heic", "heif", "nef", "nrw", "cr2", "cr3", "arw", "orf", "raf", "dng",
 ];
 
 /// Check if a file path is a still image (not a video)
@@ -107,13 +107,14 @@ pub fn extract_thumbnail(
             .map_err(|e| format!("Failed to create thumbnail directory: {}", e))?;
     }
 
-    let is_nev = Path::new(input_path).extension().map(|e| e.to_string_lossy().eq_ignore_ascii_case("nev")).unwrap_or(false);
+    let ext = Path::new(input_path).extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let is_nev = ext == "nev";
+    let is_r3d = ext == "r3d";
     
     let status = if is_braw(input_path) {
         extract_braw_thumbnail(input_path, output_path, timestamp_ms)?
     } else {
         let ffmpeg = crate::tools::find_executable("ffmpeg");
-        
         // Stage 1: Fast Input Seeking (seeking before -i)
         let mut cmd = Command::new(&ffmpeg);
         if is_nev {
@@ -138,7 +139,6 @@ pub fn extract_thumbnail(
             output
         } else {
             // Stage 2: Slower but more robust Output Seeking (seeking after -i)
-            // This works better for certain AVI, MKV, and mobile HEVC files with sparse keyframes
             let mut cmd2 = Command::new(&ffmpeg);
             if is_nev {
                 cmd2.args(["-c:v", "tico_raw"]);

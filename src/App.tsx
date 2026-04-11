@@ -371,8 +371,8 @@ function AppContent() {
   const [customMovements, setCustomMovements] = useState<string[]>([]);
   const selectedJumpSeconds = useMemo(() => getJumpIntervalForThumbCount(thumbCount), [thumbCount]);
   const thumbCacheContext = useMemo(
-    () => getThumbnailCacheContext(selectedJumpSeconds),
-    [selectedJumpSeconds],
+    () => getThumbnailCacheContext(selectedJumpSeconds, thumbCount),
+    [selectedJumpSeconds, thumbCount],
   );
 
   const safeInvoke = useCallback(async <T,>(command: string, args?: Record<string, unknown>) => {
@@ -597,8 +597,8 @@ function AppContent() {
 
 
   const getThumbCacheKey = useCallback((clipId: string, index: number, context = thumbCacheContext) => {
-    return `${clipId}_${index}::${context}`;
-  }, [thumbCacheContext]);
+    return `${clipId}_${index}::${context}::tc=${thumbCount}`;
+  }, [thumbCacheContext, thumbCount]);
 
   const hydrateThumbnailEntry = useCallback(async (path: string) => {
     if (!path || isUnloadingRef.current) return null;
@@ -2057,7 +2057,7 @@ function AppContent() {
                       >
                         <div className="module-icon"><Camera size={20} strokeWidth={1.5} /></div>
                         <div className="module-info">
-                          <h3>Open Workspace / Review</h3>
+                          <h3>Media Review</h3>
                           <p>{projectId ? "Continue reviewing thumbnails, metadata, and audio." : "Load a footage folder to unlock Review, Scene Blocks, and Delivery."}</p>
                           <span className="module-action">{projectId ? "Open App" : "Load Workspace"} <ArrowRight size={14} /></span>
                         </div>

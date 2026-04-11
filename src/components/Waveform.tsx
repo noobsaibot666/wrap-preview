@@ -25,13 +25,9 @@ export const Waveform: React.FC<WaveformProps> = ({
     if (!envelope || envelope.length === 0) return null;
 
     // Calculate points for the SVG polyline/path
-    const points = envelope.map((val, i) => {
-        const x = (i / (envelope.length - 1)) * 100;
-        const y = 100 - (val / 255) * 100; // Invert and normalize to 0-100
-        return `${x},${y}`;
-    }).join(' ');
-
-    const fillPath = `0,100 ${points} 100,100`;
+    const barCount = envelope.length;
+    const gap = 0.5;
+    const barWidth = (100 - (barCount - 1) * gap) / barCount;
 
     return (
         <div className="waveform-outer">
@@ -43,52 +39,41 @@ export const Waveform: React.FC<WaveformProps> = ({
                 >
                     <defs>
                         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={color} stopOpacity="0.8" />
-                            <stop offset="100%" stopColor={color} stopOpacity="0.1" />
+                            <stop offset="0%" stopColor={color} stopOpacity="1" />
+                            <stop offset="50%" stopColor={color} stopOpacity="0.6" />
+                            <stop offset="100%" stopColor={color} stopOpacity="1" />
                         </linearGradient>
                     </defs>
 
-                    {/* Fill */}
-                    <polyline
-                        points={fillPath}
-                        fill={`url(#${gradientId})`}
-                        stroke="none"
-                    />
-
-                    {/* Stroke */}
-                    <polyline
-                        points={points}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth="1.5"
-                        vectorEffect="non-scaling-stroke"
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                    />
-
-                    {/* Playhead */}
-                    {progress > 0 && (
-                        <>
-                            <line
-                                x1={progress}
-                                y1="0"
-                                x2={progress}
-                                y2="100"
-                                stroke="var(--color-accent-blue, #22d3ee)"
-                                strokeWidth="2"
-                                vectorEffect="non-scaling-stroke"
-                            />
-                            {/* Progress Overlay (darken played part) */}
+                    {envelope.map((val, i) => {
+                        const h = (val / 255) * 85; // Max 85% height for symmetry
+                        const x = i * (barWidth + gap);
+                        const isPlayed = (i / barCount) * 100 < progress;
+                        return (
                             <rect
-                                x="0"
-                                y="0"
-                                width={progress}
-                                height="100"
-                                fill="var(--color-accent-blue, #22d3ee)"
-                                fillOpacity="0.15"
-                                pointerEvents="none"
+                                key={i}
+                                x={x}
+                                y={50 - h / 2}
+                                width={barWidth}
+                                height={Math.max(2, h)}
+                                fill={isPlayed ? color : "rgba(255,255,255,0.12)"}
+                                rx={barWidth / 2}
                             />
-                        </>
+                        );
+                    })}
+
+                    {/* Playhead line */}
+                    {progress > 0 && progress < 100 && (
+                        <line
+                            x1={progress}
+                            y1="0"
+                            x2={progress}
+                            y2="100"
+                            stroke="white"
+                            strokeWidth="1"
+                            style={{ opacity: 0.8 }}
+                            vectorEffect="non-scaling-stroke"
+                        />
                     )}
                 </svg>
             </div>
