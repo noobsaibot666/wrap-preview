@@ -80,7 +80,7 @@ const FramePreview = lazy(() => import('./modules/Production/apps/FramePreview')
 import { useCommandPalette } from "./hooks/useCommandPalette";
 import { CommandPalette } from "./components/CommandPalette";
 import { getJumpIntervalForThumbCount, getThumbnailCacheContext } from "./utils/thumbnailIntervals";
-import { invokeGuarded, isTauriReloading } from "./utils/tauri";
+import { invokeGuarded, isTauriReloading, convertFileSrc } from "./utils/tauri";
 
 // --- Error Boundary ---
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
@@ -602,18 +602,9 @@ function AppContent() {
 
   const hydrateThumbnailEntry = useCallback(async (path: string) => {
     if (!path || isUnloadingRef.current) return null;
-    if (path.startsWith("data:")) return path;
-    try {
-      return await safeInvoke<string>("read_thumbnail", { path });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const isMissingFile = message.includes("No such file or directory") || message.includes("os error 2");
-      if (!isUnloadingRef.current && !isMissingFile) {
-        console.warn(`Failed to hydrate thumbnail ${path}`, error);
-      }
-      return null;
-    }
-  }, [safeInvoke]);
+    if (path.startsWith("data:") || path.startsWith("asset:") || path.startsWith("https://asset.localhost")) return path;
+    return convertFileSrc(path);
+  }, []);
 
   const hydrateThumbnailCacheEntries = useCallback(async (
     entries: Array<{ clipId: string; jumpSeconds: number; index: number; path: string }>
@@ -785,6 +776,9 @@ function AppContent() {
     projectPhaseMapRef,
     isShotPlannerActive,
     refreshJobs,
+    hydrateThumbnailCacheEntries,
+    getThumbCacheKey,
+    getThumbnailCacheContext,
   });
 
   // handleCloseProject was replaced by inline initialPhaseState reset in handleSelectFolder

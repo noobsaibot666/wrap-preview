@@ -1,4 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+
+export { convertFileSrc };
 
 export function isTauriReloading(): boolean {
   if (typeof window === "undefined") return false;

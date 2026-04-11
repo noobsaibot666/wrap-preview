@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Thumbnail } from "../types";
 import { DisplayedThumbnail, getThumbnailCacheValue } from "../utils/shotPlannerThumbnails";
-import { invokeGuarded, isTauriReloading } from "../utils/tauri";
+import { invokeGuarded, isTauriReloading, convertFileSrc } from "../utils/tauri";
 
 interface FilmStripProps {
     clipId?: string;
@@ -79,7 +79,7 @@ export const FilmStrip = memo(function FilmStrip({
             if (!filename) return thumb.src;
             const lutPath = [...parts, `lut_${projectLutHash}_${filename}`].join("/");
             try {
-                return await invokeGuarded<string>("read_thumbnail", { path: lutPath });
+                return convertFileSrc(lutPath);
             } catch {
                 return thumb.src;
             }
@@ -146,7 +146,7 @@ export const FilmStrip = memo(function FilmStrip({
                                 if (thumb && projectLutHash && clipLutEnabled === 1) {
                                     (e.target as HTMLImageElement).src = fallbackThumbnailSrc ?? thumb.src;
                                 }
-                            }} loading="lazy" decoding="async" />
+                            }} decoding="async" />
                             {!isImage && (
                                 <span className="thumb-time">
                                     {formatTimestamp(thumb?.timestamp_ms || 0)}

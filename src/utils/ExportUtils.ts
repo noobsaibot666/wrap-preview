@@ -29,14 +29,20 @@ interface MosaicAsset {
 
 function assetUrlToPath(url: string): string {
   if (url.startsWith("data:")) return url;
+
+  // Tauri 2 / Windows: https://asset.localhost/<encoded_path>
   if (url.includes("asset.localhost/")) {
-    const path = decodeURIComponent(url.split("asset.localhost/")[1] || "");
+    const parts = url.split("asset.localhost/");
+    const path = decodeURIComponent(parts[parts.length - 1] || "");
     return path.startsWith("/") ? path : `/${path}`;
   }
-  if (url.includes("asset://localhost/")) {
-    const path = decodeURIComponent(url.split("asset://localhost/")[1] || "");
+
+  // Tauri 2 / macOS: asset://<encoded_path>
+  if (url.startsWith("asset://")) {
+    const path = decodeURIComponent(url.replace("asset://", ""));
     return path.startsWith("/") ? path : `/${path}`;
   }
+
   return url;
 }
 

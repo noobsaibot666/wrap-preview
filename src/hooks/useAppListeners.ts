@@ -14,6 +14,9 @@ interface UseAppListenersProps {
     projectPhaseMapRef: MutableRefObject<Map<string, Phase>>;
     isShotPlannerActive: boolean;
     refreshJobs: () => void;
+    hydrateThumbnailCacheEntries: (entries: Array<{ clipId: string; jumpSeconds: number; index: number; path: string }>) => Promise<Array<{ clipId: string; jumpSeconds: number; index: number; src: string }>>;
+    getThumbCacheKey: (clipId: string, index: number, context?: string) => string;
+    getThumbnailCacheContext: (jumpSeconds: number) => string;
 }
 
 export function useAppListeners({
@@ -22,6 +25,9 @@ export function useAppListeners({
     projectPhaseMapRef,
     isShotPlannerActive,
     refreshJobs,
+    hydrateThumbnailCacheEntries,
+    getThumbCacheKey,
+    getThumbnailCacheContext,
 }: UseAppListenersProps) {
     // Job System Synchronization
     useEffect(() => {
@@ -54,12 +60,22 @@ export function useAppListeners({
         let unlistenComplete: UnlistenFn | null = null;
 
         async function setupThumbnailListeners() {
-            unlistenProgress = await listen<ThumbnailProgress>("thumbnail-progress", (event) => {
+            unlistenProgress = await listen<ThumbnailProgress>("thumbnail-progress", async (event) => {
                 if (isTauriReloading()) return;
                 const { project_id, clip_id, clip_index, total_clips, thumbnails } = event.payload;
 
                 const targetPhase = projectPhaseMapRef.current.get(project_id);
                 if (!targetPhase) return;
+
+                // Immediately attempt to hydrate these new thumbnails for the cache
+                const incomingEntries = thumbnails.map(t => ({
+                    clipId: t.clip_id,
+                    jumpSeconds: t.jump_seconds,
+                    index: t.index,
+                    path: t.file_path
+                }));
+
+                const hydrated = await hydrateThumbnailCacheEntries(incomingEntries);
 
                 setPhaseState(targetPhase, (prev: PhaseData) => {
                     const done = clip_index + 1;
@@ -70,7 +86,7 @@ export function useAppListeners({
                     const shouldUpdateClips = !isShotPlannerActive || (clip_index % 10 === 0) || isAtEnd;
                     const shouldUpdateProgress = (clip_index % 10 === 0) || isAtEnd;
 
-                    if (!shouldUpdateClips && !shouldUpdateProgress) {
+                    if (!shouldUpdateClips && !shouldUpdateProgress && hydrated.length === 0) {
                         return prev;
                     }
 
@@ -78,10 +94,17 @@ export function useAppListeners({
                         ? prev.clips.map((c) => c.clip.id === clip_id ? { ...c, thumbnails: thumbnails } : c)
                         : prev.clips;
 
+                    const nextCache = { ...(prev.thumbnailCache || {}) };
+                    for (const { clipId, jumpSeconds, index, src } of hydrated) {
+                        nextCache[`${clipId}_${index}`] = nextCache[`${clipId}_${index}`] ?? src;
+                        nextCache[getThumbCacheKey(clipId, index, getThumbnailCacheContext(jumpSeconds))] = src;
+                    }
+
                     return {
                         ...prev,
                         extractProgress: shouldUpdateProgress ? nextProgress : prev.extractProgress,
                         clips: nextClips,
+                        thumbnailCache: nextCache
                     };
                 });
             });
@@ -94,7 +117,6 @@ export function useAppListeners({
                 const targetPhase = projectPhaseMapRef.current.get(project_id);
                 if (targetPhase) {
                     setPhaseState(targetPhase, { extracting: false });
-                    // Note: clip_id handling was removed in the original code as well
                     if (isTauriReloading()) return;
                     await refreshProjectClips(project_id, targetPhase);
                 }
@@ -107,5 +129,5 @@ export function useAppListeners({
             if (unlistenProgress) unlistenProgress();
             if (unlistenComplete) unlistenComplete();
         };
-    }, [setPhaseState, refreshProjectClips, projectPhaseMapRef, isShotPlannerActive]);
+    }, [setPhaseState, refreshProjectClips, projectPhaseMapRef, isShotPlannerActive, hydrateThumbnailCacheEntries, getThumbCacheKey, getThumbnailCacheContext]);
 }
