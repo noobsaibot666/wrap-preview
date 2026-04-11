@@ -126,7 +126,8 @@ pub fn extract_thumbnail(
             "-vframes", "1",
             "-vf", &format!("scale={}:-1,format=yuv420p", MAX_WIDTH),
             "-q:v", "5",
-            "-map", "0:v:0",
+            "-map", "0:v",
+            "-sn", "-dn",
             "-y",
             output_path,
         ])
@@ -148,7 +149,8 @@ pub fn extract_thumbnail(
                 "-vframes", "1",
                 "-vf", &format!("scale={}:-1,format=yuv420p", MAX_WIDTH),
                 "-q:v", "5",
-                "-map", "0:v:0",
+                "-map", "0:v",
+                "-sn", "-dn",
                 "-y",
                 output_path,
             ])

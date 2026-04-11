@@ -280,9 +280,9 @@ export const ClipList = memo(function ClipList({
                         ref={virtuosoRef}
                         groupCounts={groupCounts}
                         groupContent={(index: number) => {
-                            if (groups.length === 0) return null;
+                            if (groups.length === 0 || !groups[index]) return null;
                             return (
-                                <div className="clip-shot-group-header" style={{ background: 'var(--color-bg-page)', zIndex: 10 }}>
+                                <div className="clip-shot-group-header" style={{ background: 'var(--color-bg-page)', zIndex: 10, minHeight: '32px' }}>
                                     {groups[index]}
                                 </div>
                             );
@@ -297,6 +297,7 @@ export const ClipList = memo(function ClipList({
                                         paddingBottom: 'var(--space-md)',
                                         opacity: activeDragId === item.clip.id ? 0.3 : 1,
                                         transition: 'opacity 150ms ease',
+                                        minHeight: '150px'
                                     }}
                                 >
                                     {isDndEnabled && (

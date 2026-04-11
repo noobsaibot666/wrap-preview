@@ -597,7 +597,7 @@ function AppContent() {
 
 
   const getThumbCacheKey = useCallback((clipId: string, index: number, context = thumbCacheContext) => {
-    return `${clipId}_${index}|${context}`;
+    return `${clipId}_${index}::${context}`;
   }, [thumbCacheContext]);
 
   const hydrateThumbnailEntry = useCallback(async (path: string) => {
@@ -620,7 +620,6 @@ function AppContent() {
     const BATCH_SIZE = 20;
 
     for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-      if (isUnloadingRef.current) break;
       const batch = entries.slice(i, i + BATCH_SIZE);
       const hydratedBatch = await Promise.all(
         batch.map(async ({ clipId, jumpSeconds, index, path }) => {

@@ -2865,6 +2865,7 @@ body {
   flex-direction: column;
   gap: var(--space-sm);
   transition: all var(--transition-normal);
+  min-height: 200px;
 }
 
 .clip-card:hover {

@@ -4249,7 +4249,7 @@ fn build_clip_from_file(
     let clip_id = generate_clip_id(&root.id, rel_path);
     match meta {
         Ok(m) => {
-            let status = if m.timecode.is_none() { "warn" } else { "ok" };
+            let status = "ok";
             Clip {
                 id: clip_id,
                 project_id: project_id.to_string(),
