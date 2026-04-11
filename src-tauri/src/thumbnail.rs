@@ -113,31 +113,48 @@ pub fn extract_thumbnail(
         extract_braw_thumbnail(input_path, output_path, timestamp_ms)?
     } else {
         let ffmpeg = crate::tools::find_executable("ffmpeg");
-        let mut cmd = Command::new(ffmpeg);
         
-        // Add specific decoder hint for Nikon N-RAW if applicable
+        // Stage 1: Fast Input Seeking (seeking before -i)
+        let mut cmd = Command::new(&ffmpeg);
         if is_nev {
             cmd.args(["-c:v", "tico_raw"]);
         }
         
-        cmd.args([
-            "-ss",
-            &ts_str,
-            "-i",
-            input_path,
-            "-vframes",
-            "1",
-            "-vf",
-            &format!("scale={}:-1", MAX_WIDTH),
-            "-pix_fmt",
-            "yuv420p",
-            "-q:v",
-            "6",
+        let output = cmd.args([
+            "-ss", &ts_str,
+            "-i", input_path,
+            "-vframes", "1",
+            "-vf", &format!("scale={}:-1,format=yuv420p", MAX_WIDTH),
+            "-q:v", "5",
+            "-map", "0:v:0",
             "-y",
             output_path,
         ])
         .output()
-        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?
+        .map_err(|e| format!("Failed to run ffmpeg Stage 1: {}", e))?;
+
+        if output.status.success() {
+            output
+        } else {
+            // Stage 2: Slower but more robust Output Seeking (seeking after -i)
+            // This works better for certain AVI, MKV, and mobile HEVC files with sparse keyframes
+            let mut cmd2 = Command::new(&ffmpeg);
+            if is_nev {
+                cmd2.args(["-c:v", "tico_raw"]);
+            }
+            cmd2.args([
+                "-i", input_path,
+                "-ss", &ts_str,
+                "-vframes", "1",
+                "-vf", &format!("scale={}:-1,format=yuv420p", MAX_WIDTH),
+                "-q:v", "5",
+                "-map", "0:v:0",
+                "-y",
+                output_path,
+            ])
+            .output()
+            .map_err(|e| format!("Failed to run ffmpeg Stage 2: {}", e))?
+        }
     };
 
     if !status.status.success() {

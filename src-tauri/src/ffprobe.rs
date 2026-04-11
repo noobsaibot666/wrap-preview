@@ -28,6 +28,9 @@ pub struct ClipMetadata {
     pub camera_angle: Option<String>,
     pub audio_summary: String,
     pub timecode: Option<String>,
+    pub color_space: Option<String>,
+    pub color_transfer: Option<String>,
+    pub color_primaries: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +52,9 @@ struct FfprobeStream {
     channels: Option<u32>,
     sample_rate: Option<String>,
     bit_rate: Option<String>,
+    color_space: Option<String>,
+    color_transfer: Option<String>,
+    color_primaries: Option<String>,
     tags: Option<serde_json::Value>,
 }
 
@@ -162,9 +168,19 @@ pub fn probe_file(file_path: &str) -> Result<ClipMetadata, String> {
         })
         .unwrap_or_else(|| "unknown".to_string());
 
-    // Resolution
-    let width = video_stream.and_then(|s| s.width).unwrap_or(0);
-    let height = video_stream.and_then(|s| s.height).unwrap_or(0);
+    // Resolution & Rotation
+    let mut width = video_stream.and_then(|s| s.width).unwrap_or(0);
+    let mut height = video_stream.and_then(|s| s.height).unwrap_or(0);
+    
+    let rotation = video_stream
+        .and_then(|s| s.tags.as_ref())
+        .and_then(|tags| get_tag_value_ci(tags, &["rotate", "com.apple.quicktime.rotation"]))
+        .and_then(|r| r.parse::<i32>().ok())
+        .unwrap_or(0);
+
+    if rotation == 90 || rotation == 270 || rotation == -90 || rotation == -270 {
+        std::mem::swap(&mut width, &mut height);
+    }
 
     // Audio summary
     let audio_summary = if audio_streams.is_empty() {
@@ -381,6 +397,9 @@ pub fn probe_file(file_path: &str) -> Result<ClipMetadata, String> {
         camera_angle,
         audio_summary,
         timecode,
+        color_space: video_stream.and_then(|s| s.color_space.clone()),
+        color_transfer: video_stream.and_then(|s| s.color_transfer.clone()),
+        color_primaries: video_stream.and_then(|s| s.color_primaries.clone()),
     })
 }
 
