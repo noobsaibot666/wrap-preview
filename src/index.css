@@ -52,6 +52,10 @@
   --phase-postproduction-soft: rgba(249, 115, 22, 0.14);
   --phase-postproduction-glow: rgba(249, 115, 22, 0.2);
 
+  --color-utility: #38bdf8;
+  --color-utility-soft: rgba(56, 189, 248, 0.12);
+  --color-utility-glow: rgba(56, 189, 248, 0.2);
+
   /* Spacing */
   --space-xs: 4px;
   --space-sm: 8px;
@@ -3615,24 +3619,91 @@ body {
   position: relative;
 }
 
+.microapp-modal-eyebrow {
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-utility);
+  margin-bottom: 4px;
+}
+
 .btn-utilities {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-height: 40px;
-  padding: 0 14px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  padding: 0 16px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: transparent;
   cursor: pointer;
-  transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+  transition: all var(--transition-fast);
 }
 
-.btn-others:hover {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
+.btn-utilities:hover,
+.btn-utilities[aria-expanded="true"] {
+  border-color: var(--color-utility);
+  background: var(--color-utility-soft);
+  color: var(--color-utility);
+  box-shadow: 0 0 12px var(--color-utility-glow);
+}
+
+.utilities-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  padding: 10px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-default);
+  background: rgba(13, 13, 18, 0.98);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  transform-origin: top right;
+  animation: dropdownEnter var(--transition-fast) ease-out;
+}
+
+@keyframes dropdownEnter {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.utilities-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start; /* Align icon with the top of the name */
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
   color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: all var(--transition-fast);
+}
+
+.utilities-menu-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.utilities-menu-item .menu-item-icon {
+  margin-top: 1px; /* Precision adjustment to align with text baseline */
+  color: var(--color-utility);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
 }
 
 .others-dropdown {
@@ -10174,6 +10245,10 @@ body {
 .shot-list-section-preset-copy {
   display: grid;
   gap: 4px;
+}
+
+.help-menu-trigger:hover {
+  opacity: 1 !important;
 }
 
 .shot-list-section-preset-copy small {

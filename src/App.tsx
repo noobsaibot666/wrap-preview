@@ -16,7 +16,7 @@ import {
   ArrowRight,
   Boxes,
   Briefcase,
-  MoreHorizontal,
+  CircleHelp,
   FileDown,
   ChevronDown,
   LayoutGrid,
@@ -1429,8 +1429,21 @@ function AppContent() {
               <>
 
                 <div className="help-menu-wrapper" style={{ position: 'relative' }}>
-                  <button className="btn btn-icon" onClick={() => setHelpMenuOpen(!helpMenuOpen)} title="Help & Info">
-                    <MoreHorizontal size={18} />
+                  <button 
+                    className="btn btn-ghost help-menu-trigger" 
+                    style={{ 
+                      width: '32px', 
+                      height: '32px', 
+                      color: 'var(--text-secondary)', 
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0
+                    }} 
+                    onClick={() => setHelpMenuOpen(!helpMenuOpen)} 
+                    title="Help & Info"
+                  >
+                    <CircleHelp size={16} strokeWidth={1.5} />
                   </button>
                   {helpMenuOpen && (
                     <>
