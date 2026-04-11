@@ -79,7 +79,7 @@ export const FilmStrip = memo(function FilmStrip({
             if (!filename) return thumb.src;
             const lutPath = [...parts, `lut_${projectLutHash}_${filename}`].join("/");
             try {
-                return convertFileSrc(lutPath);
+                return await invokeGuarded<string>("read_thumbnail", { path: lutPath });
             } catch {
                 return thumb.src;
             }

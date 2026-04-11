@@ -441,7 +441,7 @@ pub async fn extract_thumbnails(
 
                 let _permit = semaphore_inner.acquire_owned().await.ok();
 
-                let jump_intervals = [2_u32, 4_u32, 6_u32];
+                let jump_intervals = vec![1, 2, 5, 10, 20, 30, 60];
                 let _ = state_inner.db.delete_thumbnails_for_clip(&clip.id);
                 let mut thumb_results: Vec<Thumbnail> = Vec::new();
 

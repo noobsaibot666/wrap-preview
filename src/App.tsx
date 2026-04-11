@@ -602,20 +602,37 @@ function AppContent() {
 
   const hydrateThumbnailEntry = useCallback(async (path: string) => {
     if (!path || isUnloadingRef.current) return null;
-    if (path.startsWith("data:") || path.startsWith("asset:") || path.startsWith("https://asset.localhost")) return path;
-    return convertFileSrc(path);
-  }, []);
+    if (path.startsWith("data:")) return path;
+    try {
+      return await safeInvoke<string>("read_thumbnail", { path });
+    } catch (error) {
+      if (!isUnloadingRef.current) {
+        console.warn(`Failed to hydrate thumbnail ${path}`, error);
+      }
+      return null;
+    }
+  }, [safeInvoke]);
 
   const hydrateThumbnailCacheEntries = useCallback(async (
     entries: Array<{ clipId: string; jumpSeconds: number; index: number; path: string }>
   ) => {
-    const hydrated = await Promise.all(entries.map(async ({ clipId, jumpSeconds, index, path }) => {
-      const src = await hydrateThumbnailEntry(path);
-      if (!src) return null;
-      return { clipId, jumpSeconds, index, src };
-    }));
+    const results: Array<{ clipId: string; jumpSeconds: number; index: number; src: string }> = [];
+    const BATCH_SIZE = 20;
 
-    return hydrated.filter((entry): entry is { clipId: string; jumpSeconds: number; index: number; src: string } => Boolean(entry));
+    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+      if (isUnloadingRef.current) break;
+      const batch = entries.slice(i, i + BATCH_SIZE);
+      const hydratedBatch = await Promise.all(
+        batch.map(async ({ clipId, jumpSeconds, index, path }) => {
+          const src = await hydrateThumbnailEntry(path);
+          return src ? { clipId, jumpSeconds, index, src } : null;
+        })
+      );
+      for (const item of hydratedBatch) {
+        if (item) results.push(item);
+      }
+    }
+    return results;
   }, [hydrateThumbnailEntry]);
 
 
@@ -1710,7 +1727,7 @@ function AppContent() {
                       onResetClip={handleResetShotPlannerClip}
                       onManualOrderInputChange={clearManualOrderBuffer}
                       manualOrderConflict={manualOrderConflict}
-                      groupByShotSize={true}
+                      groupByShotSize={false}
                       onPromoteClip={handlePromoteClip}
                       onPlayClip={handlePlayClip}
                       playingClipId={playingClipId}

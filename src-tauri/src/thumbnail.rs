@@ -12,7 +12,7 @@ const BLACK_THRESHOLD: f64 = 15.0;
 
 /// Image file extensions that need special thumbnail handling
 const IMAGE_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "webp", "tiff", "tif", "bmp", "heic", "heif",
+    "jpg", "jpeg", "png", "webp", "tiff", "tif", "bmp", "heic", "heif", "nef", "nrw", "cr2", "cr3", "arw",
 ];
 
 /// Check if a file path is a still image (not a video)
@@ -107,29 +107,37 @@ pub fn extract_thumbnail(
             .map_err(|e| format!("Failed to create thumbnail directory: {}", e))?;
     }
 
+    let is_nev = Path::new(input_path).extension().map(|e| e.to_string_lossy().eq_ignore_ascii_case("nev")).unwrap_or(false);
+    
     let status = if is_braw(input_path) {
         extract_braw_thumbnail(input_path, output_path, timestamp_ms)?
     } else {
         let ffmpeg = crate::tools::find_executable("ffmpeg");
-        Command::new(ffmpeg)
-            .args([
-                "-ss",
-                &ts_str,
-                "-i",
-                input_path,
-                "-vframes",
-                "1",
-                "-vf",
-                &format!("scale={}:-1", MAX_WIDTH),
-                "-pix_fmt",
-                "yuv420p",
-                "-q:v",
-                "6",
-                "-y",
-                output_path,
-            ])
-            .output()
-            .map_err(|e| format!("Failed to run ffmpeg: {}", e))?
+        let mut cmd = Command::new(ffmpeg);
+        
+        // Add specific decoder hint for Nikon N-RAW if applicable
+        if is_nev {
+            cmd.args(["-c:v", "tico_raw"]);
+        }
+        
+        cmd.args([
+            "-ss",
+            &ts_str,
+            "-i",
+            input_path,
+            "-vframes",
+            "1",
+            "-vf",
+            &format!("scale={}:-1", MAX_WIDTH),
+            "-pix_fmt",
+            "yuv420p",
+            "-q:v",
+            "6",
+            "-y",
+            output_path,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?
     };
 
     if !status.status.success() {

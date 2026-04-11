@@ -23,7 +23,7 @@ export function getThumbnailCacheValue(
   cacheKeyContext?: string,
 ): string | undefined {
   if (cacheKeyContext) {
-    return thumbnailCache[`${clipId}_${index}|${cacheKeyContext}`];
+    return thumbnailCache[`${clipId}_${index}::${cacheKeyContext}`];
   }
   return thumbnailCache[`${clipId}_${index}`];
 }

@@ -3,9 +3,9 @@ use walkdir::WalkDir;
 
 /// Supported media file extensions (video + image)
 const MEDIA_EXTENSIONS: &[&str] = &[
-    "mp4", "mov", "mxf", "avi", "mkv", "prores", "r3d", "braw", "mts", "m4v", "webm", "wmv", "flv",
+    "mp4", "mov", "mxf", "avi", "mkv", "prores", "r3d", "braw", "nev", "mts", "m4v", "webm", "wmv", "flv",
     "ts", "m2ts", "mpg", "mpeg", "3gp", "ogv",
-    "jpg", "jpeg", "png", "webp", "tiff", "bmp", "heic",
+    "jpg", "jpeg", "png", "webp", "tiff", "bmp", "heic", "nef", "nrw", "cr2", "cr3", "arw",
 ];
 
 /// Scan a directory recursively and return all supported media file paths
