@@ -1,7 +1,6 @@
-use std::path::PathBuf;
 use std::process::Command;
 use std::sync::OnceLock;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
@@ -13,12 +12,37 @@ pub fn init(handle: AppHandle) {
 pub fn find_executable(name: &str) -> String {
     // 1. Try to find as a Tauri Sidecar first
     if let Some(handle) = APP_HANDLE.get() {
-        use tauri_plugin_shell::ShellExt;
-        if let Ok(_sidecar_command) = handle.shell().sidecar(name) {
-            // In Tauri 2, we can't easily get the raw path from the command builder
-            // but we can try to resolve it for known sidecars if they are in the bin folder.
-            // For production builds, Tauri manages this. 
-            // For our internal "exists" checks, we can use this name.
+        let arch = std::env::consts::ARCH;
+        let os = if cfg!(target_os = "macos") { "apple-darwin" } else if cfg!(target_os = "windows") { "pc-windows-msvc" } else { "unknown-linux-gnu" };
+        let target = format!("{}-{}", arch, os);
+        
+        // Try local bin directory (Dev mode / Local build)
+        // We look for: src-tauri/bin/name-target
+        let project_root = handle.path().app_config_dir()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_default();
+        
+        let local_bin = project_root.join("src-tauri").join("bin");
+
+        let sidecar_name = if cfg!(target_os = "windows") {
+            format!("{}-{}.exe", name, target)
+        } else {
+            format!("{}-{}", name, target)
+        };
+
+        let dev_path = local_bin.join(&sidecar_name);
+        if dev_path.exists() {
+            return dev_path.to_string_lossy().to_string();
+        }
+
+        // Try standard resource path (Production mode)
+        // Sidecars are usually in "resources/bin/..." or similar depending on bundle
+        if let Ok(path) = handle.path().resolve(format!("bin/{}", sidecar_name), tauri::path::BaseDirectory::Resource) {
+             if path.exists() {
+                 return path.to_string_lossy().to_string();
+             }
         }
     }
 
@@ -35,31 +59,18 @@ pub fn find_executable(name: &str) -> String {
     // 3. Check common macOS paths (legacy fallback)
     #[cfg(target_os = "macos")]
     {
-        let common_paths = ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"];
-        for path in common_paths {
-            let full_path = PathBuf::from(path).join(name);
-            if full_path.exists() {
-                return full_path.to_string_lossy().to_string();
-            }
-        }
-    }
-
-    // 4. Check common Windows paths
-    #[cfg(target_os = "windows")]
-    {
         let common_paths = [
-            "C:\\Program Files",
-            "C:\\Program Files (x86)",
-            "C:\\Windows\\System32",
+            "/usr/local/bin", 
+            "/opt/homebrew/bin", 
+            "/usr/bin", 
+            "/bin",
+            "/Applications/Adobe Premiere Pro 2024/Adobe Premiere Pro 2024.app/Contents/Plugins/Common/BRAW_Adobe_Plugin.bundle/Contents/Resources",
+            "/Library/Application Support/Blackmagic Design/Blackmagic RAW"
         ];
         for path in common_paths {
-            let full_path = PathBuf::from(path).join(name);
+            let full_path = std::path::PathBuf::from(path).join(name);
             if full_path.exists() {
                 return full_path.to_string_lossy().to_string();
-            }
-            let exe_path = PathBuf::from(path).join(format!("{}.exe", name));
-            if exe_path.exists() {
-                return exe_path.to_string_lossy().to_string();
             }
         }
     }

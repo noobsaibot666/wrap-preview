@@ -45,17 +45,18 @@ fn compute_gop_size(fps: f64) -> i32 {
     ((fps.max(1.0) * 2.0).round() as i32).clamp(12, 240)
 }
 
+fn format_hls_args(input: &Path, output_dir: &Path, has_audio: bool, fps: f64) -> Vec<String> {
     let segment_pattern = output_dir.join("segment_%04d.ts");
     let playlist = output_dir.join("index.m3u8");
     let gop = compute_gop_size(fps);
     let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-    let is_nev = ext == "nev";
+    let _is_nev = ext == "nev";
 
     let mut args = vec!["-y".to_string()];
-    
-    if is_nev {
-        args.extend(["-c:v".to_string(), "tico_raw".to_string()]);
-    }
+
+    // Note: NEV (N-RAW) files cannot be HLS-transcoded by FFmpeg — the NRAW
+    // codec is proprietary and no open-source decoder exists. NEV playback
+    // must use the embedded preview or a future Nikon SDK integration.
 
     args.extend([
         "-i".to_string(),

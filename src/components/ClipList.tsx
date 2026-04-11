@@ -278,6 +278,7 @@ export const ClipList = memo(function ClipList({
                 {isViewportReady ? (
                     <GroupedVirtuoso
                         ref={virtuosoRef}
+                        style={{ flex: 1, height: '100%', minHeight: '400px' }}
                         groupCounts={groupCounts}
                         groupContent={(index: number) => {
                             if (groups.length === 0 || !groups[index]) return null;
@@ -294,10 +295,11 @@ export const ClipList = memo(function ClipList({
                                     key={item.clip.id}
                                     data-clip-id={item.clip.id}
                                     style={{
+                                        display: 'block',
                                         paddingBottom: 'var(--space-md)',
                                         opacity: activeDragId === item.clip.id ? 0.3 : 1,
                                         transition: 'opacity 150ms ease',
-                                        minHeight: '150px'
+                                        minHeight: '200px'
                                     }}
                                 >
                                     {isDndEnabled && (

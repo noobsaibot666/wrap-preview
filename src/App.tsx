@@ -597,8 +597,8 @@ function AppContent() {
 
 
   const getThumbCacheKey = useCallback((clipId: string, index: number, context = thumbCacheContext) => {
-    return `${clipId}_${index}::${context}::tc=${thumbCount}`;
-  }, [thumbCacheContext, thumbCount]);
+    return `${clipId}_${index}::${context}`;
+  }, [thumbCacheContext]);
 
   const hydrateThumbnailEntry = useCallback(async (path: string) => {
     if (!path || isUnloadingRef.current) return null;
@@ -729,7 +729,7 @@ function AppContent() {
           const nextCache = { ...(prev.thumbnailCache || {}) };
           for (const { clipId, jumpSeconds, index, src } of hydratedEntries) {
             nextCache[`${clipId}_${index}`] = nextCache[`${clipId}_${index}`] ?? src;
-            nextCache[getThumbCacheKey(clipId, index, getThumbnailCacheContext(jumpSeconds))] = src;
+            nextCache[getThumbCacheKey(clipId, index, getThumbnailCacheContext(jumpSeconds, thumbCount))] = src;
           }
           return {
             ...prev,
