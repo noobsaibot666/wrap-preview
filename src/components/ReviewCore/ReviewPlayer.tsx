@@ -25,7 +25,6 @@ interface ReviewPlayerProps {
     onGrabFrame: () => void;
     onTogglePlay: () => void;
     isPaused: boolean;
-    onShowSettings: () => void;
     overlay?: React.ReactNode;
 }
 
@@ -42,7 +41,6 @@ export const ReviewPlayer: React.FC<ReviewPlayerProps> = ({
     onGrabFrame,
     onTogglePlay,
     isPaused,
-    onShowSettings,
     overlay,
 }) => {
     const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -158,13 +156,17 @@ export const ReviewPlayer: React.FC<ReviewPlayerProps> = ({
 
                         <div className="h-4 w-[1px] bg-white/10 mx-1" />
 
-                        <button
-                            onClick={onShowSettings}
+                        <button 
+                            onClick={() => {
+                                if (document.fullscreenElement) {
+                                    document.exitFullscreen().catch(console.error);
+                                } else {
+                                    videoStageRef.current?.requestFullscreen().catch(console.error);
+                                }
+                            }}
                             className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                            title="Toggle Fullscreen"
                         >
-                            <Settings className="w-5 h-5" />
-                        </button>
-                        <button className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-all">
                             <Maximize className="w-5 h-5" />
                         </button>
                     </div>

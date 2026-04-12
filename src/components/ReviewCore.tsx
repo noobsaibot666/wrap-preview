@@ -125,7 +125,6 @@ export function ReviewCore(props: ReviewCoreProps) {
               if (v) v.paused ? v.play() : v.pause();
             }}
             isPaused={refs.videoRef.current?.paused ?? true}
-            onShowSettings={() => { }}
             overlay={
               <AnnotationOverlay
                 rect={frameRect}

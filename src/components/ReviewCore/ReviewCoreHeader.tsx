@@ -72,12 +72,6 @@ export const ReviewCoreHeader: React.FC<ReviewCoreHeaderProps> = ({
                 <div className="h-4 w-[1px] bg-white/10 mx-2" />
 
                 <div className="flex items-center gap-1">
-                    <button className="p-2 text-white/20 hover:text-white transition-colors">
-                        <Settings className="w-4 h-4" />
-                    </button>
-                    <button className="p-2 text-white/20 hover:text-white transition-colors">
-                        <HelpCircle className="w-4 h-4" />
-                    </button>
                     <div className="ml-2 w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 p-[1px]">
                         <div className="w-full h-full rounded-full bg-black flex items-center justify-center overflow-hidden">
                             <User className="w-4 h-4 text-white/40" />
