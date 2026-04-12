@@ -215,6 +215,7 @@ export const MosaicBuilder = memo(function MosaicBuilder({
                 </div>
                 <div className="clip-card-media" style={{ padding: "0 12px" }}>
                   <FilmStrip
+                    key={`${item.clip.id}_ratio_${useOriginalRatio ? 'original' : 'square'}`}
                     clipId={item.clip.id}
                     thumbnails={previewThumbnails}
                     status={item.clip.status}

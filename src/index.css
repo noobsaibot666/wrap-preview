@@ -3338,7 +3338,8 @@ body {
   height: 110px;
   padding: 2px;
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--bg-app);
   border: 1px solid rgba(255, 255, 255, 0.05);
   box-sizing: border-box;
@@ -3353,8 +3354,7 @@ body {
 }
 
 .film-strip-thumb {
-  flex: 1 1 0px;
-  min-width: 0;
+  flex: 0 0 auto;
   aspect-ratio: var(--aspect-ratio);
   height: 100%;
   overflow: hidden;
@@ -3406,8 +3406,7 @@ body {
 }
 
 .film-strip-placeholder {
-  flex: 1 1 0px;
-  min-width: 0;
+  flex: 0 0 auto;
   aspect-ratio: var(--aspect-ratio);
   height: 100%;
   background: var(--bg-elevated);

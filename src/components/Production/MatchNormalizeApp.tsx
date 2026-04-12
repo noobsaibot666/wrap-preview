@@ -39,7 +39,13 @@ export function MatchNormalizeApp({ project }: MatchNormalizeAppProps) {
       setCameraConfigs(configs);
       setSetup(savedSetup);
       setPresets(savedPresets);
-      if (configs[0]?.slot) setHeroSlot(configs[0].slot);
+      
+      const savedOutputs = parseLookOutputs(savedSetup?.outputs_json);
+      if (savedOutputs?.hero_slot) {
+        setHeroSlot(savedOutputs.hero_slot);
+      } else if (configs[0]?.slot) {
+        setHeroSlot(configs[0].slot);
+      }
     } finally {
       setLoading(false);
     }
@@ -47,6 +53,25 @@ export function MatchNormalizeApp({ project }: MatchNormalizeAppProps) {
 
   const outputs = useMemo(() => parseLookOutputs(setup?.outputs_json), [setup?.outputs_json]);
   const payload = useMemo<ProductionMatchPresetPayload>(() => buildMatchPresetPayload(heroSlot, cameraConfigs, outputs), [cameraConfigs, heroSlot, outputs]);
+
+  const saveHeroPreference = async (slot: string) => {
+    if (!setup) return;
+    try {
+      // We store the hero slot preference inside a 'preferences' key in outputs_json
+      const currentOutputs = parseLookOutputs(setup.outputs_json) || { recommendations: [] };
+      const nextOutputs = { ...currentOutputs, hero_slot: slot };
+      const nextSetup = { ...setup, outputs_json: JSON.stringify(nextOutputs) };
+      await invokeGuarded("production_save_look_setup", { setup: nextSetup });
+      setSetup(nextSetup);
+    } catch (e) {
+      console.error("Failed to save hero preference", e);
+    }
+  };
+
+  const handleHeroSelection = (slot: string) => {
+    setHeroSlot(slot);
+    void saveHeroPreference(slot);
+  };
 
   const savePreset = async () => {
     if (!presetName.trim()) return;
@@ -107,7 +132,7 @@ export function MatchNormalizeApp({ project }: MatchNormalizeAppProps) {
               type="button"
               className={`btn btn-sm ${heroSlot === config.slot ? "btn-secondary" : "btn-ghost"}`}
               style={heroSlot === config.slot ? heroButtonActiveStyle : heroButtonStyle}
-              onClick={() => setHeroSlot(config.slot)}
+              onClick={() => handleHeroSelection(config.slot)}
             >
               {config.slot} · {config.brand || "Camera"} {config.model || ""}
             </button>

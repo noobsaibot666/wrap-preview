@@ -2089,6 +2089,30 @@ impl Database {
         Ok(())
     }
 
+    pub fn list_production_matchlab_sources(
+        &self,
+        project_id: &str,
+    ) -> SqlResult<Vec<ProductionMatchLabSource>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, project_id, slot, source_path, source_hash, created_at, last_analyzed_at FROM production_matchlab_sources WHERE project_id = ?1")?;
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(ProductionMatchLabSource {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                slot: row.get(2)?,
+                source_path: row.get(3)?,
+                source_hash: row.get(4)?,
+                created_at: row.get(5)?,
+                last_analyzed_at: row.get(6)?,
+            })
+        })?;
+        let mut sources = Vec::new();
+        for s in rows {
+            sources.push(s?);
+        }
+        Ok(sources)
+    }
+
     pub fn insert_production_matchlab_run(
         &self,
         run: &ProductionMatchLabRunRecord,

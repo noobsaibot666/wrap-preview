@@ -247,25 +247,45 @@ export function CameraMatchLabApp({ project }: CameraMatchLabAppProps) {
 
   useEffect(() => {
     let cancelled = false;
-    const loadRuns = async () => {
+    const loadRunsAndSources = async () => {
       try {
-        const runs = await invokeGuarded<ProductionMatchLabRunSummary[]>("production_matchlab_list_runs", {
-          projectId: project.id,
-        });
+        const [runs, savedSources] = await Promise.all([
+          invokeGuarded<ProductionMatchLabRunSummary[]>("production_matchlab_list_runs", {
+            projectId: project.id,
+          }),
+          invokeGuarded<Record<string, string>>("production_matchlab_get_sources", {
+            projectId: project.id,
+          }),
+        ]);
         if (cancelled) return;
         setRunSummaries(runs);
         setSelectedRunId((current) => current ?? runs[0]?.run_id ?? null);
+        if (Object.keys(savedSources).length > 0) {
+          setClipsBySlot((prev) => ({ ...prev, ...savedSources }));
+        }
       } catch {
         if (!cancelled) {
           setRunSummaries([]);
         }
       }
     };
-    void loadRuns();
+    void loadRunsAndSources();
     return () => {
       cancelled = true;
     };
   }, [project.id]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (Object.keys(clipsBySlot).length > 0) {
+        void invokeGuarded("production_matchlab_save_sources", {
+          projectId: project.id,
+          sources: clipsBySlot,
+        });
+      }
+    }, 1000);
+    return () => clearTimeout(timeout);
+  }, [clipsBySlot, project.id]);
 
   useEffect(() => {
     if (!selectedRunId) return;

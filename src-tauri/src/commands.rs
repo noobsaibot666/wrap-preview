@@ -1813,123 +1813,139 @@ pub async fn generate_lut_thumbnails(
     let settings_val: serde_json::Value =
         serde_json::from_str(&settings.settings_json).map_err(|e| e.to_string())?;
 
-    let lut_path = settings_val["lut_path"].as_str().unwrap_or("");
-    let lut_hash = settings_val["lut_hash"].as_str().unwrap_or("");
+    let lut_path = settings_val["lut_path"].as_str().unwrap_or("").to_string();
+    let lut_hash = settings_val["lut_hash"].as_str().unwrap_or("").to_string();
 
     if lut_path.is_empty() || lut_hash.is_empty() {
         return Err("Invalid LUT settings".to_string());
     }
 
-    let lut_content = std::fs::read_to_string(lut_path).map_err(|e| e.to_string())?;
-    let lut = crate::lut::Lut3D::parse_cube(&lut_content).map_err(|e| e.to_string())?;
+    let lut_content = std::fs::read_to_string(&lut_path).map_err(|e| e.to_string())?;
+    let lut = Arc::new(crate::lut::Lut3D::parse_cube(&lut_content).map_err(|e| e.to_string())?);
 
-    let _perf_id = state
-        .perf_log
-        .start("generate_lut_thumbnails", Some(project_id.clone()));
-    let cache_dir = state.cache_dir.clone();
-    let (job_id, cancel_flag) = state.job_manager.create_job("lut_thumbnails", None);
-    state
-        .job_manager
-        .mark_running(&job_id, "Applying LUT to thumbnails");
-    emit_job_state(&app, &state.job_manager, &job_id);
+    let (job_id, cancel_flag) = state.job_manager.create_job("lut_thumbnails", Some(project_id.clone()));
+    
+    let app_clone = app.clone();
+    let state_inner = state.inner().clone();
+    let job_id_clone = job_id.clone();
+    let project_id_clone = project_id.clone();
 
-    let clips = db
-        .get_clips(&project_id)
-        .map_err(|e| format!("Failed to get clips: {}", e))?;
+    tokio::spawn(async move {
+        state_inner.job_manager.mark_running(&job_id_clone, "Applying LUT to thumbnails");
+        emit_job_state(&app_clone, &state_inner.job_manager, &job_id_clone);
 
-    let total_clips = clips.len();
-    let semaphore = Arc::new(Semaphore::new(3)); // 3 concurrent jobs
+        let clips = match state_inner.db.get_clips(&project_id_clone) {
+            Ok(c) => c,
+            Err(e) => {
+                state_inner.job_manager.mark_failed(&job_id_clone, &format!("Failed to get clips: {}", e));
+                emit_job_state(&app_clone, &state_inner.job_manager, &job_id_clone);
+                return;
+            }
+        };
 
-    for (clip_idx, clip) in clips.iter().enumerate() {
+        let total_clips = clips.len();
+        let semaphore = Arc::new(Semaphore::new(4)); // 4 concurrent clips
+        let mut set = tokio::task::JoinSet::new();
+
+        for (clip_idx, clip) in clips.into_iter().enumerate() {
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
+            let app_task = app_clone.clone();
+            let state_task = state_inner.clone();
+            let lut_task = lut.clone();
+            let project_id_task = project_id_clone.clone();
+            let lut_hash_task = lut_hash.clone();
+            let semaphore_task = semaphore.clone();
+            let cancel_flag_task = cancel_flag.clone();
+
+            set.spawn(async move {
+                let _permit = semaphore_task.acquire().await.unwrap();
+                if cancel_flag_task.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                let thumbnails = state_task.db.get_thumbnails(&clip.id).unwrap_or_default();
+                if thumbnails.is_empty() {
+                     let _ = app_task.emit(
+                        "lut-thumbnail-progress",
+                        ThumbnailProgress {
+                            project_id: project_id_task,
+                            clip_id: clip.id,
+                            clip_index: clip_idx,
+                            total_clips,
+                            status: "skipped".to_string(),
+                            thumbnails: vec![],
+                        },
+                    );
+                    return;
+                }
+
+                let mut processed_thumbs = Vec::new();
+                for thumb in &thumbnails {
+                    let original_name = Path::new(&thumb.file_path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("thumb.jpg");
+                    let output_dir = Path::new(&thumb.file_path)
+                        .parent()
+                        .map(|parent| parent.to_path_buf())
+                        .unwrap_or_else(|| Path::new(&state_task.cache_dir).join(&clip.id));
+                    
+                    let _ = std::fs::create_dir_all(&output_dir);
+                    
+                    let output_path = output_dir
+                        .join(format!("lut_{}_{}", lut_hash_task, original_name))
+                        .to_string_lossy()
+                        .to_string();
+
+                    if std::path::Path::new(&output_path).exists() {
+                        let mut new_thumb = thumb.clone();
+                        new_thumb.file_path = output_path;
+                        processed_thumbs.push(new_thumb);
+                        continue;
+                    }
+
+                    match crate::lut::apply_lut_to_image(&thumb.file_path, &lut_task, &output_path) {
+                        Ok(_) => {
+                            let mut new_thumb = thumb.clone();
+                            new_thumb.file_path = output_path;
+                            processed_thumbs.push(new_thumb);
+                        }
+                        Err(err) => {
+                            eprintln!("LUT processing failed for {}: {}", thumb.file_path, err);
+                        }
+                    }
+                }
+
+                let progress = (clip_idx as f32 / total_clips as f32).max(0.01);
+                state_task.job_manager.update_progress(&job_id_clone, progress);
+                emit_job_state(&app_task, &state_task.job_manager, &job_id_clone);
+
+                let _ = app_task.emit(
+                    "lut-thumbnail-progress",
+                    ThumbnailProgress {
+                        project_id: project_id_task,
+                        clip_id: clip.id,
+                        clip_index: clip_idx,
+                        total_clips,
+                        status: "done".to_string(),
+                        thumbnails: processed_thumbs,
+                    },
+                );
+            });
+        }
+
+        while let Some(_) = set.join_next().await {}
+
         if cancel_flag.load(Ordering::Relaxed) {
-            let _ = state.job_manager.cancel_job(&job_id);
-            emit_job_state(&app, &state.job_manager, &job_id);
-            break;
+             state_inner.job_manager.mark_cancelled(&job_id_clone, "LUT processing cancelled");
+        } else {
+            state_inner.job_manager.mark_done(&job_id_clone, "LUT thumbnails processing complete");
         }
-
-        // Skip clips without LUT enabled unless we want to cache all of them.
-        // Caching all makes sense so if they toggle it later, it's instant.
-
-        let thumbnails = db.get_thumbnails(&clip.id).unwrap_or_default();
-        if thumbnails.is_empty() {
-            let _ = app.emit(
-                "lut-thumbnail-progress",
-                ThumbnailProgress {
-                    project_id: project_id.clone(),
-                    clip_id: clip.id.clone(),
-                    clip_index: clip_idx,
-                    total_clips,
-                    status: "skipped".to_string(),
-                    thumbnails: vec![],
-                },
-            );
-            continue;
-        }
-
-        let permit = semaphore
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        let mut processed_thumbs = Vec::new();
-
-        for thumb in &thumbnails {
-            let original_name = Path::new(&thumb.file_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("thumb.jpg");
-            let output_dir = Path::new(&thumb.file_path)
-                .parent()
-                .map(|parent| parent.to_path_buf())
-                .unwrap_or_else(|| Path::new(&cache_dir).join(&clip.id));
-            if let Err(e) = std::fs::create_dir_all(&output_dir) {
-                eprintln!("Failed to create LUT output dir: {}", e);
-                continue;
-            }
-            let output_path = output_dir
-                .join(format!("lut_{}_{}", lut_hash, original_name))
-                .to_string_lossy()
-                .to_string();
-
-            if std::path::Path::new(&output_path).exists() {
-                // already applied
-                let mut new_thumb = thumb.clone();
-                new_thumb.file_path = output_path;
-                processed_thumbs.push(new_thumb);
-                continue;
-            }
-
-            match crate::lut::apply_lut_to_image(&thumb.file_path, &lut, &output_path) {
-                Ok(_) => {
-                    let mut new_thumb = thumb.clone();
-                    new_thumb.file_path = output_path;
-                    processed_thumbs.push(new_thumb);
-                }
-                Err(err) => {
-                    eprintln!("LUT processing failed for {}: {}", thumb.file_path, err);
-                }
-            }
-        }
-
-        let _ = app.emit(
-            "lut-thumbnail-progress",
-            ThumbnailProgress {
-                project_id: project_id.clone(),
-                clip_id: clip.id.clone(),
-                clip_index: clip_idx,
-                total_clips,
-                status: "done".to_string(),
-                thumbnails: processed_thumbs,
-            },
-        );
-        drop(permit);
-    }
-
-    state
-        .job_manager
-        .mark_done(&job_id, "LUT thumbnails processing complete");
-    emit_job_state(&app, &state.job_manager, &job_id);
+        emit_job_state(&app_clone, &state_inner.job_manager, &job_id_clone);
+    });
 
     Ok(job_id)
 }
@@ -2178,6 +2194,18 @@ pub async fn remove_project_lut(
 
     db.upsert_project_settings(&project_settings)
         .map_err(|e| format!("Failed to clear project settings: {}", e))
+}
+
+#[tauri::command]
+pub async fn set_all_clips_lut(
+    project_id: String,
+    enabled: i32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .db
+        .set_all_clips_lut(&project_id, enabled)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -7497,4 +7525,41 @@ pub async fn production_matchlab_export_calibration_package(
     )?;
 
     Ok(package_root.to_string_lossy().to_string())
+}
+#[tauri::command]
+pub async fn production_matchlab_save_sources(
+    project_id: String,
+    sources: std::collections::HashMap<String, String>,
+    state: tauri::State<'_, std::sync::Arc<crate::commands::AppState>>,
+) -> Result<(), String> {
+    let db = &state.db;
+    for (slot, path) in sources {
+        let source = crate::db::ProductionMatchLabSource {
+            id: format!("{}:{}:source", project_id, slot),
+            project_id: project_id.clone(),
+            slot,
+            source_path: path,
+            source_hash: "".to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            last_analyzed_at: chrono::Utc::now().to_rfc3339(),
+        };
+        db.upsert_production_matchlab_source(&source)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn production_matchlab_get_sources(
+    project_id: String,
+    state: tauri::State<'_, std::sync::Arc<crate::commands::AppState>>,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    let db = &state.db;
+    let sources = db.list_production_matchlab_sources(&project_id)
+        .map_err(|e| e.to_string())?;
+    let mut out = std::collections::HashMap::new();
+    for s in sources {
+        out.insert(s.slot, s.source_path);
+    }
+    Ok(out)
 }

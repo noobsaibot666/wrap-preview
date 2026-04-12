@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowRight, BarChart3, Briefcase, Camera, Maximize2, Minus, Plus, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
+import { ArrowRight, BarChart3, Briefcase, Camera, CircleDot, Maximize2, Minus, Plus, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
 import { ProductionProject } from "../../types";
 import { invokeGuarded } from "../../utils/tauri";
 
@@ -29,6 +29,7 @@ export function ProductionHome({
   const [creatingProject, setCreatingProject] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [showFullProjectList, setShowFullProjectList] = useState(false);
 
   useEffect(() => {
     void loadProjects();
@@ -69,6 +70,7 @@ export function ProductionHome({
     const touchedProject = { ...project, last_opened_at: new Date().toISOString() };
     setProjects((prev) => [touchedProject, ...prev.filter((item) => item.id !== project.id)]);
     onSelectProject(touchedProject);
+    setShowFullProjectList(false);
   };
 
   const handleDeleteProject = async (project: ProductionProject) => {
@@ -84,62 +86,161 @@ export function ProductionHome({
     }
   };
 
-  const recentProjects = projects.slice(0, 5);
+
+  const formatDate = (isoString: string) => {
+    if (!isoString) return "-";
+    try {
+      const date = new Date(isoString);
+      return date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      });
+    } catch {
+      return isoString;
+    }
+  };
 
   return (
     <div className="scrollable-view">
       <div className="onboarding-container production-onboarding module-launcher production-launcher">
-        <div className="onboarding-header production-onboarding-header module-launcher-header">
-          <h1 className="production-onboarding-title">Production</h1>
-          <p>Lock the look, align the camera package, and keep the set disciplined.</p>
-        </div>
+        {showFullProjectList ? (
+          <div style={fullListContainerStyle}>
+            <div style={fullListHeaderStyle}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <button type="button" className="btn btn-ghost" onClick={() => setShowFullProjectList(false)} style={{ padding: 4 }}>
+                  <X size={20} />
+                </button>
+                <h1 className="production-onboarding-title" style={{ margin: 0 }}>All Projects</h1>
+              </div>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setCreateModalOpen(true)}>
+                <Plus size={14} /> Create Project
+              </button>
+            </div>
 
-        <div className="production-apps-grid module-launcher-grid">
-          <ProjectsCard
-            activeProject={activeProject}
-            projects={recentProjects}
-            loading={loadingProjects}
-            deletingProjectId={deletingProjectId}
-            onCreateProject={() => setCreateModalOpen(true)}
-            onOpenProject={(project) => void handleOpenProject(project)}
-            onDeleteProject={(project) => void handleDeleteProject(project)}
-          />
-          <ModuleCard
-            icon={<SlidersHorizontal size={22} strokeWidth={1.35} />}
-            title="Look Setup"
-            description="Build camera A/B/C settings, define the target look, and generate deterministic capture guidance."
-            enabled={Boolean(activeProject)}
-            onClick={onOpenLookSetup}
-          />
-          <ModuleCard
-            icon={<BarChart3 size={22} strokeWidth={1.35} />}
-            title="Camera Match Lab"
-            description="Import short test clips, inspect extracted reference frames, and compare deterministic signal metrics side-by-side."
-            enabled={Boolean(activeProject)}
-            onClick={onOpenCameraMatchLab}
-          />
-          <ModuleCard
-            icon={<ShieldCheck size={22} strokeWidth={1.35} />}
-            title="On-Set Coach"
-            description="Carry forward the saved look plan into fast ready checks, warning toggles, and lighting discipline."
-            enabled={Boolean(activeProject)}
-            onClick={onOpenOnSetCoach}
-          />
-          <ModuleCard
-            icon={<Camera size={22} strokeWidth={1.35} />}
-            title="Match & Normalize"
-            description="Choose a hero camera and save repeatable alignment presets for the rest of the camera package."
-            enabled={Boolean(activeProject)}
-            onClick={onOpenMatchNormalize}
-          />
-          <ModuleCard
-            icon={<Maximize2 size={22} strokeWidth={1.35} />}
-            title="Frame Preview"
-            description="Preview media in multiple aspect ratio frames, reframe content per format, and export preview crops."
-            enabled={true}
-            onClick={onOpenFramePreview}
-          />
-        </div>
+            <div style={fullListTableWrapStyle}>
+              <table style={fullListTableStyle}>
+                <thead>
+                  <tr style={tableHeaderRowStyle}>
+                    <th style={tableHeaderCellStyle}>Project Name</th>
+                    <th style={tableHeaderCellStyle}>Client</th>
+                    <th style={tableHeaderCellStyle}>Created</th>
+                    <th style={tableHeaderCellStyle}>Last Change</th>
+                    <th style={tableHeaderCellStyle}>Status</th>
+                    <th style={{ ...tableHeaderCellStyle, textAlign: "right" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projects.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
+                        No projects found. Create your first project to get started.
+                      </td>
+                    </tr>
+                  ) : (
+                    projects.map((project) => {
+                      const isActive = activeProject?.id === project.id;
+                      return (
+                        <tr key={project.id} style={{ ...tableRowStyle, ...(isActive ? tableRowActiveStyle : null) }}>
+                          <td style={tableCellStyle}>
+                            <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{project.name}</div>
+                          </td>
+                          <td style={tableCellStyle}>{project.client_name}</td>
+                          <td style={tableCellStyle}>{formatDate(project.created_at)}</td>
+                          <td style={tableCellStyle}>{formatDate(project.last_opened_at)}</td>
+                          <td style={tableCellStyle}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <div style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: "50%",
+                                background: isActive ? "var(--status-blue)" : "var(--status-green)",
+                                boxShadow: isActive ? "0 0 8px var(--color-accent-glow)" : "none"
+                              }} />
+                              <span style={{ fontSize: "0.8rem", color: isActive ? "var(--text-primary)" : "var(--text-secondary)" }}>
+                                {isActive ? "Active" : "Ready"}
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ ...tableCellStyle, textAlign: "right" }}>
+                            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                              <button
+                                type="button"
+                                className={`btn btn-sm ${isActive ? "btn-primary" : "btn-ghost"}`}
+                                style={{ padding: "4px 12px", height: 28, fontSize: "0.75rem" }}
+                                onClick={() => void handleOpenProject(project)}
+                              >
+                                {isActive ? "Opened" : "Open"}
+                              </button>
+                              <button
+                                type="button"
+                                style={projectDeleteButtonStyle}
+                                onClick={() => void handleDeleteProject(project)}
+                                disabled={deletingProjectId === project.id}
+                                title="Delete project"
+                              >
+                                <Minus size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="onboarding-header production-onboarding-header module-launcher-header">
+              <h1 className="production-onboarding-title">Production</h1>
+              <p>Lock the look, align the camera package, and keep the set disciplined.</p>
+            </div>
+
+            <div className="production-apps-grid module-launcher-grid">
+              <ProjectsCard
+                activeProject={activeProject}
+                onViewAll={() => setShowFullProjectList(true)}
+              />
+              <ModuleCard
+                icon={<SlidersHorizontal size={22} strokeWidth={1.35} />}
+                title="Look Setup"
+                description="Build camera A/B/C settings, define the target look, and generate deterministic capture guidance."
+                enabled={Boolean(activeProject)}
+                onClick={onOpenLookSetup}
+              />
+              <ModuleCard
+                icon={<BarChart3 size={22} strokeWidth={1.35} />}
+                title="Camera Match Lab"
+                description="Import test clips, inspect reference frames, and compare signal metrics side-by-side."
+                enabled={Boolean(activeProject)}
+                onClick={onOpenCameraMatchLab}
+              />
+              <ModuleCard
+                icon={<ShieldCheck size={22} strokeWidth={1.35} />}
+                title="On-Set Coach"
+                description="Carry forward the saved look plan into fast ready checks, warning toggles, and lighting discipline."
+                enabled={Boolean(activeProject)}
+                onClick={onOpenOnSetCoach}
+              />
+              <ModuleCard
+                icon={<Camera size={22} strokeWidth={1.35} />}
+                title="Match & Normalize"
+                description="Choose a hero camera and save repeatable alignment presets for the rest of the camera package."
+                enabled={Boolean(activeProject)}
+                onClick={onOpenMatchNormalize}
+              />
+              <ModuleCard
+                icon={<Maximize2 size={22} strokeWidth={1.35} />}
+                title="Frame Preview"
+                description="Preview media in multiple aspect ratio frames, reframe content per format, and export preview crops."
+                enabled={true}
+                onClick={onOpenFramePreview}
+              />
+            </div>
+          </>
+        )}
 
         {createModalOpen ? (
           <div style={modalBackdropStyle} onClick={() => setCreateModalOpen(false)}>
@@ -180,70 +281,33 @@ export function ProductionHome({
 
 function ProjectsCard({
   activeProject,
-  projects,
-  loading,
-  deletingProjectId,
-  onCreateProject,
-  onOpenProject,
-  onDeleteProject,
+  onViewAll,
 }: {
   activeProject: ProductionProject | null;
-  projects: ProductionProject[];
-  loading: boolean;
-  deletingProjectId: string | null;
-  onCreateProject: () => void;
-  onOpenProject: (project: ProductionProject) => void;
-  onDeleteProject: (project: ProductionProject) => void;
+  onViewAll: () => void;
 }) {
   return (
-    <div className="module-card premium-card module-launcher-card production-project-card" style={projectsCardStyle}>
+    <div 
+      className="module-card premium-card module-launcher-card production-project-card" 
+      style={{ ...moduleCardStyle, alignText: "left", position: "relative" } as any}
+      onClick={onViewAll}
+    >
+      {activeProject && (
+        <div style={activeBadgeStyle} title={`Active Project: ${activeProject.name}`}>
+          <CircleDot size={8} strokeWidth={3} className="pulse-slow" />
+          <span>In Session</span>
+        </div>
+      )}
       <div className="module-icon">
         <Briefcase size={22} strokeWidth={1.35} />
       </div>
-      <div className="module-info" style={projectsInfoStyle}>
+      <div className="module-info">
         <h2>Project Manager</h2>
         <p>Manage your projects here and open the one you want to work on.</p>
+        <span className="module-action">
+           Manage Projects <ArrowRight size={16} />
+        </span>
       </div>
-
-      <div style={projectListWrapStyle}>
-        {loading ? (
-          <div style={projectEmptyStyle}>Loading projects...</div>
-        ) : projects.length === 0 ? (
-          <div style={projectEmptyStyle}>No projects yet.</div>
-        ) : (
-          <div style={projectListStyle}>
-                {projects.map((project) => {
-                  const selected = activeProject?.id === project.id;
-                  return (
-                    <div key={project.id} style={{ ...projectRowStyle, ...(selected ? projectRowActiveStyle : null) }}>
-                      <button type="button" style={projectOpenButtonStyle} onClick={() => onOpenProject(project)}>
-                        <div style={projectContentRowStyle}>
-                          <div style={projectMetaStyle}>
-                            <span>{project.client_name}</span>
-                          </div>
-                          <div style={projectSeparatorStyle} aria-hidden="true">-</div>
-                          <div style={projectNameStyle}>{project.name}</div>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        style={projectDeleteButtonStyle}
-                        onClick={() => onDeleteProject(project)}
-                        disabled={deletingProjectId === project.id}
-                        aria-label={`Delete ${project.name}`}
-                        title={`Delete ${project.name}`}
-                      >
-                        <Minus size={12} />
-                      </button>
-                    </div>
-                  );
-                })}
-          </div>
-        )}
-      </div>
-      <button type="button" className="module-inline-button" style={createProjectButtonStyle} onClick={onCreateProject}>
-        <Plus size={14} /> Create project
-      </button>
     </div>
   );
 }
@@ -284,20 +348,6 @@ const moduleCardStyle: React.CSSProperties = {
   height: "100%",
 };
 
-const projectsCardStyle: React.CSSProperties = {
-  minHeight: 214,
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  gap: 14,
-};
-
-const projectsInfoStyle: React.CSSProperties = {
-  display: "grid",
-  gap: 6,
-  justifyItems: "center",
-  textAlign: "center",
-};
 
 const projectInputStyle: React.CSSProperties = {
   width: "100%",
@@ -474,3 +524,83 @@ const modalFormStyle: React.CSSProperties = {
   display: "grid",
   gap: 10,
 };
+
+const fullListContainerStyle: React.CSSProperties = {
+  width: "100%",
+  display: "flex",
+  flexDirection: "column",
+  gap: 24,
+  padding: "4px 2px",
+};
+
+const fullListHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginBottom: 8,
+};
+
+const fullListTableWrapStyle: React.CSSProperties = {
+  width: "100%",
+  border: "1px solid rgba(255,255,255,0.06)",
+  borderRadius: 16,
+  background: "rgba(255,255,255,0.01)",
+  overflow: "hidden",
+};
+
+const fullListTableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  fontSize: "0.85rem",
+};
+
+const tableHeaderRowStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.03)",
+  borderBottom: "1px solid rgba(255,255,255,0.06)",
+};
+
+const tableHeaderCellStyle: React.CSSProperties = {
+  padding: "12px 16px",
+  textAlign: "left",
+  color: "var(--text-muted)",
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  fontSize: "0.7rem",
+};
+
+const tableRowStyle: React.CSSProperties = {
+  borderBottom: "1px solid rgba(255,255,255,0.04)",
+  transition: "background 0.2s",
+};
+
+const tableRowActiveStyle: React.CSSProperties = {
+  background: "rgba(165,146,255,0.04)",
+};
+
+const tableCellStyle: React.CSSProperties = {
+  padding: "16px",
+  color: "var(--text-secondary)",
+  verticalAlign: "middle",
+};
+
+const activeBadgeStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 16,
+  right: 16,
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "3px 8px",
+  borderRadius: 99,
+  background: "rgba(165,146,255,0.12)",
+  border: "1px solid rgba(165,146,255,0.2)",
+  color: "var(--color-accent)",
+  fontSize: "0.55rem",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+  zIndex: 10,
+};
+

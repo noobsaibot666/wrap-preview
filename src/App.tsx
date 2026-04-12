@@ -6,6 +6,7 @@
 
 import { Component, ReactNode, useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   Camera,
@@ -533,6 +534,19 @@ function AppContent() {
 
   // Active project refs removed in favor of phase-aware listeners
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const setup = async () => {
+      unlisten = await listen("lut-thumbnail-progress", () => {
+        setLutRenderNonce((n) => n + 1);
+      });
+    };
+    void setup();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   const fetchProjectSettings = useCallback(async (pid: string) => {
     try {
       const settingsJson = await safeInvoke<string>("get_project_settings", { projectId: pid });
@@ -569,6 +583,7 @@ function AppContent() {
     try {
       await invoke("set_project_lut", { projectId, lutPath: selected });
       await fetchProjectSettings(projectId);
+      await invoke("set_all_clips_lut", { projectId, enabled: 1 });
       await invoke("generate_lut_thumbnails", { projectId });
       setLutRenderNonce((n) => n + 1);
       setUiNotice({ title: "LUT loaded", hint: "Review thumbnails can now use the selected project LUT." });
@@ -1842,23 +1857,23 @@ function AppContent() {
                       </div>
                       <div
                         className="module-card premium-card module-launcher-card"
+                        onClick={() => setActivePreproductionApp('duplicate-finder')}
+                      >
+                        <div className="module-icon"><FileSearch size={20} strokeWidth={1.5} /></div>
+                        <div className="module-info">
+                          <h3>Duplicate Finder</h3>
+                          <p>Scan folders for identical files and generate cleanup reports.</p>
+                          <span className="module-action">Open App <ArrowRight size={14} /></span>
+                        </div>
+                      </div>
+                      <div
+                        className="module-card premium-card module-launcher-card"
                         onClick={() => setActivePreproductionApp('shot-list')}
                       >
                         <div className="module-icon"><ClipboardCheck size={20} strokeWidth={1.5} /></div>
                         <div className="module-info">
                           <h3>Shot List</h3>
                           <p>Build a clean day sheet with minimal shot rows and a visual equipment list.</p>
-                          <span className="module-action">Open App <ArrowRight size={14} /></span>
-                        </div>
-                      </div>
-                      <div
-                        className="module-card premium-card module-launcher-card"
-                        onClick={() => setActivePreproductionApp('starter-setup')}
-                      >
-                        <div className="module-icon"><ClipboardCheck size={20} strokeWidth={1.5} /></div>
-                        <div className="module-info">
-                          <h3>Starter Setup</h3>
-                          <p>Get a safe technical starting setup sheet for your shoot instantly.</p>
                           <span className="module-action">Open App <ArrowRight size={14} /></span>
                         </div>
                       </div>
@@ -1892,12 +1907,12 @@ function AppContent() {
                       </div>
                       <div
                         className="module-card premium-card module-launcher-card"
-                        onClick={() => setActivePreproductionApp('duplicate-finder')}
+                        onClick={() => setActivePreproductionApp('starter-setup')}
                       >
-                        <div className="module-icon"><FileSearch size={20} strokeWidth={1.5} /></div>
+                        <div className="module-icon"><ClipboardCheck size={20} strokeWidth={1.5} /></div>
                         <div className="module-info">
-                          <h3>Duplicate Finder</h3>
-                          <p>Scan folders for identical files and generate cleanup reports.</p>
+                          <h3>Starter Setup</h3>
+                          <p>Get a safe technical starting setup sheet for your shoot instantly.</p>
                           <span className="module-action">Open App <ArrowRight size={14} /></span>
                         </div>
                       </div>

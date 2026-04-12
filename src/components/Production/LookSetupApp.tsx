@@ -113,12 +113,31 @@ export function LookSetupApp({ project, onContinueToMatchLab }: LookSetupAppProp
       .filter((entry) => entry.items.length > 0);
   }, [usageGuidance]);
 
-  const saveAll = async (nextConfigs: ProductionCameraConfig[], nextSetup: ProductionLookSetup) => {
+  useEffect(() => {
+    // Skip first render since data was just loaded
+    const timeout = setTimeout(() => {
+      if (!loading && !saving) {
+        void autoSave();
+      }
+    }, 1000);
+    return () => clearTimeout(timeout);
+  }, [setup.target_type, setup.lighting, setup.skin_priority, setup.custom_notes, cameraConfigs]);
+
+  const autoSave = async () => {
+    try {
+      await Promise.all(cameraConfigs.map((config) => invokeGuarded("save_production_camera_config", { config })));
+      await invokeGuarded("production_save_look_setup", { setup: setup });
+    } catch (e) {
+      console.error("Auto-save failed", e);
+    }
+  };
+
+  const handleGenerate = async () => {
+    const nextOutputs = buildLookOutputs(setup, cameraConfigs);
+    const nextSetup = { ...setup, outputs_json: JSON.stringify(nextOutputs) };
     setSaving(true);
     try {
-      await Promise.all(nextConfigs.map((config) => invokeGuarded("save_production_camera_config", { config })));
       await invokeGuarded("production_save_look_setup", { setup: nextSetup });
-      setCameraConfigs(nextConfigs);
       setSetup(nextSetup);
     } finally {
       setSaving(false);
@@ -137,12 +156,6 @@ export function LookSetupApp({ project, onContinueToMatchLab }: LookSetupAppProp
     setCameraConfigs((prev) => prev.map((item) => (
       item.slot === slot ? buildDefaultCameraConfig(project.id, slot) : item
     )));
-  };
-
-  const handleGenerate = async () => {
-    const nextOutputs = buildLookOutputs(setup, cameraConfigs);
-    const nextSetup = { ...setup, outputs_json: JSON.stringify(nextOutputs) };
-    await saveAll(cameraConfigs, nextSetup);
   };
 
   const exportPayload = useMemo(() => ({
