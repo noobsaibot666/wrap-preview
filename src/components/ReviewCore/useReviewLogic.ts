@@ -1011,8 +1011,6 @@ export function useReviewLogic({
             setDuration,
             setThumbnails,
             setShowErrorDetails,
-            setPendingDuplicateFiles,
-            setDuplicateCandidates,
             setComments,
             setAnnotations,
             setApproval,
