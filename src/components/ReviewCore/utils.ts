@@ -278,7 +278,8 @@ export function formatApproxTime(seconds: number) {
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
 }
 
-export function formatTimecode(seconds: number, asset: Pick<CommonAsset, "frame_rate" | "avg_frame_rate" | "r_frame_rate" | "is_vfr">) {
+export function formatTimecode(seconds: number, asset?: Pick<CommonAsset, "frame_rate" | "avg_frame_rate" | "r_frame_rate" | "is_vfr"> | null) {
+    if (!asset) return formatApproxTime(seconds);
     const safeFps = normalizePlaybackFps(asset.avg_frame_rate || asset.r_frame_rate, asset.frame_rate);
     if (asset.is_vfr) {
         return formatApproxTime(seconds);
