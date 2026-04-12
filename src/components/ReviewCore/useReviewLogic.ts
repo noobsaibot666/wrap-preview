@@ -66,8 +66,7 @@ export function useReviewLogic({
     const [duration, setDuration] = useState(0);
     const [thumbnails, setThumbnails] = useState<ReviewCoreThumbnailInfo[]>([]);
     const [showErrorDetails, setShowErrorDetails] = useState(false);
-    const [pendingDuplicateFiles, setPendingDuplicateFiles] = useState<string[] | null>(null);
-    const [duplicateCandidates, setDuplicateCandidates] = useState<ReviewCoreDuplicateCandidate[]>([]);
+
     const [comments, setComments] = useState<ReviewCoreComment[]>([]);
     const [annotations, setAnnotations] = useState<ReviewCoreAnnotation[]>([]);
     const [approval, setApproval] = useState<ReviewCoreApprovalState>(DEFAULT_APPROVAL);
@@ -458,21 +457,8 @@ export function useReviewLogic({
         });
         if (!selected || !effectiveProjectId) return;
         const filePaths = Array.isArray(selected) ? selected : [selected];
-        try {
-            const duplicateCheck = await invoke<{ duplicates: ReviewCoreDuplicateCandidate[] }>("review_core_check_duplicate_files", {
-                projectId: effectiveProjectId,
-                filePaths,
-            });
-            if (duplicateCheck.duplicates.length > 0) {
-                setPendingDuplicateFiles(filePaths);
-                setDuplicateCandidates(duplicateCheck.duplicates);
-                return;
-            }
-            await runIngest(filePaths, "new_version");
-        } catch (error) {
-            console.error("Review Core duplicate check failed", error);
-        }
-    }, [isShareMode, effectiveProjectId]);
+        await runIngest(filePaths, "new_version");
+    }, [isShareMode, effectiveProjectId, runIngest]);
 
     const runIngest = useCallback(async (filePaths: string[], duplicateMode: "new_version" | "new_asset") => {
         if (!effectiveProjectId) return;
@@ -937,8 +923,7 @@ export function useReviewLogic({
             duration,
             thumbnails,
             showErrorDetails,
-            pendingDuplicateFiles,
-            duplicateCandidates,
+
             comments,
             annotations,
             approval,
