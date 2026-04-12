@@ -1920,7 +1920,7 @@ pub async fn generate_lut_thumbnails(
                 }
 
                 let progress = (clip_idx as f32 / total_clips as f32).max(0.01);
-                state_task.job_manager.update_progress(&job_id_clone, progress);
+                state_task.job_manager.update_progress(&job_id_clone, progress, None);
                 emit_job_state(&app_task, &state_task.job_manager, &job_id_clone);
 
                 let _ = app_task.emit(
@@ -1940,7 +1940,7 @@ pub async fn generate_lut_thumbnails(
         while let Some(_) = set.join_next().await {}
 
         if cancel_flag.load(Ordering::Relaxed) {
-             state_inner.job_manager.mark_cancelled(&job_id_clone, "LUT processing cancelled");
+             state_inner.job_manager.mark_failed(&job_id_clone, "LUT processing cancelled");
         } else {
             state_inner.job_manager.mark_done(&job_id_clone, "LUT thumbnails processing complete");
         }
@@ -2205,7 +2205,7 @@ pub async fn set_all_clips_lut(
     state
         .db
         .set_all_clips_lut(&project_id, enabled)
-        .map_err(|e| e.to_string())
+        .map_err(|e: rusqlite::Error| e.to_string())
 }
 
 #[tauri::command]

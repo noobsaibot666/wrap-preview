@@ -3883,6 +3883,15 @@ impl Database {
         Ok(clips)
     }
 
+    pub fn set_all_clips_lut(&self, project_id: &str, enabled: i32) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE clips SET lut_enabled = ?1 WHERE project_id = ?2",
+            params![enabled, project_id],
+        )?;
+        Ok(())
+    }
+
     pub fn get_clips_by_ids(&self, ids: &[String]) -> SqlResult<Vec<Clip>> {
         let conn = self.conn.lock().unwrap();
         let placeholders: String = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
