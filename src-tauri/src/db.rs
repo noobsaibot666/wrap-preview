@@ -2979,6 +2979,39 @@ impl Database {
         Ok(rows)
     }
 
+    /// Fetch all versions for every asset in a project in a single JOIN query,
+    /// avoiding the N+1 pattern of calling list_asset_versions per asset.
+    pub fn list_asset_versions_for_project(&self, project_id: &str) -> SqlResult<Vec<AssetVersion>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT av.id, av.asset_id, av.version_number, av.original_file_key,
+                    av.proxy_playlist_key, av.thumbnails_key, av.poster_key,
+                    av.processing_status, av.last_error, av.created_at, av.proxy_mp4_key
+             FROM asset_versions av
+             INNER JOIN assets a ON a.id = av.asset_id
+             WHERE a.project_id = ?1
+             ORDER BY av.asset_id, av.version_number DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![project_id], |row| {
+                Ok(AssetVersion {
+                    id: row.get(0)?,
+                    asset_id: row.get(1)?,
+                    version_number: row.get(2)?,
+                    original_file_key: row.get(3)?,
+                    proxy_playlist_key: row.get(4)?,
+                    thumbnails_key: row.get(5)?,
+                    poster_key: row.get(6)?,
+                    processing_status: row.get(7)?,
+                    last_error: row.get(8)?,
+                    created_at: row.get(9)?,
+                    proxy_mp4_key: row.get(10)?,
+                })
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     pub fn get_asset_version(&self, version_id: &str) -> SqlResult<Option<AssetVersion>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -3077,6 +3110,21 @@ impl Database {
             params![status, last_error, version_id],
         )?;
         Ok(())
+    }
+
+    /// On app startup, reset any asset versions that were stuck in "processing"
+    /// due to a previous crash or force-quit. They will show as "failed" so the
+    /// user can re-import rather than waiting forever.
+    pub fn reset_stuck_processing_versions(&self) -> SqlResult<usize> {
+        let conn = self.conn.lock().unwrap();
+        let count = conn.execute(
+            "UPDATE asset_versions
+             SET processing_status = 'failed',
+                 last_error = 'Processing interrupted by app restart'
+             WHERE processing_status = 'processing'",
+            [],
+        )?;
+        Ok(count)
     }
 
     pub fn update_asset_version_outputs(

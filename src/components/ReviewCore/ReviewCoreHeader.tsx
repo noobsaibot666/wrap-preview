@@ -1,5 +1,5 @@
 import React from "react";
-import { FolderUp, Share2, ChevronLeft, Settings, HelpCircle, User } from "lucide-react";
+import { FolderUp, Share2, ChevronLeft, User } from "lucide-react";
 import { ReviewCoreProjectSummary } from "./types";
 
 interface ReviewCoreHeaderProps {

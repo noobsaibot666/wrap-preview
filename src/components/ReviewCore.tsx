@@ -49,6 +49,8 @@ export function ReviewCore(props: ReviewCoreProps) {
     selectedVersionId,
     versions,
     isPlaying,
+    annotationTool,
+    annotatingCommentId,
   } = state;
 
   const selectedAsset = useMemo(() =>
@@ -135,6 +137,9 @@ export function ReviewCore(props: ReviewCoreProps) {
                 onMouseDown={handlers.handleAnnotationMouseDown}
                 onMouseMove={handlers.handleAnnotationMouseMove}
                 onMouseUp={handlers.handleAnnotationMouseUp}
+                annotationTool={annotationTool}
+                onToolChange={setters.setAnnotationTool}
+                isAnnotating={Boolean(annotatingCommentId)}
               />
             }
           />

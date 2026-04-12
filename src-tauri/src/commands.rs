@@ -3013,14 +3013,30 @@ pub async fn review_core_list_assets_with_versions(
         .db
         .list_assets(&project_id)
         .map_err(|e| e.to_string())?;
-    let mut payload = Vec::with_capacity(assets.len());
-    for asset in assets {
-        let versions = state
-            .db
-            .list_asset_versions(&asset.id)
-            .map_err(|e| e.to_string())?;
-        payload.push(ReviewCoreAssetWithVersions { asset, versions });
+
+    // Fetch all versions for this project in a single JOIN query (avoids N+1)
+    let all_versions = state
+        .db
+        .list_asset_versions_for_project(&project_id)
+        .map_err(|e| e.to_string())?;
+
+    let mut versions_by_asset: std::collections::HashMap<String, Vec<crate::db::AssetVersion>> =
+        std::collections::HashMap::new();
+    for version in all_versions {
+        versions_by_asset
+            .entry(version.asset_id.clone())
+            .or_default()
+            .push(version);
     }
+
+    let payload = assets
+        .into_iter()
+        .map(|asset| {
+            let versions = versions_by_asset.remove(&asset.id).unwrap_or_default();
+            ReviewCoreAssetWithVersions { asset, versions }
+        })
+        .collect();
+
     Ok(payload)
 }
 

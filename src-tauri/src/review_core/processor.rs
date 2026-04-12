@@ -49,20 +49,13 @@ fn format_hls_args(input: &Path, output_dir: &Path, has_audio: bool, fps: f64) -
     let segment_pattern = output_dir.join("segment_%04d.ts");
     let playlist = output_dir.join("index.m3u8");
     let gop = compute_gop_size(fps);
-    let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-    let _is_nev = ext == "nev";
-
     let mut args = vec!["-y".to_string()];
-
-    // Note: NEV (N-RAW) files cannot be HLS-transcoded by FFmpeg — the NRAW
-    // codec is proprietary and no open-source decoder exists. NEV playback
-    // must use the embedded preview or a future Nikon SDK integration.
 
     args.extend([
         "-i".to_string(),
         input.to_string_lossy().to_string(),
         "-vf".to_string(),
-        "scale='min(1280,iw)':-2,format=yuv420p".to_string(),
+        "scale='trunc(min(1280,iw)/2)*2:-2',format=yuv420p".to_string(),
         "-c:v".to_string(),
         "libx264".to_string(),
         "-preset".to_string(),
@@ -107,7 +100,7 @@ fn format_proxy_mp4_args(input: &Path, output: &Path, has_audio: bool, fps: f64)
         "-i".to_string(),
         input.to_string_lossy().to_string(),
         "-vf".to_string(),
-        "scale='min(1280,iw)':-2".to_string(),
+        "scale='trunc(min(1280,iw)/2)*2:-2'".to_string(),
         "-c:v".to_string(),
         "libx264".to_string(),
         "-preset".to_string(),
@@ -133,11 +126,16 @@ fn format_proxy_mp4_args(input: &Path, output: &Path, has_audio: bool, fps: f64)
     args
 }
 
-fn format_poster_args(input: &Path, poster: &Path) -> Vec<String> {
+fn format_poster_args(input: &Path, poster: &Path, duration_ms: u64) -> Vec<String> {
+    let ts = if duration_ms > 1000 {
+        "00:00:01.000".to_string()
+    } else {
+        "00:00:00.000".to_string()
+    };
     vec![
         "-y".to_string(),
         "-ss".to_string(),
-        "00:00:01.000".to_string(),
+        ts,
         "-i".to_string(),
         input.to_string_lossy().to_string(),
         "-frames:v".to_string(),
@@ -195,6 +193,12 @@ pub async fn process_asset_version(
             Some("processing"),
         )
         .map_err(|e| e.to_string())?;
+
+    // Codec compatibility check
+    let codec = metadata.video_codec.to_lowercase();
+    if codec == "braw" || codec == "n-raw" || original_abs_path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()) == Some("nev".to_string()) {
+        return Err(format!("Incompatible codec '{}' for Review Core proxy generation. Please use a standard intermediate format like ProRes or DNxHR.", metadata.video_codec));
+    }
     ctx.job_manager.update_progress(
         &ctx.job_id,
         0.2,
@@ -242,33 +246,30 @@ pub async fn process_asset_version(
         metadata.fps,
     ))?;
 
-    ctx.job_manager.update_progress(
-        &ctx.job_id,
-        0.55,
-        Some("Review Core: extracting poster".to_string()),
-    );
-    emit_job_state(&ctx.app, &ctx.job_manager, &ctx.job_id);
-    check_cancel(&ctx.cancel_flag)?;
-
-    let poster_path = output_dir_abs_path.join("poster.jpg");
-    ffmpeg_run(&format_poster_args(&original_abs_path, &poster_path))?;
-
-    ctx.job_manager.update_progress(
-        &ctx.job_id,
-        0.75,
-        Some("Review Core: generating thumbnails".to_string()),
-    );
-    emit_job_state(&ctx.app, &ctx.job_manager, &ctx.job_id);
-    check_cancel(&ctx.cancel_flag)?;
-
+    // Poster and thumbnails are independent reads — run them in parallel
     let thumbs_dir = output_dir_abs_path.join("thumbs");
     std::fs::create_dir_all(&thumbs_dir).map_err(|e| e.to_string())?;
     let interval = ((metadata.duration_ms / 1000) / 10).max(1);
-    ffmpeg_run(&format_thumb_args(
-        &original_abs_path,
-        &thumbs_dir,
-        interval,
-    ))?;
+
+    let poster_path = output_dir_abs_path.join("poster.jpg");
+    let poster_args = format_poster_args(&original_abs_path, &poster_path, metadata.duration_ms);
+    let original_abs_path_for_thumbs = original_abs_path.clone();
+    let thumb_args = format_thumb_args(&original_abs_path_for_thumbs, &thumbs_dir, interval);
+
+    ctx.job_manager.update_progress(
+        &ctx.job_id,
+        0.55,
+        Some("Review Core: extracting poster + thumbnails".to_string()),
+    );
+    emit_job_state(&ctx.app, &ctx.job_manager, &ctx.job_id);
+    check_cancel(&ctx.cancel_flag)?;
+
+    let (poster_result, thumb_result) = tokio::join!(
+        tokio::task::spawn_blocking(move || ffmpeg_run(&poster_args)),
+        tokio::task::spawn_blocking(move || ffmpeg_run(&thumb_args)),
+    );
+    poster_result.map_err(|e| e.to_string())??;
+    thumb_result.map_err(|e| e.to_string())??;
 
     ctx.db
         .update_asset_version_outputs(

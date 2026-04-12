@@ -5,7 +5,6 @@ import {
     SkipBack,
     SkipForward,
     Maximize,
-    Settings,
     Camera,
     AlertCircle,
 } from "lucide-react";
@@ -86,6 +85,22 @@ export const ReviewPlayer: React.FC<ReviewPlayerProps> = ({
                                 <p className="text-sm text-white/50">
                                     This might take a few minutes depending on your hardware.
                                 </p>
+                            )}
+                            {mediaReadyStatus === "finalizing" && (
+                                <p className="text-sm text-white/50">
+                                    Verifying media availability...
+                                </p>
+                            )}
+                            {(mediaReadyStatus === "processing" || mediaReadyStatus === "finalizing") && (
+                                <div className="flex gap-1 mt-1">
+                                    {[0, 1, 2].map((i) => (
+                                        <div
+                                            key={i}
+                                            className="w-1.5 h-1.5 rounded-full bg-white/40 animate-pulse"
+                                            style={{ animationDelay: `${i * 200}ms` }}
+                                        />
+                                    ))}
+                                </div>
                             )}
                         </div>
                     </div>

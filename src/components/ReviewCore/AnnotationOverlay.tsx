@@ -1,6 +1,8 @@
 import React, { useMemo } from "react";
+import { MousePointer2, Pen, ArrowUpRight, Square, Circle } from "lucide-react";
 import {
     AnnotationItem,
+    AnnotationTool,
     AnnotationVectorData,
     OverlayFrameRect,
     NormalizedPoint
@@ -17,7 +19,18 @@ interface AnnotationOverlayProps {
     onMouseMove: (point: NormalizedPoint) => void;
     onMouseUp: () => void;
     isLocked?: boolean;
+    annotationTool?: AnnotationTool;
+    onToolChange?: (tool: AnnotationTool) => void;
+    isAnnotating?: boolean;
 }
+
+const TOOL_BUTTONS: { tool: AnnotationTool; Icon: React.ComponentType<{ className?: string }> }[] = [
+    { tool: "pointer", Icon: MousePointer2 },
+    { tool: "pen", Icon: Pen },
+    { tool: "arrow", Icon: ArrowUpRight },
+    { tool: "rect", Icon: Square },
+    { tool: "circle", Icon: Circle },
+];
 
 export const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
     rect,
@@ -28,6 +41,9 @@ export const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
     onMouseMove,
     onMouseUp,
     isLocked = false,
+    annotationTool,
+    onToolChange,
+    isAnnotating = false,
 }) => {
     const displayData = useMemo(() => {
         if (draft) return draft;
@@ -65,40 +81,72 @@ export const AnnotationOverlay: React.FC<AnnotationOverlayProps> = ({
 
     if (rect.width <= 0 || rect.height <= 0) return null;
 
+    const cursorClass = isLocked || annotationTool === "pointer"
+        ? "cursor-default"
+        : "cursor-crosshair";
+
     return (
-        <svg
-            className={`absolute z-30 pointer-events-auto ${isLocked ? "cursor-default" : "cursor-crosshair"}`}
-            style={{
-                left: rect.left,
-                top: rect.top,
-                width: rect.width,
-                height: rect.height,
-            }}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            viewBox="0 0 1 1"
-            preserveAspectRatio="none"
-        >
-            <defs>
-                <marker
-                    id="arrowhead"
-                    markerWidth="10"
-                    markerHeight="7"
-                    refX="9"
-                    refY="3.5"
-                    orient="auto"
+        <>
+            <svg
+                className={`absolute z-30 pointer-events-auto ${cursorClass}`}
+                style={{
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                }}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                viewBox="0 0 1 1"
+                preserveAspectRatio="none"
+            >
+                <defs>
+                    <marker
+                        id="arrowhead"
+                        markerWidth="10"
+                        markerHeight="7"
+                        refX="9"
+                        refY="3.5"
+                        orient="auto"
+                    >
+                        <polygon points="0 0, 10 3.5, 0 7" fill="currentColor" />
+                    </marker>
+                </defs>
+
+                {displayData?.items.map((item) => (
+                    <AnnotationShape key={item.id} item={item} />
+                ))}
+
+                {activeDraftItem && <AnnotationShape item={activeDraftItem} isDraft />}
+            </svg>
+
+            {isAnnotating && onToolChange && (
+                <div
+                    className="absolute z-40 flex items-center gap-1 bg-black/80 border border-white/10 rounded-xl px-2 py-1.5 pointer-events-auto"
+                    style={{
+                        bottom: rect.top > 60 ? 12 : rect.top + rect.height + 8,
+                        left: rect.left + rect.width / 2,
+                        transform: "translateX(-50%)",
+                    }}
                 >
-                    <polygon points="0 0, 10 3.5, 0 7" fill="currentColor" />
-                </marker>
-            </defs>
-
-            {displayData?.items.map((item) => (
-                <AnnotationShape key={item.id} item={item} />
-            ))}
-
-            {activeDraftItem && <AnnotationShape item={activeDraftItem} isDraft />}
-        </svg>
+                    {TOOL_BUTTONS.map(({ tool, Icon }) => (
+                        <button
+                            key={tool}
+                            onClick={() => onToolChange(tool)}
+                            className={`p-1.5 rounded-lg transition-all ${
+                                annotationTool === tool
+                                    ? "bg-white text-black"
+                                    : "text-white/50 hover:text-white hover:bg-white/10"
+                            }`}
+                            title={tool}
+                        >
+                            <Icon className="w-4 h-4" />
+                        </button>
+                    ))}
+                </div>
+            )}
+        </>
     );
 };
 

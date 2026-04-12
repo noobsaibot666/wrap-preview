@@ -70,6 +70,11 @@ pub fn run() {
     let database =
         db::Database::new(&db_path.to_string_lossy()).expect("Failed to initialize database");
 
+    // Reset any asset versions that were stuck in "processing" from a previous crash.
+    if let Err(e) = database.reset_stuck_processing_versions() {
+        eprintln!("Warning: failed to reset stuck processing versions: {}", e);
+    }
+
     let app_state = Arc::new(AppState {
         db: database.clone(),
         cache_dir: cache_dir_path.to_string_lossy().to_string(),

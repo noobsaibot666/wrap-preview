@@ -9,7 +9,6 @@ import {
     ReviewCoreAssetWithVersions,
     ReviewCoreAssetVersion,
     ReviewCoreComment,
-    ReviewCoreDuplicateCandidate,
     ReviewCoreExtractFrameResult,
     ReviewCoreFrameNote,
     ReviewCoreProjectSummary,
@@ -145,6 +144,7 @@ export function useReviewLogic({
     const pendingSeekSecondsRef = useRef<number | null>(null);
     const dragStateRef = useRef<{ mode: "draw" | "move"; start: NormalizedPoint; itemId?: string } | null>(null);
     const previousVersionStatusRef = useRef<string | null>(null);
+    const processingPollAttemptRef = useRef<number>(0);
 
     const effectiveProjectId = activeProject?.id || shareResolved?.project_id || projectId;
     const shareAccessReady = !isShareMode || Boolean(shareResolved && (!shareResolved.password_required || shareSessionToken || shareUnlocked));
@@ -310,6 +310,10 @@ export function useReviewLogic({
         const handleLoadedMetadata = () => {
             setDuration(video.duration || 0);
             updateFrameRect();
+            if (pendingSeekSecondsRef.current != null && video.readyState >= 1) {
+                video.currentTime = pendingSeekSecondsRef.current;
+                pendingSeekSecondsRef.current = null;
+            }
         };
         const handleCanPlay = () => {
             if (pendingSeekSecondsRef.current != null) {
@@ -337,7 +341,7 @@ export function useReviewLogic({
             video.removeEventListener("canplay", handleCanPlay);
             video.removeEventListener("error", handleError);
         };
-    }, [selectedAssetId, updateFrameRect]);
+    }, [selectedAssetId, selectedVersionId, updateFrameRect]);
 
     useEffect(() => {
         const video = videoRef.current;
@@ -345,7 +349,8 @@ export function useReviewLogic({
         video.poster = verifiedMediaUrls.posterUrl;
         video.pause();
         video.removeAttribute("src");
-        video.load();
+        // Do NOT call video.load() here — HLS.js manages media loading.
+        // Calling load() before attaching HLS corrupts the pipeline.
         setCurrentTime(0);
         if (hlsRef.current) {
             hlsRef.current.destroy();
@@ -359,8 +364,28 @@ export function useReviewLogic({
 
             if (HlsClass.isSupported()) {
                 const hls = new HlsClass();
-                hls.loadSource(verifiedMediaUrls.playlistUrl);
+                // 1. Attach media FIRST (HLS.js requirement)
                 hls.attachMedia(video);
+                // 2. Apply any pending seek once manifest is ready
+                hls.on(HlsClass.Events.MANIFEST_PARSED, () => {
+                    if (pendingSeekSecondsRef.current != null) {
+                        video.currentTime = pendingSeekSecondsRef.current;
+                        pendingSeekSecondsRef.current = null;
+                    }
+                });
+                // 3. Handle fatal HLS errors
+                hls.on(HlsClass.Events.ERROR, (_event, data) => {
+                    if (data.fatal) {
+                        if (data.type === HlsClass.ErrorTypes.NETWORK_ERROR) {
+                            setMediaReadyStatus("finalizing");
+                            setMediaReadyAttempt((a) => a + 1);
+                        } else {
+                            setMediaReadyStatus("failed");
+                        }
+                    }
+                });
+                // 4. Load source LAST
+                hls.loadSource(verifiedMediaUrls.playlistUrl);
                 hlsRef.current = hls;
             } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
                 video.src = verifiedMediaUrls.playlistUrl;
@@ -713,6 +738,7 @@ export function useReviewLogic({
 
     useEffect(() => {
         resetMedia();
+        processingPollAttemptRef.current = 0;
         setVersions([]);
         setSelectedVersionId(null);
         setComments([]);
@@ -845,6 +871,16 @@ export function useReviewLogic({
         if (selectedVersion.processing_status === "ready") {
             return;
         }
+        if (selectedVersion.processing_status === "failed") {
+            return;
+        }
+
+        processingPollAttemptRef.current += 1;
+        if (processingPollAttemptRef.current > 30) {
+            // ~75s total at 2500ms intervals — give up and surface as failed
+            setMediaReadyStatus("failed");
+            return;
+        }
 
         const timer = window.setTimeout(() => {
             void refreshVersions(selectedAssetId);
@@ -898,7 +934,8 @@ export function useReviewLogic({
                 window.setTimeout(() => {
                     if (!cancelled) {
                         setMediaReadyAttempt((attempt) => attempt + 1);
-                        void refreshVersions(assetId);
+                        // Do NOT call refreshVersions here — the polling effect handles version refresh.
+                        // Calling it here creates a cascade that resets mediaReadyAttempt to 0.
                     }
                 }, 1500);
             }

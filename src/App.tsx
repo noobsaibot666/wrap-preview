@@ -51,7 +51,6 @@ const BlocksView = lazy(() => import("./components/BlocksView").then(m => ({ def
 const JobsPanel = lazy(() => import("./components/JobsPanel").then(m => ({ default: m.JobsPanel })));
 const AboutPanel = lazy(() => import("./components/AboutPanel").then(m => ({ default: m.AboutPanel })));
 const FolderCreator = lazy(() => import("./components/FolderCreator").then(m => ({ default: m.FolderCreator })));
-const ReviewCore = lazy(() => import("./components/ReviewCore").then(m => ({ default: m.ReviewCore })));
 const MosaicBuilder = lazy(() => import("./components/MosaicBuilder").then(m => ({ default: m.MosaicBuilder })));
 const DuplicateFinderApp = lazy(() => import("./components/DuplicateFinderApp").then(m => ({ default: m.DuplicateFinderApp })));
 const StarterSetup = lazy(() => import("./components/PreProduction/StarterSetup"));
@@ -143,22 +142,9 @@ function AppContent() {
     if (IS_DEV) return null;
     return localStorage.getItem('wp_activeProdApp') || null;
   });
-  const [shareRouteToken, setShareRouteToken] = useState<string | null>(() => {
-    const match = window.location.hash.match(/^#\/r\/([^/?#]+)/);
-    return match ? decodeURIComponent(match[1]) : null;
-  });
   const [othersMenuOpen, setOthersMenuOpen] = useState(false);
   const [activeMicroApp, setActiveMicroApp] = useState<"crop-factor" | "video-file-size" | "aspect-ratio" | "transfer-time" | null>(null);
   const isShotPlannerActive = activeTab === "preproduction" && activePreproductionApp === "shot-planner";
-
-  useEffect(() => {
-    const handleHashChange = () => {
-      const match = window.location.hash.match(/^#\/r\/([^/?#]+)/);
-      setShareRouteToken(match ? decodeURIComponent(match[1]) : null);
-    };
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
 
   // Persist tab state
   useEffect(() => {
@@ -196,7 +182,7 @@ function AppContent() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (!IS_DEV || shareRouteToken) return;
+    if (!IS_DEV) return;
     if (window.sessionStorage.getItem(DEV_BOOT_RESET_KEY)) {
       setActiveTab("home");
       setActivePreproductionApp(null);
@@ -204,7 +190,7 @@ function AppContent() {
       return;
     }
 
-    const keysToClear = ["wp_activeTab", "wp_activePreApp", "wp_activeMediaApp", "review_core:last_project_id"];
+    const keysToClear = ["wp_activeTab", "wp_activePreApp", "wp_activeMediaApp"];
     for (const key of keysToClear) {
       window.localStorage.removeItem(key);
     }
@@ -219,7 +205,7 @@ function AppContent() {
     setActiveTab("home");
     setActivePreproductionApp(null);
     setActiveMediaWorkspaceApp(null);
-  }, [DEV_BOOT_RESET_KEY, IS_DEV, shareRouteToken]);
+  }, [DEV_BOOT_RESET_KEY, IS_DEV]);
 
   useEffect(() => {
     const markUnloading = () => {
@@ -1340,25 +1326,7 @@ function AppContent() {
         onQueryChange={setCommandQuery}
         actions={commandActions}
       />
-      {shareRouteToken ? (
-        <div className="app-content">
-          {uiError && (
-            <div className="error-banner">
-              <strong>{uiError.title}</strong> {uiError.hint}
-            </div>
-          )}
-          <ReviewCore
-            shareToken={shareRouteToken}
-            restricted={true}
-            onError={setUiError}
-            onExitShare={() => {
-              window.location.hash = "";
-              setShareRouteToken(null);
-            }}
-          />
-        </div>
-      ) : (
-        <>
+      <>
           {showPrint && (
             <div id="print-area">
               <PrintLayout
@@ -2065,14 +2033,6 @@ function AppContent() {
                     />
                   </div>
                 ) : null
-              ) : activeMediaWorkspaceApp === 'review-core' ? (
-                <div className="media-workspace">
-                  <ReviewCore
-                    projectId={projectId}
-                    projectName={projectName}
-                    onError={setUiError}
-                  />
-                </div>
               ) : (
                 <div className="scrollable-view">
                   <div className="onboarding-container module-launcher postproduction-launcher">
@@ -2104,19 +2064,6 @@ function AppContent() {
                           <h3>Media Review</h3>
                           <p>{projectId ? "Continue reviewing thumbnails, metadata, and audio." : "Load a footage folder to unlock Review, Scene Blocks, and Delivery."}</p>
                           <span className="module-action">{projectId ? "Open App" : "Load Workspace"} <ArrowRight size={14} /></span>
-                        </div>
-                      </div>
-                      <div
-                        className="module-card premium-card module-launcher-card"
-                        onClick={() => {
-                          setActiveMediaWorkspaceApp('review-core');
-                        }}
-                      >
-                        <div className="module-icon"><Film size={20} strokeWidth={1.5} /></div>
-                        <div className="module-info">
-                          <h3>Review Core</h3>
-                          <p>{projectId ? "Play app-managed HLS proxies, inspect versions, and confirm metadata." : "Create or reopen a Review Core project to import and review media independently."}</p>
-                          <span className="module-action">Open App <ArrowRight size={14} /></span>
                         </div>
                       </div>
                       <div
@@ -2370,8 +2317,7 @@ function AppContent() {
               <TransferTimeCalculator resetNonce={transferResetNonce} />
             </MicroAppModal>
           )}
-        </>
-      )}
+      </>
     </div>
   );
 }
