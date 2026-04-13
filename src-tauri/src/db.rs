@@ -2722,27 +2722,6 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn get_review_core_project(&self, id: &str) -> SqlResult<Option<ReviewCoreProject>> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, name, created_at, last_opened_at
-             FROM review_core_projects
-             WHERE id = ?1",
-        )?;
-        let mut rows = stmt.query_map(params![id], |row| {
-            Ok(ReviewCoreProject {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                created_at: row.get(2)?,
-                last_opened_at: row.get(3)?,
-            })
-        })?;
-        match rows.next() {
-            Some(Ok(project)) => Ok(Some(project)),
-            _ => Ok(None),
-        }
-    }
-
     pub fn touch_review_core_project(
         &self,
         project_id: &str,

@@ -44,7 +44,6 @@
     ],
     "windows": {
       "nsis": {
-        "headerImage": "icons/64x64.png",
         "languages": ["English"],
         "displayLanguageSelector": false,
         "compression": "lzma",
