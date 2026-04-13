@@ -11,16 +11,5 @@ fn main() {
         unsafe { ptrace(31, 0, std::ptr::null_mut(), 0); }
     }
 
-    #[cfg(all(not(debug_assertions), target_os = "windows"))]
-    {
-        // Detect debugger on Windows
-        extern "system" {
-            fn IsDebuggerPresent() -> i32;
-        }
-        if unsafe { IsDebuggerPresent() } != 0 {
-            std::process::exit(1);
-        }
-    }
-
     cineflow_suite_lib::run()
 }
