@@ -5612,6 +5612,16 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.clip-no-audio {
+  padding: 7px 12px;
+  font-size: 10px;
+  font-style: italic;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.02);
+  text-transform: uppercase;
+}
+
 .audio-health-badge {
   display: flex;
   align-items: center;

@@ -318,8 +318,13 @@ fn extract_r3d_thumbnail_safe(
     generate_raw_placeholder(input_path, output_path, "RED R3D", "#e94560", "RED SDK required for preview")
 }
 
-/// Shared utility to generate a branded metadata placeholder thumbnail using FFmpeg's lavfi.
+/// Shared utility to generate a branded metadata placeholder thumbnail.
 /// Used for proprietary formats (R3D, BRAW) when native decoders are unavailable.
+///
+/// Three-stage fallback so a file is always written:
+///   1. FFmpeg lavfi + drawtext (nice label — requires freetype in the ffmpeg build)
+///   2. FFmpeg lavfi plain color (no freetype needed)
+///   3. Pure-Rust solid-color JPEG via the `image` crate (no ffmpeg needed at all)
 fn generate_raw_placeholder(
     input_path: &str,
     output_path: &str,
@@ -343,28 +348,54 @@ fn generate_raw_placeholder(
     }
 
     let ffmpeg = crate::tools::find_executable("ffmpeg");
-    let filter = format!(
+
+    // Stage 1: with drawtext — requires libfreetype compiled into ffmpeg.
+    let filter_text = format!(
         "color=c=#1a1a2e:s=640x360:d=1,\
          drawtext=text='{}':fontsize=36:fontcolor={}:x=(w-text_w)/2:y=(h-text_h)/2-30,\
          drawtext=text='{}':fontsize=16:fontcolor=#cccccc:x=(w-text_w)/2:y=(h-text_h)/2+20,\
          drawtext=text='{}':fontsize=12:fontcolor=#666666:x=(w-text_w)/2:y=(h-text_h)/2+50",
-        label, accent_color, display_name.replace('\'', "").replace(':', "\\:"), subtext
+        label,
+        accent_color,
+        display_name.replace('\'', "").replace(':', "\\:"),
+        subtext,
     );
-
-    let result = Command::new(&ffmpeg)
-        .args([
-            "-f", "lavfi",
-            "-i", &filter,
-            "-frames:v", "1",
-            "-update", "1",
-            "-q:v", "3",
-            "-y",
-            output_path,
-        ])
+    if let Ok(r) = Command::new(&ffmpeg)
+        .args(["-f", "lavfi", "-i", &filter_text, "-frames:v", "1", "-update", "1", "-q:v", "3", "-y", output_path])
         .output()
-        .map_err(|e| format!("Failed to generate placeholder: {}", e))?;
+    {
+        if r.status.success() && placeholder_valid(output_path) {
+            return Ok(true);
+        }
+    }
 
-    Ok(result.status.success() && Path::new(output_path).exists())
+    // Stage 2: plain solid color — no drawtext, no freetype dependency.
+    if let Ok(r) = Command::new(&ffmpeg)
+        .args(["-f", "lavfi", "-i", "color=c=#1a1a2e:s=640x360:d=1", "-frames:v", "1", "-update", "1", "-q:v", "3", "-y", output_path])
+        .output()
+    {
+        if r.status.success() && placeholder_valid(output_path) {
+            return Ok(true);
+        }
+    }
+
+    // Stage 3: pure-Rust JPEG — works even when ffmpeg is missing or broken.
+    write_solid_jpeg(output_path, [26, 26, 46])?;
+    Ok(placeholder_valid(output_path))
+}
+
+fn placeholder_valid(path: &str) -> bool {
+    std::fs::metadata(path).map(|m| m.len() > 100).unwrap_or(false)
+}
+
+fn write_solid_jpeg(output_path: &str, color: [u8; 3]) -> Result<(), String> {
+    use image::{RgbImage, Rgb};
+    let mut img = RgbImage::new(640, 360);
+    for pixel in img.pixels_mut() {
+        *pixel = Rgb(color);
+    }
+    img.save(output_path)
+        .map_err(|e| format!("Failed to write placeholder JPEG: {}", e))
 }
 
 fn extract_r3d_thumbnail(

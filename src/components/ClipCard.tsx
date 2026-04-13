@@ -378,14 +378,19 @@ export const ClipCard = memo(function ClipCard({
                 </div>
             </div>
 
-            {/* Waveform Sparkline */}
-            {waveformEnvelope && waveformEnvelope.length > 0 && (
-                <Waveform
-                    envelope={waveformEnvelope}
-                    onPlayToggle={() => onPlayClip(clip.id)}
-                    isPlaying={isPlaying}
-                    progress={progress}
-                />
+            {/* Waveform / No-audio indicator */}
+            {waveformEnvelope !== null && (
+                waveformEnvelope.length > 0
+                    ? (
+                        <Waveform
+                            envelope={waveformEnvelope}
+                            onPlayToggle={() => onPlayClip(clip.id)}
+                            isPlaying={isPlaying}
+                            progress={progress}
+                        />
+                    ) : (
+                        <div className="clip-no-audio">No audio</div>
+                    )
             )}
 
 

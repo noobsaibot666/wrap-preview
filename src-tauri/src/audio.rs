@@ -1,8 +1,39 @@
 use std::io::{BufReader, Read};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 pub struct AudioEnvelope {
     pub envelope: Vec<u8>,
+}
+
+/// R3D files store audio in a companion .RWA file alongside the .R3D file inside the .RDC
+/// directory. Returns the .RWA path if one exists next to the given .R3D path.
+fn find_r3d_companion_audio(r3d_path: &Path) -> Option<String> {
+    let stem = r3d_path.file_stem()?.to_str()?;
+    let parent = r3d_path.parent()?;
+    for ext in &["RWA", "rwa"] {
+        let candidate = parent.join(format!("{}.{}", stem, ext));
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+fn run_ffmpeg_extract(source: &str) -> Result<Vec<u8>, String> {
+    let ffmpeg = crate::tools::find_executable("ffmpeg");
+    let mut child = Command::new(ffmpeg)
+        .args(&["-i", source, "-f", "s16le", "-ac", "1", "-ar", "8000", "-"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
+
+    let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
+    let mut reader = BufReader::new(stdout);
+    let mut pcm_data = Vec::new();
+    reader.read_to_end(&mut pcm_data).map_err(|e| e.to_string())?;
+    Ok(pcm_data)
 }
 
 pub fn extract_envelope(file_path: &str, points: usize) -> Result<AudioEnvelope, String> {
@@ -11,25 +42,29 @@ pub fn extract_envelope(file_path: &str, points: usize) -> Result<AudioEnvelope,
     // -ac 1: mono
     // -ar 8000: 8kHz sampling rate (plenty for envelope)
 
-    let ffmpeg = crate::tools::find_executable("ffmpeg");
-    let mut child = Command::new(ffmpeg)
-        .args(&[
-            "-i", file_path, "-f", "s16le", "-ac", "1", "-ar", "8000", "-",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
+    let path = Path::new(file_path);
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
 
-    let stdout = child.stdout.take().ok_or("Failed to open stdout")?;
-    let mut reader = BufReader::new(stdout);
+    let is_r3d = ext == "r3d";
 
-    let mut pcm_data = Vec::new();
-    reader
-        .read_to_end(&mut pcm_data)
-        .map_err(|e| e.to_string())?;
+    // For R3D, prefer the companion .RWA audio file; the .R3D itself carries no decodable audio.
+    let audio_source = if is_r3d {
+        find_r3d_companion_audio(path).unwrap_or_else(|| file_path.to_string())
+    } else {
+        file_path.to_string()
+    };
+
+    let pcm_data = run_ffmpeg_extract(&audio_source)?;
 
     if pcm_data.is_empty() {
+        // R3D without a companion .RWA is normal — the clip genuinely has no audio.
+        if is_r3d {
+            return Ok(AudioEnvelope { envelope: vec![] });
+        }
         return Err("No audio data extracted".to_string());
     }
 
