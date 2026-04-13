@@ -12,18 +12,29 @@ pub fn init(handle: AppHandle) {
 pub fn find_executable(name: &str) -> String {
     // 1. Try to find as a Tauri Sidecar first
     if let Some(handle) = APP_HANDLE.get() {
+        // Production (Windows): Tauri strips the target triple from externalBin sidecars
+        // when installing. The binary lands as `{name}.exe` next to the EXE itself.
+        #[cfg(target_os = "windows")]
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                let candidate = exe_dir.join(format!("{}.exe", name));
+                if candidate.exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+            }
+        }
+
         let arch = std::env::consts::ARCH;
         let os = if cfg!(target_os = "macos") { "apple-darwin" } else if cfg!(target_os = "windows") { "pc-windows-msvc" } else { "unknown-linux-gnu" };
         let target = format!("{}-{}", arch, os);
-        
-        // Try local bin directory (Dev mode / Local build)
-        // We look for: src-tauri/bin/name-target
+
+        // Dev mode: look for the triple-suffixed binary in src-tauri/bin/
         let project_root = handle.path().app_config_dir()
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             .unwrap_or_default();
-        
+
         let local_bin = project_root.join("src-tauri").join("bin");
 
         let sidecar_name = if cfg!(target_os = "windows") {
@@ -37,16 +48,17 @@ pub fn find_executable(name: &str) -> String {
             return dev_path.to_string_lossy().to_string();
         }
 
-        // Try standard resource path (Production mode)
-        // Sidecars are usually in "resources/bin/..." or similar depending on bundle
+        // macOS/Linux production: resolve via Tauri resource path
+        #[cfg(not(target_os = "windows"))]
         if let Ok(path) = handle.path().resolve(format!("bin/{}", sidecar_name), tauri::path::BaseDirectory::Resource) {
-             if path.exists() {
-                 return path.to_string_lossy().to_string();
-             }
+            if path.exists() {
+                return path.to_string_lossy().to_string();
+            }
         }
     }
 
-    // 2. Try which (useful for dev environment where tools are in PATH)
+    // 2. Try which (Unix only — `which` does not exist on Windows)
+    #[cfg(not(target_os = "windows"))]
     if let Ok(output) = Command::new("which").arg(name).output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
