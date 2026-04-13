@@ -63,7 +63,7 @@
       "bin/REDline"
     ],
     "resources": {
-      "resources/BlackmagicRawAPI.dll": "."
+      "bin/BlackmagicRawAPI.dll": "."
     }
   }
 }
