@@ -1,0 +1,167 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet type='text/xsl' href='C:\ProgramData\Windows App Certification Kit\results.xsl'?>
+<REPORT xml:lang="en-GB" OVERALL_RESULT="WARNING" VERSION="10.0.28000.1721" LATEST_VERSION="" UPDATE_DOWNLOAD_URL="" TOOLSET_ARCHITECTURE="x64" SecureBoot="FALSE" APP_TYPE="Desktop" OSVERSION="10.0.26200.0" OS="Microsoft Windows 11 Pro" PER_USER_APPLICATION="FALSE" PARTIAL_RUN="FALSE" LCID="2057" X64_ONLY="FALSE" VALIDATION_TYPE="CommandLine" ReportGenerationTime="14/04/2026 09:20:39" ID="b79350e1692a9d84b3aa36a2cd77c3c4">
+  <REQUIREMENTS>
+    <REQUIREMENT NUMBER="1" TITLE="Clean reversible install test" RATIONALE="A clean, reversible, installation allows users to successfully manage (deploy, and remove) applications on their system.">
+      <TEST INDEX="12" NAME="Remove all non-shared files and folders" DESCRIPTION="All newly installed programs were properly removed." EXECUTIONTIME="00h:00m:00s.84ms" OPTIONAL="FALSE">
+        <MESSAGES>
+          <MESSAGE TEXT="File 'C:\Program Files\CineFlow Suite\BlackmagicRawAPI.dll' was not deleted." />
+          <MESSAGE TEXT="File 'C:\Program Files\CineFlow Suite\cineflow-suite.exe' was not deleted." />
+          <MESSAGE TEXT="File 'C:\Program Files\CineFlow Suite\REDline.exe' was not deleted." />
+          <MESSAGE TEXT="File 'C:\Program Files\CineFlow Suite\ffprobe.exe' was not deleted." />
+          <MESSAGE TEXT="File 'C:\Program Files\CineFlow Suite\ffmpeg.exe' was not deleted." />
+          <MESSAGE TEXT="File 'C:\Program Files\CineFlow Suite\braw_bridge.exe' was not deleted." />
+          <MESSAGE TEXT="File 'C:\Program Files\CineFlow Suite\Uninstall CineFlow Suite.lnk' was not deleted." />
+          <MESSAGE TEXT="The Add Remove Programs entry for CineFlow Suite was not removed." />
+        </MESSAGES>
+        <RESULT><![CDATA[WARNING]]></RESULT>
+      </TEST>
+      <TEST INDEX="8" NAME="Do not force an immediate reboot during installation" DESCRIPTION="Users should have the opportunity to restart later." EXECUTIONTIME="00h:00m:01s.37ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+      <TEST INDEX="9" NAME="Do not force an immediate reboot during uninstallation" DESCRIPTION="Users should have the opportunity to restart later." EXECUTIONTIME="00h:00m:01s.36ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+      <TEST INDEX="5" NAME="Write appropriate Add/Remove Program values" DESCRIPTION="Write appropriate Add/Remove Program values." EXECUTIONTIME="00h:00m:00s.70ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+      <TEST INDEX="34" NAME="Single user registry check" DESCRIPTION="Checks invalid writes to registry on install time." EXECUTIONTIME="00h:00m:00s.66ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="2" TITLE="Install to the correct folders test" RATIONALE="Windows provides specific locations in the file system to store programs and software components, shared application data, and application data specific to a user.">
+      <TEST INDEX="7" NAME="Install to Program Files" DESCRIPTION="Install to Program Files description." EXECUTIONTIME="00h:00m:00s.71ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+      <TEST INDEX="3" NAME="Write to the %WINDIR% or %SystemDrive%" DESCRIPTION="Write to the %WINDIR% or %SystemDrive%." EXECUTIONTIME="00h:00m:00s.72ms" OPTIONAL="FALSE">
+        <MESSAGES>
+          <MESSAGE TEXT="File C:\Windows\SystemTemp\~DF7FFF9ED773B29C4B.TMP was written to an incorrect location." />
+          <MESSAGE TEXT="File C:\Windows\SystemTemp\~DFC4E9748131DFDD13.TMP was written to an incorrect location." />
+          <MESSAGE TEXT="File C:\Windows\SystemTemp\~DFAF693D9B4118E3A6.TMP was written to an incorrect location." />
+          <MESSAGE TEXT="File C:\Windows\SystemTemp\~DF35C0700C9B4B9138.TMP was written to an incorrect location." />
+        </MESSAGES>
+        <RESULT><![CDATA[WARNING]]></RESULT>
+      </TEST>
+      <TEST INDEX="41" NAME="Loading apps on Windows startup" DESCRIPTION="Loading apps on Windows startup." EXECUTIONTIME="00h:00m:00s.67ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="3" TITLE="Digitally signed file test" RATIONALE="An Authenticode digital signature allows users to be sure that the software is genuine. It also allows detection if a file has been tampered with e.g. infected by a virus.">
+      <TEST INDEX="2" NAME="Install signed driver and executable files" DESCRIPTION="Install signed driver and executable files." EXECUTIONTIME="00h:00m:00s.98ms" OPTIONAL="FALSE">
+        <MESSAGES>
+          <MESSAGE TEXT="Non-driver file C:\Program Files\CineFlow Suite\cineflow-suite.exe does not have a valid signature, either embedded or via a catalog file." />
+          <MESSAGE TEXT="Non-driver file C:\Program Files\CineFlow Suite\REDline.exe does not have a valid signature, either embedded or via a catalog file." />
+          <MESSAGE TEXT="Non-driver file C:\Program Files\CineFlow Suite\ffprobe.exe does not have a valid signature, either embedded or via a catalog file." />
+          <MESSAGE TEXT="Non-driver file C:\Program Files\CineFlow Suite\ffmpeg.exe does not have a valid signature, either embedded or via a catalog file." />
+          <MESSAGE TEXT="Non-driver file C:\Program Files\CineFlow Suite\braw_bridge.exe does not have a valid signature, either embedded or via a catalog file." />
+          <MESSAGE TEXT="Application main installer file C:\Users\cyrus\Documents\Workgroup\APPS\wrap-preview\src-tauri\target\release\bundle\msi\CineFlow Suite_1.0.0_x64_en-US.msi does not have a valid signature, either embedded or via a catalog file." />
+        </MESSAGES>
+        <RESULT><![CDATA[WARNING]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="4" TITLE="Support x64 Windows test" RATIONALE="To maintain compatibility with 64-bit versions of Windows, it is necessary that applications should natively support 64-bit or at minimum 32-bit Windows based applications to run seamlessly on 64-bit.">
+      <TEST INDEX="4" NAME="Install platform specific files, and drivers" DESCRIPTION="Install platform specific files, and drivers." EXECUTIONTIME="00h:00m:00s.70ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="5" TITLE="OS version checking test" RATIONALE="Applications must not perform version checks for equality (== 5.1). If you need a specific feature, check whether the feature is available. If you need Windows XP, check for Windows XP or later (&gt;= 5.1), This way, your detection code will continue to work on future versions of Windows. Driver installers and uninstall modules should never check the OS version.">
+      <TEST INDEX="6" NAME="Proper OS version checking" DESCRIPTION="Perform proper OS version checking during installation." EXECUTIONTIME="00h:00m:01s.41ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="6" TITLE="User account control (UAC) test" RATIONALE="Most applications do not require administrator privileges at run time, and should be just fine running as a standard-user. Windows applications must have a manifest (embedded or external) to define its execution level that tells OS the privileges needed to run the application.">
+      <TEST INDEX="11" NAME="User account control run level" DESCRIPTION="Windows® applications must have a manifest (embedded or external) to define its execution level that tells OS the privileges needed to run the application." EXECUTIONTIME="00h:00m:01s.74ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="7" TITLE="Adhere to system restart manager messages" RATIONALE="In a critical shutdown, applications that return FALSE to WM_QUERYENDSESSION will be sent WM_ENDSESSION and closed, while those that time out in response to WM_QUERYENDSESSION will be terminated.">
+      <TEST INDEX="1" NAME="Don't block reboot" DESCRIPTION="Don't block reboot." EXECUTIONTIME="00h:00m:31s.93ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="8" TITLE="Safe mode test" RATIONALE="By default, most drivers and services that did not come preinstalled with Windows are not started in Safe Mode. They should remain disabled unless they are needed for basic operations of the system or for diagnostic and recovery purposes.">
+      <TEST INDEX="10" NAME="Do not load services and drivers in safe mode" DESCRIPTION="By default, most drivers and services that did not come preinstalled with Windows are not started in Safe Mode. They should remain disabled unless they are needed for basic operations of the system or for diagnostic and recovery purposes." EXECUTIONTIME="00h:00m:01s.43ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="9" TITLE="Multiuser session test" RATIONALE="Windows users should be able to run concurrent sessions without conflict or disruption.  Applications must ensure that when running in multiple sessions either locally or remotely, the normal functionality of the application should not be impacted. Application settings and data files should not be persisted across users. A user’s privacy and preferences should be isolated to the user’s session.">
+      <TEST INDEX="16" NAME="Multi user check logs" DESCRIPTION="Multi User checks App-Verifier logs." EXECUTIONTIME="00h:00m:00s.81ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+      <TEST INDEX="15" NAME="Multi user registry check" DESCRIPTION="Checks invalid writes to registry on install time." EXECUTIONTIME="00h:00m:00s.65ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+      <TEST INDEX="13" NAME="Do not write to the 'Users' folder" DESCRIPTION="Do not write to the 'Users' folder." EXECUTIONTIME="00h:00m:00s.71ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="10" TITLE="Deployment and launch tests" RATIONALE="Application failures such as crashes and hangs are a major disruption to users and cause frustration. Eliminating such failures improves application stability and reliability, and overall, provides users with a better application experience.">
+      <TEST INDEX="21" NAME="Crashes and hangs" DESCRIPTION="Do not crash or hang during the testing process." EXECUTIONTIME="00h:00m:01s.69ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="11" TITLE="Compatibility and resiliency test" RATIONALE="When Windows detects that an application has operated in an incompatible manner, it applies a compatibility fix that causes the application to behave correctly, ensuring a positive user experience. Applications should not rely on this behavior since it is only provided to allow legacy applications to work correctly on Windows.">
+      <TEST INDEX="22" NAME="Compatibility fixes" DESCRIPTION="Compatibility fixes." EXECUTIONTIME="00h:00m:00s.78ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+      <TEST INDEX="20" NAME="User mode hooking using AppInit_DLLs" DESCRIPTION="User mode hooking using AppInit_DLLs." EXECUTIONTIME="00h:00m:01s.39ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+      <TEST INDEX="64" NAME="Compatibility manifest" DESCRIPTION="Windows® applications must have a compatibility manifest to let the OS provide the appropriate support needed by the application." EXECUTIONTIME="00h:00m:01s.75ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="14" TITLE="Windows security features test" RATIONALE="Applications must opt-into Windows security features.">
+      <TEST INDEX="33" NAME="Binary analyzer" DESCRIPTION="Analysis of security features enabled on binaries" EXECUTIONTIME="00h:00m:01s.20ms" OPTIONAL="FALSE">
+        <MESSAGES>
+          <MESSAGE TEXT="File C:\Program Files\CineFlow Suite\ffprobe.exe has failed the WXCheck check." />
+          <MESSAGE TEXT="File C:\Program Files\CineFlow Suite\ffmpeg.exe has failed the WXCheck check." />
+        </MESSAGES>
+        <RESULT><![CDATA[WARNING]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+    <REQUIREMENT NUMBER="26" TITLE="High-DPI support" RATIONALE="The application needs to set DPI-aware to make the UI look consistently good across a wide variety of high-DPI display settings.">
+      <TEST INDEX="65" NAME="High-DPI" DESCRIPTION="Win32 applications should set DPI-aware to make its UI look consistently good across a wide variety of high-DPI display settings." EXECUTIONTIME="00h:00m:01s.85ms" OPTIONAL="FALSE">
+        <MESSAGES />
+        <RESULT><![CDATA[PASS]]></RESULT>
+      </TEST>
+    </REQUIREMENT>
+  </REQUIREMENTS>
+  <APPLICATIONS>
+    <Installed_Programs>
+      <Program Name="CineFlow Suite" Type="Application" Source="Msi" Publisher="cineflow" Version="1.0.0" Language="0" InstallDate="04/13/2026 00:00:00" RootDirPath="C:\Program Files\CineFlow Suite\" Id="0000a8f1a64a4b13ae4c4acfce9bb045110e00000000" HiddenArp="false">
+        <Indicators>
+          <AddRemoveProgramIndicators>
+            <AddRemoveProgram RegistryKeyPath="HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Uninstall\{434D71F7-5356-4294-B7A3-DEB4306B8545}" UninstallString="MsiExec.exe /X{434D71F7-5356-4294-B7A3-DEB4306B8545}" DisplayName="CineFlow Suite" CompanyName="cineflow" ProductVersion="1.0.0" ActualInstallLocation="C:\Program Files\CineFlow Suite\" Language="0" />
+          </AddRemoveProgramIndicators>
+          <MsiIndicators>
+            <Msi InstallDateMsi="04/13/2026 00:00:00" MsiProductCode="{434D71F7-5356-4294-B7A3-DEB4306B8545}" MsiPackageCode="{89DED55A-51C7-47E6-ACED-7A5535D0252E}" />
+          </MsiIndicators>
+        </Indicators>
+        <StaticProperties>
+          <Files Id="0000da39a3ee5e6b4b0d3255bfef95601890afd80709" />
+        </StaticProperties>
+      </Program>
+    </Installed_Programs>
+  </APPLICATIONS>
+  <DIGITAL_SIGNING />
+  <DEPENDENCY_INFORMATION />
+</REPORT>

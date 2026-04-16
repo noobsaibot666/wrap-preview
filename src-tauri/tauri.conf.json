@@ -54,7 +54,8 @@
     "macOS": {
       "entitlements": "entitlements.plist",
       "hardenedRuntime": true,
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "category": "public.app-category.video"
     },
     "externalBin": [
       "bin/ffmpeg",
@@ -63,7 +64,9 @@
       "bin/REDline"
     ],
     "resources": {
-      "bin/BlackmagicRawAPI.dll": "."
+      "bin/BlackmagicRawAPI.dll": ".",
+      "libs/*": "libs/",
+      "Frameworks/*": "Frameworks/"
     }
   }
 }

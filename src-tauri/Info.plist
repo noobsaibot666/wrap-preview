@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSCameraUsageDescription</key>
+    <string>CineFlow Suite requires camera access for future video review features and live capture analysis.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>CineFlow Suite requires microphone access for voice annotations and audio sync analysis.</string>
+    <key>NSAppleMusicUsageDescription</key>
+    <string>CineFlow Suite processes media files from your library for production preview.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>CineFlow Suite requires access to your photo library to import and preview production assets.</string>
+</dict>
+</plist>

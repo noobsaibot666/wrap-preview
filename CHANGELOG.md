@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0-rc.1 — macOS App Store Readiness
+
+### Added
+- **Production Entitlements**: Added `com.apple.security.files.bookmarks.app-scope` for persistent filesystem access within the Sandbox.
+- **Privacy Metadata**: Initialized `src-tauri/Info.plist` with mandatory App Store privacy descriptions (Camera, Microphone, Photo Library).
+- **Embedded Libraries**: Added a dedicated `libs/` and `Frameworks/` strategy to bundle the RED SDK and Qt frameworks.
+
+### Fixed
+- **Sidecar Sandboxing**: Hardened `REDline` sidecar by bundling 40+ missing `.dylib` dependencies and 19 Qt frameworks. 
+- **RPATH Patching**: Relinked `REDline` binaries (`aarch64` and `x86_64`) to look for dependencies internally using `@loader_path`, bypassing global system paths blocked by the Mac App Store sandbox.
+
+### Changed
+- Updated `tauri.conf.json` with production identifier `com.cineflow.suite` and Mac App Store category `public.app-category.video`.
+
 ## 1.0.0-beta.1
 
 ### Added
