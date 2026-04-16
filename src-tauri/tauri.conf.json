@@ -65,8 +65,8 @@
     ],
     "resources": {
       "bin/BlackmagicRawAPI.dll": ".",
-      "libs/*": "libs/",
-      "Frameworks/*": "Frameworks/"
+      "libs/": "libs/",
+      "Frameworks/": "Frameworks/"
     }
   }
 }
