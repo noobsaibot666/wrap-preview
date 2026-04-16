@@ -10,5 +10,7 @@
     <string>CineFlow Suite processes media files from your library for production preview.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>CineFlow Suite requires access to your photo library to import and preview production assets.</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.video</string>
 </dict>
 </plist>
