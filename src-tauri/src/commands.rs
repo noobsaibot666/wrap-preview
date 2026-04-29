@@ -7607,3 +7607,10 @@ pub async fn production_matchlab_get_sources(
     }
     Ok(out)
 }
+
+#[tauri::command]
+pub async fn get_cache_dir(
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
+) -> Result<String, String> {
+    Ok(state.cache_dir.clone())
+}

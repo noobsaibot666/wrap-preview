@@ -13,6 +13,7 @@ import {
   Compass,
   FolderOpen,
   Info,
+  Settings,
   ShieldCheck,
   ArrowRight,
   Boxes,
@@ -50,6 +51,7 @@ const ExportPanel = lazy(() => import("./components/ExportPanel").then(m => ({ d
 const BlocksView = lazy(() => import("./components/BlocksView").then(m => ({ default: m.BlocksView })));
 const JobsPanel = lazy(() => import("./components/JobsPanel").then(m => ({ default: m.JobsPanel })));
 const AboutPanel = lazy(() => import("./components/AboutPanel").then(m => ({ default: m.AboutPanel })));
+const SettingsPanel = lazy(() => import("./components/SettingsPanel").then(m => ({ default: m.SettingsPanel })));
 const FolderCreator = lazy(() => import("./components/FolderCreator").then(m => ({ default: m.FolderCreator })));
 const MosaicBuilder = lazy(() => import("./components/MosaicBuilder").then(m => ({ default: m.MosaicBuilder })));
 const DuplicateFinderApp = lazy(() => import("./components/DuplicateFinderApp").then(m => ({ default: m.DuplicateFinderApp })));
@@ -298,6 +300,7 @@ function AppContent() {
   const [jobsOpen, setJobsOpen] = useState(false);
   const [jobs, setJobs] = useState<JobInfo[]>([]);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const {
     isOpen: commandPaletteOpen,
@@ -530,6 +533,27 @@ function AppContent() {
     void setup();
     return () => {
       if (unlisten) unlisten();
+    };
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const setup = async () => {
+      unlisten = await listen("open-settings", () => setSettingsOpen(true));
+    };
+    void setup();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      if (unlisten) unlisten();
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
@@ -1453,6 +1477,10 @@ function AppContent() {
                     <>
                       <div className="dropdown-backdrop" onClick={() => setHelpMenuOpen(false)} />
                       <div className="help-dropdown menu-dropdown">
+                        <button className="dropdown-item menu-item" onClick={() => { setSettingsOpen(true); setHelpMenuOpen(false); }}>
+                          <span className="menu-item-icon"><Settings size={16} /></span>
+                          <span className="menu-item-label">Settings</span>
+                        </button>
                         <button className="dropdown-item menu-item" onClick={() => { setAboutOpen(true); setHelpMenuOpen(false); }}>
                           <span className="menu-item-icon"><Info size={16} /></span>
                           <span className="menu-item-label">About CineFlow</span>
@@ -2261,6 +2289,7 @@ function AppContent() {
 
           <JobsPanel open={jobsOpen} jobs={jobs} onClose={() => setJobsOpen(false)} onRefresh={refreshJobs} extracting={extracting} extractProgress={extractProgress} scanning={scanning} />
           <AboutPanel open={aboutOpen} info={appInfo} onResetTour={resetTour} onClose={() => setAboutOpen(false)} />
+          <SettingsPanel open={settingsOpen} info={appInfo} onClose={() => setSettingsOpen(false)} />
 
           <TourGuide
             run={tourRun}

@@ -28,6 +28,7 @@ pub(crate) mod mac_bookmarks;
 
 use commands::AppState;
 use std::sync::Arc;
+use tauri::Emitter;
 // Unused imports removed
 
 fn cache_root_dir() -> std::path::PathBuf {
@@ -171,10 +172,11 @@ pub fn run() {
                 let menu = Menu::with_items(app, &[&about_menu, &edit_menu, &view_menu, &window_menu])?;
                 app.set_menu(menu)?;
 
-                // Note: Menu events (like clicking "Settings") can be handled here or in a separate listener:
-                // app.on_menu_event(move |app_handle, event| {
-                //    if event.id() == "settings" { ... }
-                // });
+                app.on_menu_event(move |app_handle, event| {
+                    if event.id() == "settings" {
+                        let _ = app_handle.emit("open-settings", ());
+                    }
+                });
             }
 
             #[cfg(debug_assertions)]
@@ -268,6 +270,7 @@ pub fn run() {
             commands::list_jobs,
             commands::cancel_job,
             commands::get_app_info,
+            commands::get_cache_dir,
             commands::export_feedback_bundle,
             commands::list_perf_events,
             commands::clear_perf_events,

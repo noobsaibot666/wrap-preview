@@ -516,6 +516,8 @@ fn extract_braw_thumbnail(
     output_path: &str,
     timestamp_ms: u64,
 ) -> Result<std::process::Output, String> {
+    let braw_decoder = "braw_bridge";
+    let fallback_decoder = "braw-decode";
     // Try braw_bridge first
     let bridge_result = crate::tools::create_command("braw_bridge")
         .args(["-f", input_path])
@@ -523,7 +525,7 @@ fn extract_braw_thumbnail(
     
     match bridge_result {
         Ok(ff_fmt) if ff_fmt.status.success() => {
-            return process_braw_decode(&braw_decoder, &String::from_utf8_lossy(&ff_fmt.stdout), input_path, output_path, timestamp_ms);
+            return process_braw_decode(braw_decoder, &String::from_utf8_lossy(&ff_fmt.stdout), input_path, output_path, timestamp_ms);
         }
         _ => {
             // Try "braw-decode" fallback
@@ -532,7 +534,7 @@ fn extract_braw_thumbnail(
                 .output()
             {
                 if fallback_fmt.status.success() {
-                    return process_braw_decode(&fallback_decoder, &String::from_utf8_lossy(&fallback_fmt.stdout), input_path, output_path, timestamp_ms);
+                    return process_braw_decode(fallback_decoder, &String::from_utf8_lossy(&fallback_fmt.stdout), input_path, output_path, timestamp_ms);
                 }
             }
         }
