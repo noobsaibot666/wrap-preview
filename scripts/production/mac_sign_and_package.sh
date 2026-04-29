@@ -20,7 +20,9 @@ echo "🧹 Phase 2: Removing quarantine attributes..."
 xattr -rc "$APP_PATH"
 
 echo "📜 Phase 3: Embedding Provisioning Profile..."
+xattr -cr "$PROVISION" || true
 cp "$PROVISION" "$APP_PATH/Contents/embedded.provisionprofile"
+xattr -rc "$APP_PATH"
 
 echo "🛡️  Phase 4: Signing frameworks..."
 find "$APP_PATH/Contents/Frameworks" -name "*.framework" -exec codesign --force --verify --verbose --sign "$IDENTITY" --entitlements "$SIDECAR_ENTITLEMENTS" --options runtime {} \;
