@@ -1,6 +1,6 @@
 use std::io::{BufReader, Read};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 pub struct AudioEnvelope {
     pub envelope: Vec<u8>,

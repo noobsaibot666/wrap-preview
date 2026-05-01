@@ -414,6 +414,7 @@ mod tests {
             root_path: "/tmp".to_string(),
             name: "Project".to_string(),
             created_at: "2026-01-01".to_string(),
+            bookmark: None,
         })
         .unwrap();
         db.create_asset(&Asset {

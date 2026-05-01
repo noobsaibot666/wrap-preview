@@ -12,14 +12,24 @@ pub fn init(handle: AppHandle) {
 }
 
 pub fn find_executable(name: &str) -> String {
+    let requested_path = std::path::Path::new(name);
+    if requested_path.is_absolute() || requested_path.components().count() > 1 {
+        if requested_path.exists() {
+            return name.to_string();
+        }
+    }
+
     // 1. Try to find as a Tauri Sidecar first
     if let Some(handle) = APP_HANDLE.get() {
-        // Production (Windows): Tauri strips the target triple from externalBin sidecars
-        // when installing. The binary lands as `{name}.exe` next to the EXE itself.
-        #[cfg(target_os = "windows")]
+        // Production bundles can strip the target triple from externalBin sidecars.
+        // In that case the binary lands next to the app executable itself.
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
-                let candidate = exe_dir.join(format!("{}.exe", name));
+                let candidate = exe_dir.join(if cfg!(target_os = "windows") {
+                    format!("{}.exe", name)
+                } else {
+                    name.to_string()
+                });
                 if candidate.exists() {
                     return candidate.to_string_lossy().to_string();
                 }
@@ -27,11 +37,19 @@ pub fn find_executable(name: &str) -> String {
         }
 
         let arch = std::env::consts::ARCH;
-        let os = if cfg!(target_os = "macos") { "apple-darwin" } else if cfg!(target_os = "windows") { "pc-windows-msvc" } else { "unknown-linux-gnu" };
+        let os = if cfg!(target_os = "macos") {
+            "apple-darwin"
+        } else if cfg!(target_os = "windows") {
+            "pc-windows-msvc"
+        } else {
+            "unknown-linux-gnu"
+        };
         let target = format!("{}-{}", arch, os);
 
         // Dev mode: look for the triple-suffixed binary in src-tauri/bin/
-        let project_root = handle.path().app_config_dir()
+        let project_root = handle
+            .path()
+            .app_config_dir()
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
@@ -52,7 +70,10 @@ pub fn find_executable(name: &str) -> String {
 
         // macOS/Linux production: resolve via Tauri resource path
         #[cfg(not(target_os = "windows"))]
-        if let Ok(path) = handle.path().resolve(format!("bin/{}", sidecar_name), tauri::path::BaseDirectory::Resource) {
+        if let Ok(path) = handle.path().resolve(
+            format!("bin/{}", sidecar_name),
+            tauri::path::BaseDirectory::Resource,
+        ) {
             if path.exists() {
                 return path.to_string_lossy().to_string();
             }
@@ -61,7 +82,7 @@ pub fn find_executable(name: &str) -> String {
 
     // 2. Try which (Unix only — `which` does not exist on Windows)
     #[cfg(not(target_os = "windows"))]
-    if let Ok(output) = crate::tools::create_command("which").arg(name).output() {
+    if let Ok(output) = Command::new("which").arg(name).output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path.is_empty() {
@@ -98,15 +119,36 @@ pub fn find_executable(name: &str) -> String {
 /// the console window blizzard on Windows.
 pub fn create_command(name: &str) -> Command {
     let executable = find_executable(name);
-    let mut command = Command::new(executable);
-    
-    // Windows: suppress console window for child processes
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Command::new(executable)
+    }
+
     #[cfg(target_os = "windows")]
     {
+        let mut command = Command::new(executable);
+
+        // Windows: suppress console window for child processes
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         command.creation_flags(CREATE_NO_WINDOW);
+        command
     }
-    
-    command
 }
 
+#[cfg(test)]
+mod tests {
+    use super::find_executable;
+
+    #[test]
+    fn missing_executable_lookup_does_not_recurse() {
+        let missing_name = "__cineflow_missing_executable_for_lookup_test__";
+
+        assert_eq!(find_executable(missing_name), missing_name);
+    }
+
+    #[test]
+    fn absolute_executable_path_is_used_directly() {
+        assert_eq!(find_executable("/bin/sh"), "/bin/sh");
+    }
+}

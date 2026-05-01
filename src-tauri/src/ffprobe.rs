@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 
 /// Metadata extracted from a video clip via ffprobe
 #[derive(Debug, Clone, Serialize, Deserialize)]

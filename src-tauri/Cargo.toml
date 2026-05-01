@@ -1,6 +1,6 @@
 [package]
 name = "cineflow-suite"
-version = "1.0.2"
+version = "1.0.3"
 description = "CineFlow Suite — The Production to Post Hub"
 authors = ["Alan Alves <hello@expose-u.com>"]
 homepage = "https://alan-design.com/"

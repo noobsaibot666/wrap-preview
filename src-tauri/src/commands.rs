@@ -5986,7 +5986,7 @@ fn command_exists(bin: &str) -> bool {
         // We verify if 'which' or equivalent works for the fallback
         #[cfg(not(target_os = "windows"))]
         {
-            crate::tools::create_command("sh")
+            Command::new("sh")
                 .args(["-lc", &format!("command -v {} >/dev/null 2>&1", bin)])
                 .status()
                 .map(|s| s.success())
@@ -5994,7 +5994,7 @@ fn command_exists(bin: &str) -> bool {
         }
         #[cfg(target_os = "windows")]
         {
-            crate::tools::create_command("where")
+            Command::new("where")
                 .arg(bin)
                 .status()
                 .map(|s| s.success())

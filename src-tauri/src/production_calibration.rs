@@ -2053,7 +2053,7 @@ fn polygon_area(corners: &[Point2f; 4]) -> f64 {
     area.abs() * 0.5
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "calibration"))]
 mod tests {
     use super::*;
 

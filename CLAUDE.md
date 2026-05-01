@@ -21,6 +21,9 @@ npm run test
 
 npm run build
 
+# Build for direct distribution (with licensing)
+npm run build:direct
+
 cargo check --manifest-path src-tauri/Cargo.toml
 
 npx tauri build
@@ -29,6 +32,7 @@ npx tauri build
 `npm run lint` is the TypeScript strict check (`tsc --noEmit`). `npm run test` currently aliases lint because no dedicated test framework is configured.
 
 **After every change, verify:** `npm run lint`, `npm run test`, `npm run build`, and `cargo check --manifest-path src-tauri/Cargo.toml` when Rust/Tauri code may be affected.
+**Versioning:** All versions (`package.json`, `Cargo.toml`, `tauri.conf.json`) must remain synchronized.
 
 ## Architecture
 
@@ -49,6 +53,7 @@ npx tauri build
 - `thumbnail.rs`: frame extraction via FFmpeg
 - `ffprobe.rs`: media metadata extraction
 - `verification.rs`: Blake3 hashing for Safe Copy integrity checks
+- `license.rs`: Self-hosted licensing logic (feature-gated via `direct-dist`)
 - `review_core/`: local annotation server (processor, server, storage)
 
 **IPC pattern:** frontend calls `invoke('command_name', { params })` and listens with `listen('event_name')`. All heavy media operations run in the Rust backend job queue and emit progress events — never block the UI thread.

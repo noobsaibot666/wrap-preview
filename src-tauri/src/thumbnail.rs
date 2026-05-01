@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 
 /// Minimum skip time in seconds (skip first 0.5s)
 const SKIP_SECONDS: f64 = 0.5;

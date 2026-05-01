@@ -14,5 +14,7 @@
     <false/>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.video</string>
+    <key>LSRequiresCarbon</key>
+    <false/>
 </dict>
 </plist>

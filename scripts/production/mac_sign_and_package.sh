@@ -38,9 +38,10 @@ codesign --force --verify --verbose --sign "$IDENTITY" --entitlements "$SIDECAR_
 
 echo "🛡️  Phase 7: Signing main app..."
 codesign --force --verify --verbose --sign "$IDENTITY" --entitlements "$APP_ENTITLEMENTS" --options runtime "$APP_PATH"
+xattr -rc "$APP_PATH"
 
 echo "📦  Phase 8: Generating final Product Archive (.pkg)..."
 mkdir -p builds
-productbuild --component "$APP_PATH" /Applications --sign "$INSTALLER_IDENTITY" "builds/CineFlow_Suite_SUBMISSION.pkg"
+COPYFILE_DISABLE=1 productbuild --component "$APP_PATH" /Applications --sign "$INSTALLER_IDENTITY" "builds/CineFlow_Suite_SUBMISSION.pkg"
 
 echo "✅ Done! Your final file is in: builds/CineFlow_Suite_SUBMISSION.pkg"
