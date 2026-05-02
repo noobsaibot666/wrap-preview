@@ -66,7 +66,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated 
           background: 'linear-gradient(180deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%)',
           boxShadow: '0 40px 100px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.05)',
           width: '100%',
-          maxWidth: '540px'
+          maxWidth: '480px'
         }}
       >
         <div 
@@ -74,7 +74,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated 
             backgroundColor: '#0a0a0c',
             borderRadius: '23px',
             width: '100%',
-            padding: '64px 52px',
+            padding: '80px 48px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -98,7 +98,6 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated 
                     gap: '12px',
                     marginBottom: '32px'
                   }}>
-                    <div style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: ACCENT_COLOR }} />
                     <span style={{
                       fontSize: '11px',
                       fontWeight: 800,
@@ -167,7 +166,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated 
                           backgroundColor: email.length > 0 ? 'rgba(165, 146, 255, 0.03)' : 'rgba(255,255,255,0.02)',
                           border: `1px solid ${email.length > 0 ? 'rgba(165, 146, 255, 0.3)' : 'rgba(255,255,255,0.08)'}`,
                           borderRadius: '12px',
-                          padding: '22px 20px',
+                          padding: '18px 20px',
                           color: '#ffffff',
                           fontSize: '15px',
                           outline: 'none',
@@ -239,7 +238,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated 
                           backgroundColor: licenseKey.length > 0 ? 'rgba(165, 146, 255, 0.03)' : 'rgba(255,255,255,0.02)',
                           border: `1px solid ${licenseKey.length > 0 ? 'rgba(165, 146, 255, 0.3)' : 'rgba(255,255,255,0.08)'}`,
                           borderRadius: '12px',
-                          padding: '22px 20px',
+                          padding: '18px 20px',
                           color: '#ffffff',
                           fontSize: '15px',
                           letterSpacing: '0.05em',

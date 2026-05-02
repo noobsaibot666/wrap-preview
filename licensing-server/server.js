@@ -203,4 +203,64 @@ app.get('/download', (req, res) => {
     }
 });
 
+// 6. Admin API (Secured)
+const adminAuth = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    if (authHeader === `Bearer ${process.env.ADMIN_SECRET}`) {
+        next();
+    } else {
+        res.status(401).json({ error: 'Unauthorized' });
+    }
+};
+
+app.get('/admin/licenses', adminAuth, (req, res) => {
+    db.all(`
+        SELECT l.*, 
+        (SELECT count(*) FROM activations WHERE license_id = l.id) as activation_count
+        FROM licenses l
+        ORDER BY l.created_at DESC
+    `, (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+app.get('/admin/licenses/:id/activations', adminAuth, (req, res) => {
+    db.all('SELECT * FROM activations WHERE license_id = ?', [req.params.id], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+app.post('/admin/licenses/create', adminAuth, (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+    
+    const key = generateKey();
+    db.run('INSERT INTO licenses (license_key, email) VALUES (?, ?)', [key, email], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        
+        const { sendLicenseEmail } = require('./mailer');
+        sendLicenseEmail(email, key).catch(console.error);
+        
+        res.json({ success: true, key });
+    });
+});
+
+app.post('/admin/licenses/:id/reset', adminAuth, (req, res) => {
+    db.run('DELETE FROM activations WHERE license_id = ?', [req.params.id], (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+app.delete('/admin/licenses/:id', adminAuth, (req, res) => {
+    db.run('DELETE FROM activations WHERE license_id = ?', [req.params.id], (err) => {
+        db.run('DELETE FROM licenses WHERE id = ?', [req.params.id], (err) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        });
+    });
+});
+
 app.listen(port, () => console.log(`CineFlow Licensing Engine active on port ${port}`));

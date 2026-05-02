@@ -29,10 +29,12 @@
 - [x] Set up Direct Distribution build script (`npm run build:direct`)
 
 ## Phase 4: Distribution & Security
+- [x] Refined Activation UI (Lavender Accent, 4:5 Card Ratio)
+- [x] Visual Admin Dashboard implementation (web_three)
 - [ ] macOS Code Signing & Notarization (Apple Developer ID)
 - [ ] Windows Code Signing (EV Certificate)
 - [ ] Tauri Auto-Updater implementation
 - [ ] Dockerize and Deploy Licensing Server to TrueNAS
 
 ---
-*Last Updated: 2026-05-01*
+*Last Updated: 2026-05-02*
