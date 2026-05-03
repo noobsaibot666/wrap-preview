@@ -44,3 +44,8 @@ builds/
 .env
 *.env
 licensing-server/database.sqlite
+
+# Claude Code system files
+.agents/
+.claude/
+skills-lock.json
