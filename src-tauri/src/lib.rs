@@ -395,6 +395,7 @@ pub fn run() {
             license::activate_license,
             license::get_license_status,
             license::get_hwid,
+            license::init_trial,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

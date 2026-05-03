@@ -48,6 +48,7 @@ graph TD
 *   **Location**: `src/components/ActivationScreen.tsx`
 *   **Design**: 4:5 aspect ratio card, Lavender (#a592ff) accents, minimalist high-fashion aesthetic.
 *   **Logic**: Captures Email and License Key, retrieves HWID via Tauri command, and stores the signed token locally.
+*   **Trial Mode**: The direct-distribution build includes a 14-day offline trial with limited features. See [`TRIAL_MODE.md`](./TRIAL_MODE.md) for full documentation.
 
 ---
 

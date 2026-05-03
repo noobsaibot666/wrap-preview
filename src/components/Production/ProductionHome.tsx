@@ -11,6 +11,7 @@ interface ProductionHomeProps {
   onOpenMatchNormalize: () => void;
   onOpenCameraMatchLab: () => void;
   onOpenFramePreview: () => void;
+  lockedModuleIds?: string[];
 }
 
 export function ProductionHome({
@@ -21,6 +22,7 @@ export function ProductionHome({
   onOpenMatchNormalize,
   onOpenCameraMatchLab,
   onOpenFramePreview,
+  lockedModuleIds = [],
 }: ProductionHomeProps) {
   const [projects, setProjects] = useState<ProductionProject[]>([]);
   const [projectName, setProjectName] = useState("");
@@ -207,6 +209,7 @@ export function ProductionHome({
                 title="Look Setup"
                 description="Build camera A/B/C settings, define the target look, and generate deterministic capture guidance."
                 enabled={Boolean(activeProject)}
+                locked={lockedModuleIds.includes('look-setup')}
                 onClick={onOpenLookSetup}
               />
               <ModuleCard
@@ -214,6 +217,7 @@ export function ProductionHome({
                 title="Camera Match Lab"
                 description="Import test clips, inspect reference frames, and compare signal metrics side-by-side."
                 enabled={Boolean(activeProject)}
+                locked={lockedModuleIds.includes('camera-match-lab')}
                 onClick={onOpenCameraMatchLab}
               />
               <ModuleCard
@@ -221,6 +225,7 @@ export function ProductionHome({
                 title="On-Set Coach"
                 description="Carry forward the saved look plan into fast ready checks, warning toggles, and lighting discipline."
                 enabled={Boolean(activeProject)}
+                locked={lockedModuleIds.includes('onset-coach')}
                 onClick={onOpenOnSetCoach}
               />
               <ModuleCard
@@ -228,6 +233,7 @@ export function ProductionHome({
                 title="Match & Normalize"
                 description="Choose a hero camera and save repeatable alignment presets for the rest of the camera package."
                 enabled={Boolean(activeProject)}
+                locked={lockedModuleIds.includes('match-normalize')}
                 onClick={onOpenMatchNormalize}
               />
               <ModuleCard
@@ -235,6 +241,7 @@ export function ProductionHome({
                 title="Frame Preview"
                 description="Preview media in multiple aspect ratio frames, reframe content per format, and export preview crops."
                 enabled={true}
+                locked={lockedModuleIds.includes('frame-preview')}
                 onClick={onOpenFramePreview}
               />
             </div>
@@ -316,26 +323,42 @@ function ModuleCard({
   title,
   description,
   enabled,
+  locked = false,
   onClick,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   enabled: boolean;
+  locked?: boolean;
   onClick: () => void;
 }) {
+  const isDisabled = locked || !enabled;
   return (
     <div
-      className={`module-card premium-card module-launcher-card ${enabled ? "" : "disabled"}`}
-      onClick={enabled ? onClick : undefined}
-      style={moduleCardStyle}
+      className={`module-card premium-card module-launcher-card ${isDisabled ? "disabled" : ""}`}
+      onClick={isDisabled ? undefined : onClick}
+      style={{ ...moduleCardStyle, position: 'relative' }}
     >
+      {locked && (
+        <div style={{
+          position: 'absolute', top: 10, right: 10,
+          display: 'flex', alignItems: 'center', gap: 5,
+          backgroundColor: 'rgba(10,10,12,0.85)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: 999, padding: '4px 10px 4px 7px',
+          backdropFilter: 'blur(8px)', zIndex: 2,
+        }}>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase' }}>Full License</span>
+        </div>
+      )}
       <div className="module-icon">{icon}</div>
       <div className="module-info">
         <h2>{title}</h2>
         <p>{description}</p>
         <span className="module-action">
-          {enabled ? "Open App" : "Project required"} <ArrowRight size={16} />
+          {locked ? "Full License required" : enabled ? "Open App" : "Project required"} <ArrowRight size={16} />
         </span>
       </div>
     </div>

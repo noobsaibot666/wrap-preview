@@ -84,6 +84,16 @@ import { CommandPalette } from "./components/CommandPalette";
 import { getJumpIntervalForThumbCount, getThumbnailCacheContext } from "./utils/thumbnailIntervals";
 import { convertFileSrc, invokeGuarded, isTauriReloading } from "./utils/tauri";
 import { ActivationScreen } from "./components/ActivationScreen";
+import TrialBanner from "./components/TrialBanner";
+import TrialLockBadge from "./components/TrialLockBadge";
+
+type LicenseMode = 'loading' | 'trial' | 'full' | 'expired' | 'inactive';
+
+const TRIAL_ALLOWED_MODULES = new Set([
+  'folder-creator', 'duplicate-finder', 'shot-list',
+  'project-manager', 'look-setup', 'camera-match-lab',
+  'safe-copy', 'media-review', 'scene-blocks',
+]);
 
 // --- Error Boundary ---
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: any }> {
@@ -142,14 +152,27 @@ function AppContent() {
     return localStorage.getItem('wp_activeMediaApp') || null;
   });
 
-  const [isActivated, setIsActivated] = useState<boolean | null>(null);
+  const [licenseMode, setLicenseMode] = useState<LicenseMode>('loading');
+  const [trialDaysRemaining, setTrialDaysRemaining] = useState<number | null>(null);
+
+  const isModuleLocked = (moduleId: string): boolean =>
+    licenseMode === 'trial' && !TRIAL_ALLOWED_MODULES.has(moduleId);
 
   useEffect(() => {
     invoke<any>("get_license_status").then((res) => {
-      setIsActivated(res.active);
+      if (res.active) {
+        setLicenseMode('full');
+      } else if (res.is_trial) {
+        setLicenseMode('trial');
+        setTrialDaysRemaining(res.trial_days_remaining ?? null);
+      } else if (res.trial_expired) {
+        setLicenseMode('expired');
+      } else {
+        setLicenseMode('inactive');
+      }
     }).catch(e => {
       console.error("License check failed", e);
-      setIsActivated(false);
+      setLicenseMode('inactive');
     });
   }, []);
   const [activeProductionApp, setActiveProductionApp] = useState<string | null>(() => {
@@ -1353,7 +1376,7 @@ function AppContent() {
     return [...navigationActions, ...projectActions];
   }, [refreshProjectClips, safeInvoke, setActiveMediaWorkspaceApp, setActivePreproductionApp, setActiveTab, setPhaseState]);
 
-  if (isActivated === null) {
+  if (licenseMode === 'loading') {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center bg-[#000000]">
         <div className="w-20 h-20 border-2 border-blue-500/10 border-t-blue-500 rounded-full animate-spin mb-10" />
@@ -1365,12 +1388,40 @@ function AppContent() {
     );
   }
 
-  if (!isActivated) {
-    return <ActivationScreen onActivated={() => setIsActivated(true)} />;
+  if (licenseMode === 'inactive') {
+    return (
+      <ActivationScreen
+        mode="inactive"
+        onActivated={() => setLicenseMode('full')}
+        onTrialStarted={() => {
+          invoke<any>("get_license_status").then((res) => {
+            if (res.is_trial) {
+              setLicenseMode('trial');
+              setTrialDaysRemaining(res.trial_days_remaining ?? null);
+            }
+          });
+        }}
+      />
+    );
+  }
+
+  if (licenseMode === 'expired') {
+    return (
+      <ActivationScreen
+        mode="expired"
+        onActivated={() => setLicenseMode('full')}
+      />
+    );
   }
 
   return (
     <div className="app-container">
+      {licenseMode === 'trial' && trialDaysRemaining !== null && (
+        <TrialBanner
+          daysRemaining={trialDaysRemaining}
+          onUpgrade={() => window.open('https://alan-design.com/buy', '_blank')}
+        />
+      )}
       <CommandPalette
         isOpen={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
@@ -1902,42 +1953,50 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className="module-card premium-card module-launcher-card"
+                        className={`module-card premium-card module-launcher-card ${isModuleLocked('shot-planner') ? 'disabled' : ''}`}
+                        style={{ position: 'relative' }}
                         onClick={() => {
+                          if (isModuleLocked('shot-planner')) return;
                           if (projectStates.pre.projectId) setActivePreproductionApp('shot-planner');
                           else handleLoadFootage('shot-planner');
                         }}
                       >
+                        {isModuleLocked('shot-planner') && <TrialLockBadge />}
                         <div className="module-icon"><Camera size={20} strokeWidth={1.5} /></div>
                         <div className="module-info">
                           <h3>Shot Planner</h3>
                           <p>Analyze reference footage and export selected on-set reference sheets.</p>
-                          <span className="module-action">Open App <ArrowRight size={14} /></span>
+                          <span className="module-action">{isModuleLocked('shot-planner') ? 'Full License required' : 'Open App'} <ArrowRight size={14} /></span>
                         </div>
                       </div>
                       <div
-                        className="module-card premium-card module-launcher-card"
+                        className={`module-card premium-card module-launcher-card ${isModuleLocked('mosaic-builder') ? 'disabled' : ''}`}
+                        style={{ position: 'relative' }}
                         onClick={() => {
+                          if (isModuleLocked('mosaic-builder')) return;
                           if (projectStates.pre.projectId) setActivePreproductionApp('mosaic-builder');
                           else handleLoadFootage('mosaic-builder');
                         }}
                       >
+                        {isModuleLocked('mosaic-builder') && <TrialLockBadge />}
                         <div className="module-icon"><LayoutGrid size={20} strokeWidth={1.5} /></div>
                         <div className="module-info">
                           <h3>Grid Mosaic</h3>
                           <p>Generate large multi-frame image grids and PDF sheets from clip thumbnails.</p>
-                          <span className="module-action">Open App <ArrowRight size={14} /></span>
+                          <span className="module-action">{isModuleLocked('mosaic-builder') ? 'Full License required' : 'Open App'} <ArrowRight size={14} /></span>
                         </div>
                       </div>
                       <div
-                        className="module-card premium-card module-launcher-card"
-                        onClick={() => setActivePreproductionApp('starter-setup')}
+                        className={`module-card premium-card module-launcher-card ${isModuleLocked('starter-setup') ? 'disabled' : ''}`}
+                        style={{ position: 'relative' }}
+                        onClick={() => { if (!isModuleLocked('starter-setup')) setActivePreproductionApp('starter-setup'); }}
                       >
+                        {isModuleLocked('starter-setup') && <TrialLockBadge />}
                         <div className="module-icon"><ClipboardCheck size={20} strokeWidth={1.5} /></div>
                         <div className="module-info">
                           <h3>Starter Setup</h3>
                           <p>Get a safe technical starting setup sheet for your shoot instantly.</p>
-                          <span className="module-action">Open App <ArrowRight size={14} /></span>
+                          <span className="module-action">{isModuleLocked('starter-setup') ? 'Full License required' : 'Open App'} <ArrowRight size={14} /></span>
                         </div>
                       </div>
                     </div>
@@ -2136,14 +2195,16 @@ function AppContent() {
                         </div>
                       </div>
                       <div
-                        className={`module-card premium-card module-launcher-card ${!projectId ? "disabled" : ""}`}
-                        onClick={() => { if (projectId) setShowExportPanel(true); }}
+                        className={`module-card premium-card module-launcher-card ${(!projectId || isModuleLocked('delivery')) ? "disabled" : ""}`}
+                        style={{ position: 'relative' }}
+                        onClick={() => { if (projectId && !isModuleLocked('delivery')) setShowExportPanel(true); }}
                       >
+                        {isModuleLocked('delivery') && <TrialLockBadge />}
                         <div className="module-icon"><FileDown size={20} strokeWidth={1.5} /></div>
                         <div className="module-info">
                           <h3>Delivery</h3>
-                          <p>{projectId ? "Export Resolve timelines and Director Packs from the current scope." : "Available after clips are loaded into the workspace."}</p>
-                          <span className="module-action">{projectId ? "Open App" : "Workspace required"}</span>
+                          <p>{isModuleLocked('delivery') ? "Available with a full license." : projectId ? "Export Resolve timelines and Director Packs from the current scope." : "Available after clips are loaded into the workspace."}</p>
+                          <span className="module-action">{isModuleLocked('delivery') ? 'Full License required' : projectId ? "Open App" : "Workspace required"}</span>
                         </div>
                       </div>
                     </div>
@@ -2196,6 +2257,7 @@ function AppContent() {
                     setActiveProductionApp("frame-preview");
                   }}
                   activeProject={activeProductionProject}
+                  lockedModuleIds={licenseMode === 'trial' ? ['onset-coach', 'match-normalize', 'frame-preview'] : []}
                 />
               )
             ) : (

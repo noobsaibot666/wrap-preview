@@ -27,7 +27,20 @@ pub struct LicenseStatus {
     pub key: Option<String>,
     pub hwid: String,
     pub message: Option<String>,
+    pub is_trial: bool,
+    pub trial_days_remaining: Option<i64>,
+    pub trial_expired: bool,
 }
+
+#[cfg(feature = "direct-dist")]
+#[derive(Debug, Serialize, Deserialize)]
+struct TrialState {
+    started_at: i64,
+    hwid: String,
+}
+
+#[cfg(feature = "direct-dist")]
+const TRIAL_DURATION_DAYS: i64 = 14;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ActivationToken {
@@ -49,47 +62,64 @@ fn get_license_path(app: &AppHandle) -> PathBuf {
 }
 
 #[cfg(feature = "direct-dist")]
+fn get_trial_path(app: &AppHandle) -> PathBuf {
+    app.path().app_config_dir().unwrap().join("trial.json")
+}
+
+#[cfg(feature = "direct-dist")]
 pub fn check_license(app: &AppHandle) -> LicenseStatus {
     let hwid = get_hwid();
     let path = get_license_path(app);
 
-    if !path.exists() {
-        return LicenseStatus {
-            active: false,
-            key: None,
-            hwid,
-            message: Some("No license found".into()),
-        };
-    }
-
-    match fs::read(&path) {
-        Ok(obfuscated_content) => {
-            let content: String = obfuscated_content.iter().map(|&b| (b ^ 0x55) as char).collect();
-            match serde_json::from_str::<ActivationToken>(&content) {
-                Ok(token) => {
-                    // Verify HWID matches
+    // Check for a valid full license first
+    if path.exists() {
+        match fs::read(&path) {
+            Ok(obfuscated_content) => {
+                let content: String = obfuscated_content.iter().map(|&b| (b ^ 0x55) as char).collect();
+                if let Ok(token) = serde_json::from_str::<ActivationToken>(&content) {
                     if token.hwid != hwid {
-                        return LicenseStatus { active: false, key: Some(token.key), hwid, message: Some("Hardware mismatch".into()) };
+                        return LicenseStatus { active: false, key: Some(token.key), hwid, message: Some("Hardware mismatch".into()), is_trial: false, trial_days_remaining: None, trial_expired: false };
                     }
-
-                    // Verify Expiration
                     let now = chrono::Utc::now().timestamp();
                     if token.expires_at < now {
-                         return LicenseStatus { active: false, key: Some(token.key), hwid, message: Some("License expired".into()) };
+                        return LicenseStatus { active: false, key: Some(token.key), hwid, message: Some("License expired".into()), is_trial: false, trial_days_remaining: None, trial_expired: false };
                     }
-
-                    // Verify Signature
                     if verify_signature(&token) {
-                        LicenseStatus { active: true, key: Some(token.key), hwid, message: None }
+                        return LicenseStatus { active: true, key: Some(token.key), hwid, message: None, is_trial: false, trial_days_remaining: None, trial_expired: false };
                     } else {
-                        LicenseStatus { active: false, key: Some(token.key), hwid, message: Some("Invalid signature".into()) }
+                        return LicenseStatus { active: false, key: Some(token.key), hwid, message: Some("Invalid signature".into()), is_trial: false, trial_days_remaining: None, trial_expired: false };
                     }
                 }
-                Err(_) => LicenseStatus { active: false, key: None, hwid, message: Some("Corrupt license file".into()) },
+            }
+            Err(_) => {
+                return LicenseStatus { active: false, key: None, hwid, message: Some("Could not read license".into()), is_trial: false, trial_days_remaining: None, trial_expired: false };
             }
         }
-        Err(_) => LicenseStatus { active: false, key: None, hwid, message: Some("Could not read license".into()) },
     }
+
+    // No valid license — check for trial state
+    let trial_path = get_trial_path(app);
+    if trial_path.exists() {
+        if let Ok(obfuscated) = fs::read(&trial_path) {
+            let content: String = obfuscated.iter().map(|&b| (b ^ 0x55) as char).collect();
+            if let Ok(trial) = serde_json::from_str::<TrialState>(&content) {
+                // HWID must match to prevent trial copying across machines
+                if trial.hwid != hwid {
+                    return LicenseStatus { active: false, key: None, hwid, message: Some("No license found".into()), is_trial: false, trial_days_remaining: None, trial_expired: false };
+                }
+                let now = chrono::Utc::now().timestamp();
+                let elapsed_days = (now - trial.started_at) / 86_400;
+                let remaining = TRIAL_DURATION_DAYS - elapsed_days;
+                if remaining > 0 {
+                    return LicenseStatus { active: false, key: None, hwid, message: None, is_trial: true, trial_days_remaining: Some(remaining), trial_expired: false };
+                } else {
+                    return LicenseStatus { active: false, key: None, hwid, message: Some("Trial expired".into()), is_trial: false, trial_days_remaining: Some(0), trial_expired: true };
+                }
+            }
+        }
+    }
+
+    LicenseStatus { active: false, key: None, hwid, message: Some("No license found".into()), is_trial: false, trial_days_remaining: None, trial_expired: false }
 }
 
 #[cfg(feature = "direct-dist")]
@@ -182,6 +212,33 @@ pub fn get_license_status(app: AppHandle) -> LicenseStatus {
     check_license(&app)
 }
 
+#[cfg(feature = "direct-dist")]
+#[tauri::command]
+pub fn init_trial(app: AppHandle) -> Result<LicenseStatus, String> {
+    let path = get_trial_path(&app);
+    // Idempotent: only write the trial start timestamp once, ever
+    if !path.exists() {
+        let hwid = get_hwid();
+        let trial = TrialState {
+            started_at: chrono::Utc::now().timestamp(),
+            hwid,
+        };
+        let json = serde_json::to_string(&trial).map_err(|e| e.to_string())?;
+        let obfuscated: Vec<u8> = json.as_bytes().iter().map(|&b| b ^ 0x55).collect();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(&path, obfuscated).map_err(|e| e.to_string())?;
+    }
+    Ok(check_license(&app))
+}
+
+#[cfg(not(feature = "direct-dist"))]
+#[tauri::command]
+pub fn get_hwid() -> String {
+    "".into()
+}
+
 #[cfg(not(feature = "direct-dist"))]
 pub fn check_license(_app: &AppHandle) -> LicenseStatus {
     LicenseStatus {
@@ -189,6 +246,9 @@ pub fn check_license(_app: &AppHandle) -> LicenseStatus {
         key: None,
         hwid: "".into(),
         message: None,
+        is_trial: false,
+        trial_days_remaining: None,
+        trial_expired: false,
     }
 }
 
@@ -200,6 +260,9 @@ pub fn get_license_status() -> LicenseStatus {
         key: None,
         hwid: "".into(),
         message: None,
+        is_trial: false,
+        trial_days_remaining: None,
+        trial_expired: false,
     }
 }
 
@@ -207,4 +270,18 @@ pub fn get_license_status() -> LicenseStatus {
 #[tauri::command]
 pub async fn activate_license(_key: String, _email: String) -> Result<LicenseStatus, String> {
     Err("Licensing not enabled in this build".into())
+}
+
+#[cfg(not(feature = "direct-dist"))]
+#[tauri::command]
+pub fn init_trial() -> Result<LicenseStatus, String> {
+    Ok(LicenseStatus {
+        active: true,
+        key: None,
+        hwid: "".into(),
+        message: None,
+        is_trial: false,
+        trial_days_remaining: None,
+        trial_expired: false,
+    })
 }

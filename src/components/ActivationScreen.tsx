@@ -5,16 +5,25 @@ import { invoke } from '@tauri-apps/api/core';
 
 interface ActivationScreenProps {
   onActivated: () => void;
+  onTrialStarted?: () => void;
+  mode?: 'inactive' | 'expired';
 }
 
-export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated }) => {
+export const ActivationScreen: React.FC<ActivationScreenProps> = ({
+  onActivated,
+  onTrialStarted,
+  mode = 'inactive',
+}) => {
   const [email, setEmail] = useState('');
   const [licenseKey, setLicenseKey] = useState('');
   const [hwid, setHwid] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [trialLoading, setTrialLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const isExpired = mode === 'expired';
 
   // Brand Standard Lavender Accent
   const ACCENT_COLOR = '#a592ff';
@@ -42,13 +51,25 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated 
     try {
       const cleanEmail = email.trim().toLowerCase();
       const cleanKey = licenseKey.trim();
-      
+
       await invoke('activate_license', { key: cleanKey, email: cleanEmail });
       setSuccess(true);
       setTimeout(onActivated, 1500);
     } catch (err: any) {
       setError(err.toString());
       setLoading(false);
+    }
+  };
+
+  const handleStartTrial = async () => {
+    setTrialLoading(true);
+    setError(null);
+    try {
+      await invoke('init_trial');
+      onTrialStarted?.();
+    } catch (err: any) {
+      setError(err.toString());
+      setTrialLoading(false);
     }
   };
 
@@ -110,26 +131,28 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated 
                     </span>
                   </div>
                   
-                  <h1 style={{ 
-                    fontSize: '36px', 
-                    fontWeight: 900, 
-                    color: '#ffffff', 
+                  <h1 style={{
+                    fontSize: '36px',
+                    fontWeight: 900,
+                    color: '#ffffff',
                     letterSpacing: '-0.03em',
                     marginBottom: '16px',
                     lineHeight: 1.1
                   }}>
-                    Activate License
+                    {isExpired ? 'Trial Expired' : 'Activate License'}
                   </h1>
-                  <p style={{ 
-                    fontSize: '14px', 
-                    color: '#ffffff', 
-                    maxWidth: '340px', 
+                  <p style={{
+                    fontSize: '14px',
+                    color: '#ffffff',
+                    maxWidth: '340px',
                     margin: '0 auto',
                     fontWeight: 400,
                     lineHeight: 1.6,
                     opacity: 0.5
                   }}>
-                    Enter your credentials to authorize this workstation and unlock the full creative suite.
+                    {isExpired
+                      ? 'Your free trial has ended. Purchase a license to continue using CineFlow Suite.'
+                      : 'Enter your credentials to authorize this workstation and unlock the full creative suite.'}
                   </p>
                 </div>
 
@@ -328,6 +351,61 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({ onActivated 
                         </>
                       )}
                     </button>
+
+                    {/* Start Free Trial — only on first visit, not after expiry */}
+                    {!isExpired && (
+                      <div style={{ marginTop: '16px' }}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          margin: '20px 0 16px',
+                        }}>
+                          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+                          <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.2em' }}>
+                            Or
+                          </span>
+                          <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.06)' }} />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleStartTrial}
+                          disabled={trialLoading}
+                          style={{
+                            width: '100%',
+                            padding: '18px',
+                            backgroundColor: 'transparent',
+                            border: '1px solid rgba(165, 146, 255, 0.2)',
+                            borderRadius: '14px',
+                            color: ACCENT_COLOR,
+                            fontWeight: 800,
+                            fontSize: '12px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.2em',
+                            cursor: trialLoading ? 'default' : 'pointer',
+                            opacity: trialLoading ? 0.5 : 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '10px',
+                            transition: 'all 0.3s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!trialLoading) e.currentTarget.style.borderColor = 'rgba(165, 146, 255, 0.5)';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!trialLoading) e.currentTarget.style.borderColor = 'rgba(165, 146, 255, 0.2)';
+                          }}
+                        >
+                          {trialLoading
+                            ? <Loader2 size={15} className="animate-spin" />
+                            : 'Start 14-Day Free Trial'}
+                        </button>
+                        <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.25)', marginTop: '10px', textAlign: 'center', lineHeight: 1.5 }}>
+                          No account required · Limited features · Trial cannot be reset
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </form>
 
